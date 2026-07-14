@@ -1,6 +1,8 @@
 export async function subirImagenCloudinary(
   file: File,
-  folder: string
+  folder: string,
+  signal?: AbortSignal,
+  resourceType: "image" | "raw" = "image"
 ): Promise<string | null> {
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
   if (!cloudName) return null
@@ -9,6 +11,7 @@ export async function subirImagenCloudinary(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ folder }),
+    signal,
   })
   if (!firmaRes.ok) return null
 
@@ -22,8 +25,8 @@ export async function subirImagenCloudinary(
   formData.append("folder", carpeta)
 
   const uploadRes = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-    { method: "POST", body: formData }
+    `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`,
+    { method: "POST", body: formData, signal }
   )
   if (!uploadRes.ok) return null
 

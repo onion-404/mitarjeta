@@ -61,3 +61,73 @@ create policy "tarjetas_reclamar_sin_dueno"
 
 -- Nota: las imágenes (avatar/banner) se suben a Cloudinary, no a Supabase
 -- Storage; no hace falta ningún bucket acá.
+
+-- ----------------------------------------------------------------------------
+-- Panel de administración: una única cuenta (por email) tiene acceso total
+-- de lectura/escritura sobre todas las tarjetas, para el dashboard de ventas
+-- y la edición del estado de pago. auth.jwt() lee el email del JWT del
+-- request autenticado, sin necesitar service role ni infra adicional.
+-- ----------------------------------------------------------------------------
+create policy "tarjetas_admin_todo"
+  on public.tarjetas for all
+  using (auth.jwt() ->> 'email' = 'emuna.interno@gmail.com')
+  with check (auth.jwt() ->> 'email' = 'emuna.interno@gmail.com');
+
+-- Precio efectivamente cobrado y cupón aplicado (si hubo), para el dashboard.
+alter table public.tarjetas
+  add column if not exists precio_pagado numeric,
+  add column if not exists cupon_codigo text;
+
+-- ============================================================================
+-- configuracion: fila única con los precios activos y la promoción vigente.
+-- La landing y el checkout de invitados la leen en tiempo real; solo el
+-- admin puede modificarla.
+-- ============================================================================
+create table if not exists public.configuracion (
+  id integer primary key default 1,
+  precio_regular numeric not null default 600,
+  precio_lanzamiento numeric not null default 400,
+  promocion_activa boolean not null default true,
+  promocion_fin timestamptz not null default (now() + interval '3 days'),
+  constraint configuracion_singleton check (id = 1)
+);
+
+insert into public.configuracion (id)
+values (1)
+on conflict (id) do nothing;
+
+alter table public.configuracion enable row level security;
+
+create policy "configuracion_select_publica"
+  on public.configuracion for select
+  using (true);
+
+create policy "configuracion_admin_update"
+  on public.configuracion for update
+  using (auth.jwt() ->> 'email' = 'emuna.interno@gmail.com')
+  with check (auth.jwt() ->> 'email' = 'emuna.interno@gmail.com');
+
+-- ============================================================================
+-- cupones: códigos de descuento. Un descuento del 100% aprueba la tarjeta
+-- de inmediato en el checkout, sin pasar por Mercado Pago/transferencia.
+-- ============================================================================
+create table if not exists public.cupones (
+  id uuid primary key default gen_random_uuid(),
+  codigo text unique not null,
+  porcentaje_descuento int not null check (porcentaje_descuento between 1 and 100),
+  activo boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+alter table public.cupones enable row level security;
+
+-- Cualquiera puede validar un cupón activo por su código (checkout de invitados).
+create policy "cupones_select_activos"
+  on public.cupones for select
+  using (activo = true);
+
+-- Solo el admin crea, edita o desactiva cupones.
+create policy "cupones_admin_todo"
+  on public.cupones for all
+  using (auth.jwt() ->> 'email' = 'emuna.interno@gmail.com')
+  with check (auth.jwt() ->> 'email' = 'emuna.interno@gmail.com');
