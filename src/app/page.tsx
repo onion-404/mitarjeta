@@ -17,6 +17,8 @@ import { buttonVariants } from "@/components/ui/button"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { getConfiguracionActiva } from "@/lib/configuracion"
 
+export const dynamic = "force-dynamic"
+
 const TARJETA_DEMO = {
   tipo: "personal" as const,
   datosContacto: {
@@ -358,6 +360,15 @@ export default async function Home() {
           </Link>
         </div>
       </section>
+
+      <footer className="border-t border-border/60 py-6 text-center">
+        <Link
+          href="/login"
+          className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          Acceso Admin
+        </Link>
+      </footer>
     </div>
   )
 }
