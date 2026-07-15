@@ -1,10 +1,12 @@
 "use client"
 
+import { Accordion } from "@base-ui/react/accordion"
 import { Dialog } from "@base-ui/react/dialog"
 import {
   ArrowRight,
   Building2,
   Check,
+  ChevronDown,
   Clock,
   Copy,
   CreditCard,
@@ -12,9 +14,11 @@ import {
   FileText,
   Loader2,
   Lock,
+  Moon,
   Pencil,
   Plus,
   ShieldCheck,
+  Sun,
   Trash2,
   X,
 } from "lucide-react"
@@ -25,6 +29,7 @@ import { AuthMethods } from "@/components/auth/auth-methods"
 import { Button } from "@/components/ui/button"
 import { CompartirTarjeta } from "@/components/tarjeta/compartir-tarjeta"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
+import { RecortarAvatar } from "@/components/tarjeta/recortar-avatar"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
 import { DATOS_BANCARIOS } from "@/lib/banco"
@@ -36,15 +41,18 @@ import { subirImagenCloudinary } from "@/lib/subir-imagen"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import type {
+  AvatarForma,
   Configuracion,
   Cupon,
   DatosContacto,
+  EstiloTipografia,
   PlataformaRed,
   Producto,
   RedSocial,
   Servicio,
   Tarjeta,
   TarjetaTipo,
+  TemaModo,
 } from "@/lib/types"
 
 interface ProductoFormState {
@@ -63,7 +71,11 @@ const inputClase =
   "w-full rounded-xl border border-border bg-white/70 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none backdrop-blur transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-zinc-900/60"
 const labelClase = "text-sm font-medium text-foreground"
 const panelClase =
-  "rounded-3xl border border-black/5 bg-white/70 p-5 shadow-[0_10px_40px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/50"
+  "rounded-3xl border border-black/5 bg-white/70 shadow-[0_10px_40px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/50 overflow-hidden"
+const triggerClase =
+  "group flex w-full items-center justify-between gap-2 px-5 py-4 text-left text-sm font-semibold text-foreground transition-colors data-panel-open:bg-[var(--acento-bg)]"
+const panelInnerClase =
+  "h-[var(--accordion-panel-height)] overflow-hidden transition-[height] duration-200 ease-out data-ending-style:h-0 data-starting-style:h-0"
 
 function generarSlug(nombre: string) {
   const base = nombre
@@ -101,6 +113,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
 
   // Personal
   const [nombre, setNombre] = React.useState(datosIniciales?.nombre ?? "")
+  const [empresa, setEmpresa] = React.useState(datosIniciales?.empresa ?? "")
   const [puesto, setPuesto] = React.useState(datosIniciales?.puesto ?? "")
   const [telefono, setTelefono] = React.useState(datosIniciales?.telefono ?? "")
   const [whatsapp, setWhatsapp] = React.useState(datosIniciales?.whatsapp ?? "")
@@ -159,6 +172,15 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
   const [colorSecundario, setColorSecundario] = React.useState(
     visualInicial?.colorSecundario ?? "#a855f7"
   )
+  const [temaModo, setTemaModo] = React.useState<TemaModo>(
+    visualInicial?.temaModo ?? "claro"
+  )
+  const [avatarForma, setAvatarForma] = React.useState<AvatarForma>(
+    visualInicial?.avatarForma ?? "circulo"
+  )
+  const [estiloTipografia, setEstiloTipografia] = React.useState<EstiloTipografia>(
+    visualInicial?.estiloTipografia ?? "moderna"
+  )
 
   const [avatarFile, setAvatarFile] = React.useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = React.useState("")
@@ -166,6 +188,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
     visualInicial?.avatarUrl ?? ""
   )
   const [avatarInputKey, setAvatarInputKey] = React.useState(0)
+  const [avatarPendiente, setAvatarPendiente] = React.useState<File | null>(null)
 
   const [bannerFile, setBannerFile] = React.useState<File | null>(null)
   const [bannerPreview, setBannerPreview] = React.useState("")
@@ -179,6 +202,13 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
 
   const avatarAbortRef = React.useRef<AbortController | null>(null)
   const bannerAbortRef = React.useRef<AbortController | null>(null)
+  const previewRef = React.useRef<HTMLDivElement>(null)
+
+  function scrollPreviewTo(campo: string) {
+    if (typeof window !== "undefined" && window.innerWidth < 1024) return
+    const elemento = previewRef.current?.querySelector(`[data-campo="${campo}"]`)
+    elemento?.scrollIntoView({ behavior: "smooth", block: "center" })
+  }
 
   const [saving, setSaving] = React.useState(false)
   const [saveError, setSaveError] = React.useState<string | null>(null)
@@ -428,11 +458,22 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
   function handleAvatarChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
-    setAvatarFile(file)
+    setAvatarPendiente(file)
+  }
+
+  function handleRecorteConfirmado(archivo: File) {
+    setAvatarFile(archivo)
     setAvatarPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev)
-      return URL.createObjectURL(file)
+      return URL.createObjectURL(archivo)
     })
+    setAvatarPendiente(null)
+    setAvatarInputKey((k) => k + 1)
+  }
+
+  function handleRecorteCancelado() {
+    setAvatarPendiente(null)
+    setAvatarInputKey((k) => k + 1)
   }
 
   function quitarAvatar() {
@@ -598,6 +639,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
       : {
           ...comunes,
           nombre: nombre.trim(),
+          empresa: empresa.trim() || undefined,
           puesto: puesto.trim() || undefined,
           telefono: telefono.trim() || undefined,
           whatsapp: whatsapp.trim() || undefined,
@@ -611,6 +653,9 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
       bannerUrl,
       bannerPreset: bannerUrl ? undefined : bannerPresetId,
       brochureUrl,
+      temaModo,
+      avatarForma,
+      estiloTipografia,
     }
 
     if (esEdicion && tarjeta) {
@@ -750,6 +795,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
     : {
         ...comunesActuales,
         nombre,
+        empresa,
         puesto,
         telefono,
         whatsapp,
@@ -763,6 +809,9 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
     bannerUrl: bannerMostrado,
     bannerPreset: bannerMostrado ? undefined : bannerPresetId,
     brochureUrl: brochureMostrado,
+    temaModo,
+    avatarForma,
+    estiloTipografia,
   }
 
   const precioRegular = configuracion?.precio_regular ?? null
@@ -870,16 +919,28 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
         </div>
       ) : (
         <div className="relative mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 items-start gap-8 px-4 py-8 sm:px-6 lg:grid-cols-2 lg:gap-12 lg:px-10">
-          <div className="order-first flex justify-center self-start lg:order-last lg:sticky lg:top-6 lg:h-fit lg:justify-start">
+          <div className="order-first flex justify-center self-start lg:sticky lg:top-8 lg:order-last lg:flex lg:h-[calc(100vh-4rem)] lg:items-center lg:justify-center">
             <div className="flex w-full max-w-sm flex-col items-center gap-2">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Vista previa en tiempo real
               </span>
-              <TarjetaCard
-                tipo={tipo}
-                datosContacto={datosContactoActual}
-                identidadVisual={identidadVisualActual}
-              />
+              <div className="relative mx-auto aspect-[9/19.5] w-72 overflow-hidden rounded-[2.5rem] border-[8px] border-neutral-800 bg-neutral-800 shadow-2xl lg:w-96 dark:border-neutral-700">
+                <div className="absolute left-1/2 top-2 z-10 h-6 w-28 -translate-x-1/2 rounded-full bg-neutral-800" />
+                <div
+                  ref={previewRef}
+                  className={cn(
+                    "size-full overflow-y-auto rounded-[2rem]",
+                    temaModo === "oscuro" ? "bg-neutral-950" : "bg-white"
+                  )}
+                >
+                  <TarjetaCard
+                    tipo={tipo}
+                    datosContacto={datosContactoActual}
+                    identidadVisual={identidadVisualActual}
+                    className="w-full min-w-0 rounded-none border-0 shadow-none"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -902,552 +963,771 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
               ))}
             </div>
 
-            <fieldset className={cn(panelClase, "flex flex-col gap-4")}>
-              <legend className="mb-1 px-1 text-sm font-semibold text-foreground">
-                Datos de contacto
-              </legend>
-
-              {esEmpresarial ? (
-                <>
-                  <label className="flex flex-col gap-1.5">
-                    <span className={labelClase}>Nombre de la empresa</span>
-                    <input
-                      required
-                      value={nombreEmpresa}
-                      onChange={(e) => setNombreEmpresa(e.target.value)}
-                      placeholder="Ej. Café Aroma"
-                      className={inputClase}
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1.5">
-                    <span className={labelClase}>Giro / Razón social</span>
-                    <input
-                      value={giro}
-                      onChange={(e) => setGiro(e.target.value)}
-                      placeholder="Ej. Cafetería"
-                      className={inputClase}
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1.5">
-                    <span className={labelClase}>Teléfono corporativo</span>
-                    <input
-                      type="tel"
-                      value={telefonoCorporativo}
-                      onChange={(e) => setTelefonoCorporativo(e.target.value)}
-                      placeholder="+54 11 5555-5555"
-                      className={inputClase}
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1.5">
-                    <span className={labelClase}>Sitio web</span>
-                    <input
-                      value={sitioWeb}
-                      onChange={(e) => setSitioWeb(e.target.value)}
-                      placeholder="https://..."
-                      className={inputClase}
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1.5">
-                    <span className={labelClase}>Horarios de atención</span>
-                    <input
-                      value={horarios}
-                      onChange={(e) => setHorarios(e.target.value)}
-                      placeholder="Lun a Vie 9 a 18hs"
-                      className={inputClase}
-                    />
-                  </label>
-                </>
-              ) : (
-                <>
-                  <label className="flex flex-col gap-1.5">
-                    <span className={labelClase}>Nombre completo</span>
-                    <input
-                      required
-                      value={nombre}
-                      onChange={(e) => setNombre(e.target.value)}
-                      placeholder="Ej. María Gómez"
-                      className={inputClase}
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1.5">
-                    <span className={labelClase}>Puesto o profesión</span>
-                    <input
-                      value={puesto}
-                      onChange={(e) => setPuesto(e.target.value)}
-                      placeholder="Ej. Abogada"
-                      className={inputClase}
-                    />
-                  </label>
-
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <label className="flex flex-col gap-1.5">
-                      <span className={labelClase}>Teléfono</span>
-                      <input
-                        type="tel"
-                        value={telefono}
-                        onChange={(e) => setTelefono(e.target.value)}
-                        placeholder="+54 11 5555-5555"
-                        className={inputClase}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className={labelClase}>WhatsApp</span>
-                      <input
-                        type="tel"
-                        value={whatsapp}
-                        onChange={(e) => setWhatsapp(e.target.value)}
-                        placeholder="+54 11 5555-5555"
-                        className={inputClase}
-                      />
-                    </label>
-                  </div>
-
-                  <label className="flex flex-col gap-1.5">
-                    <span className={labelClase}>Email</span>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="tu@correo.com"
-                      className={inputClase}
-                    />
-                  </label>
-                </>
-              )}
-            </fieldset>
-
-            <fieldset className={cn(panelClase, "flex flex-col gap-4")}>
-              <legend className="mb-1 px-1 text-sm font-semibold text-foreground">
-                Ubicación y video
-              </legend>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <label className="flex flex-col gap-1.5">
-                  <span className={labelClase}>Dirección física</span>
-                  <input
-                    value={direccion}
-                    onChange={(e) => setDireccion(e.target.value)}
-                    placeholder="Av. Siempre Viva 742"
-                    className={inputClase}
-                  />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className={labelClase}>Enlace de Google Maps</span>
-                  <input
-                    value={direccionMapsUrl}
-                    onChange={(e) => setDireccionMapsUrl(e.target.value)}
-                    placeholder="https://maps.google.com/..."
-                    className={inputClase}
-                  />
-                </label>
-              </div>
-
-              <label className="flex flex-col gap-1.5">
-                <span className={labelClase}>Video de YouTube (opcional)</span>
-                <input
-                  value={videoUrl}
-                  onChange={(e) => setVideoUrl(e.target.value)}
-                  placeholder="https://www.youtube.com/watch?v=..."
-                  className={inputClase}
-                />
-              </label>
-            </fieldset>
-
-            <fieldset className={cn(panelClase, "flex flex-col gap-3")}>
-              <legend className="mb-1 px-1 text-sm font-semibold text-foreground">
-                Servicios (opcional)
-              </legend>
-
-              <label className="flex flex-col gap-1.5">
-                <span className={labelClase}>Descripción general</span>
-                <textarea
-                  value={descripcionServicios}
-                  onChange={(e) => setDescripcionServicios(e.target.value)}
-                  placeholder="Contá brevemente qué ofrecés"
-                  rows={2}
-                  className={inputClase}
-                />
-              </label>
-
-              {servicios.map((servicio, index) => (
-                <div
-                  key={index}
-                  className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
-                >
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={servicio.titulo}
-                      onChange={(e) => actualizarServicioTitulo(index, e.target.value)}
-                      placeholder="Título del servicio"
-                      className={cn(inputClase, "flex-1")}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => quitarServicio(index)}
-                      aria-label="Quitar servicio"
-                      className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                  <input
-                    value={servicio.descripcion ?? ""}
-                    onChange={(e) => actualizarServicioDescripcion(index, e.target.value)}
-                    placeholder="Descripción corta"
-                    className={inputClase}
-                  />
-                </div>
-              ))}
-
-              {servicios.length < 8 && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={agregarServicio}
-                  className="self-start"
-                >
-                  <Plus className="size-3.5" /> Agregar servicio
-                </Button>
-              )}
-
-              <label className="flex flex-col gap-1.5">
-                <span className={labelClase}>Folleto o presentación (PDF)</span>
-                <div className="flex items-center gap-3">
-                  {(brochureUrlExistente || brochureFile) && (
-                    <div className="flex shrink-0 items-center gap-2 rounded-xl border border-border bg-background/50 px-3 py-2">
-                      <FileText className="size-4 text-muted-foreground" />
-                      <span className="max-w-32 truncate text-xs text-foreground">
-                        {brochureFile?.name || "Folleto actual"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={quitarBrochure}
-                        aria-label="Quitar folleto"
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="size-3.5" />
-                      </button>
+            <Accordion.Root
+              defaultValue={[1]}
+              className="flex flex-col gap-3"
+              style={{ "--acento-bg": `${colorSecundario || "#71717a"}1a` } as React.CSSProperties}
+            >
+              <Accordion.Item value={0} className={panelClase}>
+                <Accordion.Header>
+                  <Accordion.Trigger className={triggerClase}>
+                    Diseño de tarjeta
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                  </Accordion.Trigger>
+                </Accordion.Header>
+                <Accordion.Panel className={panelInnerClase}>
+                  <div className="flex flex-col gap-5 px-5 pb-5 pt-1">
+                    <div className="flex flex-col gap-2">
+                      <span className={labelClase}>Tema de la tarjeta</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(["claro", "oscuro"] as const).map((opcion) => (
+                          <button
+                            key={opcion}
+                            type="button"
+                            onClick={() => setTemaModo(opcion)}
+                            className={cn(
+                              "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors",
+                              temaModo === opcion
+                                ? "border-foreground bg-background"
+                                : "border-border bg-background/50 hover:bg-background"
+                            )}
+                          >
+                            {opcion === "claro" ? (
+                              <Sun className="size-4 shrink-0 text-muted-foreground" />
+                            ) : (
+                              <Moon className="size-4 shrink-0 text-muted-foreground" />
+                            )}
+                            {opcion === "claro" ? "Claro" : "Oscuro"}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  )}
-                  <input
-                    key={brochureInputKey}
-                    type="file"
-                    accept="application/pdf"
-                    onChange={handleBrochureChange}
-                    className={cn(
-                      inputClase,
-                      "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+
+                    <div className="flex flex-col gap-2">
+                      <span className={labelClase}>Forma del avatar</span>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(
+                          [
+                            { valor: "circulo", etiqueta: "Círculo", clase: "rounded-full" },
+                            { valor: "suave", etiqueta: "Suave", clase: "rounded-2xl" },
+                            { valor: "cuadrado", etiqueta: "Cuadrado", clase: "rounded-md" },
+                          ] as const
+                        ).map((opcion) => (
+                          <button
+                            key={opcion.valor}
+                            type="button"
+                            onClick={() => setAvatarForma(opcion.valor)}
+                            className={cn(
+                              "flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs transition-colors",
+                              avatarForma === opcion.valor
+                                ? "border-foreground bg-background"
+                                : "border-border bg-background/50 hover:bg-background"
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "size-6 border-2 border-muted-foreground",
+                                opcion.clase
+                              )}
+                            />
+                            {opcion.etiqueta}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <span className={labelClase}>Estilo tipográfico</span>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(
+                          [
+                            { valor: "moderna", etiqueta: "Moderna", fuente: undefined },
+                            { valor: "elegante", etiqueta: "Elegante", fuente: "var(--font-elegante)" },
+                            { valor: "creativa", etiqueta: "Creativa", fuente: "var(--font-creativa)" },
+                          ] as const
+                        ).map((opcion) => (
+                          <button
+                            key={opcion.valor}
+                            type="button"
+                            onClick={() => setEstiloTipografia(opcion.valor)}
+                            className={cn(
+                              "flex flex-col items-center gap-1 rounded-xl border-2 px-2 py-2.5 text-xs transition-colors",
+                              estiloTipografia === opcion.valor
+                                ? "border-foreground bg-background"
+                                : "border-border bg-background/50 hover:bg-background"
+                            )}
+                          >
+                            <span
+                              style={opcion.fuente ? { fontFamily: opcion.fuente } : undefined}
+                              className="text-lg font-semibold"
+                            >
+                              Aa
+                            </span>
+                            {opcion.etiqueta}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </Accordion.Panel>
+              </Accordion.Item>
+
+              <Accordion.Item value={1} className={panelClase}>
+                <Accordion.Header>
+                  <Accordion.Trigger className={triggerClase}>
+                    Datos esenciales
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                  </Accordion.Trigger>
+                </Accordion.Header>
+                <Accordion.Panel className={panelInnerClase}>
+                  <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+                    {esEmpresarial ? (
+                      <>
+                        <label className="flex flex-col gap-1.5">
+                          <span className={labelClase}>Nombre de la empresa</span>
+                          <input
+                            required
+                            value={nombreEmpresa}
+                            onChange={(e) => setNombreEmpresa(e.target.value)}
+                            onFocus={() => scrollPreviewTo("nombre")}
+                            placeholder="Ej. Café Aroma"
+                            className={inputClase}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1.5">
+                          <span className={labelClase}>Giro / Razón social</span>
+                          <input
+                            value={giro}
+                            onChange={(e) => setGiro(e.target.value)}
+                            onFocus={() => scrollPreviewTo("nombre")}
+                            placeholder="Ej. Cafetería"
+                            className={inputClase}
+                          />
+                        </label>
+                      </>
+                    ) : (
+                      <>
+                        <label className="flex flex-col gap-1.5">
+                          <span className={labelClase}>Nombre completo</span>
+                          <input
+                            required
+                            value={nombre}
+                            onChange={(e) => setNombre(e.target.value)}
+                            onFocus={() => scrollPreviewTo("nombre")}
+                            placeholder="Ej. María Gómez"
+                            className={inputClase}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1.5">
+                          <span className={labelClase}>Empresa</span>
+                          <input
+                            value={empresa}
+                            onChange={(e) => setEmpresa(e.target.value)}
+                            onFocus={() => scrollPreviewTo("nombre")}
+                            placeholder="Ej. Grupo Aroma"
+                            className={inputClase}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1.5">
+                          <span className={labelClase}>Puesto o profesión</span>
+                          <input
+                            value={puesto}
+                            onChange={(e) => setPuesto(e.target.value)}
+                            onFocus={() => scrollPreviewTo("nombre")}
+                            placeholder="Ej. Abogada"
+                            className={inputClase}
+                          />
+                        </label>
+                      </>
                     )}
-                  />
-                </div>
-              </label>
-            </fieldset>
+                    <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                      ¡No te preocupes! El único campo obligatorio es tu nombre.
+                      Todos los demás datos los puedes agregar, cambiar o
+                      mejorar en el momento que quieras.
+                    </p>
+                  </div>
+                </Accordion.Panel>
+              </Accordion.Item>
 
-            <fieldset className={cn(panelClase, "flex flex-col gap-3")}>
-              <legend className="mb-1 px-1 text-sm font-semibold text-foreground">
-                Productos (opcional)
-              </legend>
-
-              {productos.map((producto, index) => {
-                const imagenMostrada = producto.imagenPreview || producto.imagenUrlExistente
-                return (
-                  <div
-                    key={index}
-                    className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
-                  >
-                    <div className="flex items-center gap-2">
-                      <input
-                        value={producto.titulo}
-                        onChange={(e) => actualizarProductoTitulo(index, e.target.value)}
-                        placeholder="Título del producto"
-                        className={cn(inputClase, "flex-1")}
-                      />
-                      <div className="flex w-32 shrink-0 items-center overflow-hidden rounded-xl border border-border bg-muted/60">
-                        <span className="shrink-0 pl-3 text-xs text-muted-foreground">$</span>
+              <Accordion.Item value={2} className={panelClase}>
+                <Accordion.Header>
+                  <Accordion.Trigger className={triggerClase}>
+                    Identidad visual
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                  </Accordion.Trigger>
+                </Accordion.Header>
+                <Accordion.Panel className={panelInnerClase}>
+                  <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+                        <span className={labelClase}>Color primario</span>
                         <input
-                          value={producto.precio}
-                          onChange={(e) => actualizarProductoPrecio(index, e.target.value)}
-                          placeholder="Precio"
-                          className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
+                          type="color"
+                          value={colorPrimario}
+                          onChange={(e) => setColorPrimario(e.target.value)}
+                          onFocus={() => scrollPreviewTo("banner")}
+                          className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+                        <span className={labelClase}>Color secundario</span>
+                        <input
+                          type="color"
+                          value={colorSecundario}
+                          onChange={(e) => setColorSecundario(e.target.value)}
+                          onFocus={() => scrollPreviewTo("banner")}
+                          className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <span className={labelClase}>
+                        {esEmpresarial ? "Foto o logo" : "Foto de perfil"}
+                      </span>
+                      <div className="flex items-center gap-3">
+                        {avatarMostrado && (
+                          <div className="relative shrink-0">
+                            {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
+                            <img
+                              src={avatarMostrado}
+                              alt="Vista previa de la foto"
+                              className="size-12 rounded-full border border-border object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={quitarAvatar}
+                              aria-label="Quitar foto"
+                              className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          </div>
+                        )}
+                        <input
+                          key={avatarInputKey}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleAvatarChange}
+                          onFocus={() => scrollPreviewTo("avatar")}
+                          className={cn(
+                            inputClase,
+                            "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                          )}
                         />
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => quitarProducto(index)}
-                        aria-label="Quitar producto"
-                        className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
                     </div>
-                    <input
-                      value={producto.descripcion}
-                      onChange={(e) => actualizarProductoDescripcion(index, e.target.value)}
-                      placeholder="Descripción corta (opcional)"
-                      className={inputClase}
-                    />
-                    <input
-                      type="url"
-                      value={producto.enlaceUrl}
-                      onChange={(e) => actualizarProductoEnlace(index, e.target.value)}
-                      placeholder="Enlace para comprar o ver más (opcional)"
-                      className={inputClase}
-                    />
-                    <div className="flex items-center gap-3">
-                      {imagenMostrada && (
-                        <div className="relative shrink-0">
-                          {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
-                          <img
-                            src={imagenMostrada}
-                            alt="Vista previa del producto"
-                            className="size-12 rounded-lg border border-border object-cover"
+
+                    <div className="flex flex-col gap-2">
+                      <span className={labelClase}>Fondo del banner</span>
+                      <div className="grid grid-cols-5 gap-2">
+                        {BANNER_PRESETS.map((preset) => (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => elegirPreset(preset.id)}
+                            onFocus={() => scrollPreviewTo("banner")}
+                            title={preset.nombre}
+                            aria-label={preset.nombre}
+                            className={cn(
+                              "aspect-square rounded-xl border-2 transition-all hover:scale-105",
+                              bannerPresetId === preset.id && !bannerMostrado
+                                ? "border-foreground shadow-md"
+                                : "border-transparent"
+                            )}
+                            style={{ background: preset.background }}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        o subí tu propia imagen
+                      </span>
+                      <div className="flex items-center gap-3">
+                        {bannerMostrado && (
+                          <div className="relative shrink-0">
+                            <div
+                              className="h-12 w-20 rounded-lg border border-border bg-cover bg-center"
+                              style={{ backgroundImage: `url(${bannerMostrado})` }}
+                            />
+                            <button
+                              type="button"
+                              onClick={quitarBanner}
+                              aria-label="Quitar banner"
+                              className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          </div>
+                        )}
+                        <input
+                          key={bannerInputKey}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleBannerFileChange}
+                          onFocus={() => scrollPreviewTo("banner")}
+                          className={cn(
+                            inputClase,
+                            "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </Accordion.Panel>
+              </Accordion.Item>
+
+              <Accordion.Item value={3} className={panelClase}>
+                <Accordion.Header>
+                  <Accordion.Trigger className={triggerClase}>
+                    Canales de contacto
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                  </Accordion.Trigger>
+                </Accordion.Header>
+                <Accordion.Panel className={panelInnerClase}>
+                  <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+                    {esEmpresarial ? (
+                      <>
+                        <label className="flex flex-col gap-1.5">
+                          <span className={labelClase}>Teléfono corporativo</span>
+                          <input
+                            type="tel"
+                            value={telefonoCorporativo}
+                            onChange={(e) => setTelefonoCorporativo(e.target.value)}
+                            onFocus={() => scrollPreviewTo("contacto")}
+                            placeholder="+54 11 5555-5555"
+                            className={inputClase}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1.5">
+                          <span className={labelClase}>Sitio web</span>
+                          <input
+                            value={sitioWeb}
+                            onChange={(e) => setSitioWeb(e.target.value)}
+                            onFocus={() => scrollPreviewTo("contacto")}
+                            placeholder="https://..."
+                            className={inputClase}
+                          />
+                        </label>
+                      </>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <label className="flex flex-col gap-1.5">
+                            <span className={labelClase}>Teléfono celular</span>
+                            <input
+                              type="tel"
+                              value={telefono}
+                              onChange={(e) => setTelefono(e.target.value)}
+                              onFocus={() => scrollPreviewTo("contacto")}
+                              placeholder="+54 11 5555-5555"
+                              className={inputClase}
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1.5">
+                            <span className={labelClase}>WhatsApp</span>
+                            <input
+                              type="tel"
+                              value={whatsapp}
+                              onChange={(e) => setWhatsapp(e.target.value)}
+                              onFocus={() => scrollPreviewTo("contacto")}
+                              placeholder="+54 11 5555-5555"
+                              className={inputClase}
+                            />
+                          </label>
+                        </div>
+                        <label className="flex flex-col gap-1.5">
+                          <span className={labelClase}>Email</span>
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            onFocus={() => scrollPreviewTo("contacto")}
+                            placeholder="tu@correo.com"
+                            className={inputClase}
+                          />
+                        </label>
+                      </>
+                    )}
+                  </div>
+                </Accordion.Panel>
+              </Accordion.Item>
+
+              <Accordion.Item value={4} className={panelClase}>
+                <Accordion.Header>
+                  <Accordion.Trigger className={triggerClase}>
+                    Redes sociales
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                  </Accordion.Trigger>
+                </Accordion.Header>
+                <Accordion.Panel className={panelInnerClase}>
+                  <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+                    {redes.map((red, index) => {
+                      const plataformaCfg = obtenerPlataforma(red.plataforma)
+                      const Icono = SOCIAL_ICONS[red.plataforma]
+                      const sufijo =
+                        red.plataforma === "personalizado"
+                          ? red.url
+                          : red.url.slice(plataformaCfg.prefijo.length)
+
+                      return (
+                        <div
+                          key={index}
+                          className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Icono className="size-4 shrink-0 text-muted-foreground" />
+                            <select
+                              value={red.plataforma}
+                              onChange={(e) =>
+                                actualizarRedPlataforma(index, e.target.value as PlataformaRed)
+                              }
+                              onFocus={() => scrollPreviewTo("redes")}
+                              className={cn(inputClase, "w-auto flex-1")}
+                            >
+                              {PLATAFORMAS.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.nombre}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => quitarRed(index)}
+                              aria-label="Quitar enlace"
+                              className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </div>
+
+                          {red.plataforma === "personalizado" ? (
+                            <div className="flex gap-2">
+                              <input
+                                value={red.label}
+                                onChange={(e) => actualizarRedLabel(index, e.target.value)}
+                                onFocus={() => scrollPreviewTo("redes")}
+                                placeholder="Nombre"
+                                className={cn(inputClase, "w-28 shrink-0")}
+                              />
+                              <input
+                                value={red.url}
+                                onChange={(e) => actualizarRedValor(index, e.target.value)}
+                                onFocus={() => scrollPreviewTo("redes")}
+                                placeholder={plataformaCfg.placeholder}
+                                className={inputClase}
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex items-center overflow-hidden rounded-xl border border-border bg-muted/60">
+                              <span className="shrink-0 pl-3 text-xs text-muted-foreground">
+                                {plataformaCfg.prefijo}
+                              </span>
+                              <input
+                                value={sufijo}
+                                onChange={(e) => actualizarRedValor(index, e.target.value)}
+                                onFocus={() => scrollPreviewTo("redes")}
+                                placeholder={plataformaCfg.placeholder}
+                                className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+
+                    {redes.length < 5 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={agregarRed}
+                        className="self-start"
+                      >
+                        <Plus className="size-3.5" /> Agregar red
+                      </Button>
+                    )}
+                  </div>
+                </Accordion.Panel>
+              </Accordion.Item>
+
+              <Accordion.Item value={5} className={panelClase}>
+                <Accordion.Header>
+                  <Accordion.Trigger className={triggerClase}>
+                    Ubicación y negocio
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                  </Accordion.Trigger>
+                </Accordion.Header>
+                <Accordion.Panel className={panelInnerClase}>
+                  <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <label className="flex flex-col gap-1.5">
+                        <span className={labelClase}>Dirección física</span>
+                        <input
+                          value={direccion}
+                          onChange={(e) => setDireccion(e.target.value)}
+                          onFocus={() => scrollPreviewTo("ubicacion")}
+                          placeholder="Av. Siempre Viva 742"
+                          className={inputClase}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5">
+                        <span className={labelClase}>Enlace de Google Maps</span>
+                        <input
+                          value={direccionMapsUrl}
+                          onChange={(e) => setDireccionMapsUrl(e.target.value)}
+                          onFocus={() => scrollPreviewTo("ubicacion")}
+                          placeholder="https://maps.google.com/..."
+                          className={inputClase}
+                        />
+                      </label>
+                    </div>
+                    {esEmpresarial && (
+                      <label className="flex flex-col gap-1.5">
+                        <span className={labelClase}>Horarios de atención</span>
+                        <input
+                          value={horarios}
+                          onChange={(e) => setHorarios(e.target.value)}
+                          onFocus={() => scrollPreviewTo("ubicacion")}
+                          placeholder="Lun a Vie 9 a 18hs"
+                          className={inputClase}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </Accordion.Panel>
+              </Accordion.Item>
+
+              <Accordion.Item value={6} className={panelClase}>
+                <Accordion.Header>
+                  <Accordion.Trigger className={triggerClase}>
+                    Contenido multimedia
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                  </Accordion.Trigger>
+                </Accordion.Header>
+                <Accordion.Panel className={panelInnerClase}>
+                  <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+                    <label className="flex flex-col gap-1.5">
+                      <span className={labelClase}>Video de YouTube (opcional)</span>
+                      <input
+                        value={videoUrl}
+                        onChange={(e) => setVideoUrl(e.target.value)}
+                        onFocus={() => scrollPreviewTo("video")}
+                        placeholder="https://www.youtube.com/watch?v=..."
+                        className={inputClase}
+                      />
+                    </label>
+                  </div>
+                </Accordion.Panel>
+              </Accordion.Item>
+
+              <Accordion.Item value={7} className={panelClase}>
+                <Accordion.Header>
+                  <Accordion.Trigger className={triggerClase}>
+                    Servicios
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                  </Accordion.Trigger>
+                </Accordion.Header>
+                <Accordion.Panel className={panelInnerClase}>
+                  <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+                    <label className="flex flex-col gap-1.5">
+                      <span className={labelClase}>Descripción general</span>
+                      <textarea
+                        value={descripcionServicios}
+                        onChange={(e) => setDescripcionServicios(e.target.value)}
+                        onFocus={() => scrollPreviewTo("servicios")}
+                        placeholder="Contá brevemente qué ofrecés"
+                        rows={2}
+                        className={inputClase}
+                      />
+                    </label>
+
+                    {servicios.map((servicio, index) => (
+                      <div
+                        key={index}
+                        className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={servicio.titulo}
+                            onChange={(e) => actualizarServicioTitulo(index, e.target.value)}
+                            onFocus={() => scrollPreviewTo("servicios")}
+                            placeholder="Título del servicio"
+                            className={cn(inputClase, "flex-1")}
                           />
                           <button
                             type="button"
-                            onClick={() => quitarProductoImagen(index)}
-                            aria-label="Quitar imagen del producto"
-                            className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+                            onClick={() => quitarServicio(index)}
+                            aria-label="Quitar servicio"
+                            className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
                           >
-                            <X className="size-3" />
+                            <Trash2 className="size-4" />
                           </button>
                         </div>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => handleProductoImagenChange(index, e)}
-                        className={cn(
-                          inputClase,
-                          "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-                        )}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-
-              {productos.length < 12 && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={agregarProducto}
-                  className="self-start"
-                >
-                  <Plus className="size-3.5" /> Agregar producto
-                </Button>
-              )}
-            </fieldset>
-
-            <fieldset className={cn(panelClase, "flex flex-col gap-3")}>
-              <legend className="mb-1 px-1 text-sm font-semibold text-foreground">
-                {esEmpresarial ? "Redes de la empresa" : "Redes o enlaces"}
-              </legend>
-
-              {redes.map((red, index) => {
-                const plataformaCfg = obtenerPlataforma(red.plataforma)
-                const Icono = SOCIAL_ICONS[red.plataforma]
-                const sufijo =
-                  red.plataforma === "personalizado"
-                    ? red.url
-                    : red.url.slice(plataformaCfg.prefijo.length)
-
-                return (
-                  <div
-                    key={index}
-                    className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Icono className="size-4 shrink-0 text-muted-foreground" />
-                      <select
-                        value={red.plataforma}
-                        onChange={(e) =>
-                          actualizarRedPlataforma(index, e.target.value as PlataformaRed)
-                        }
-                        className={cn(inputClase, "w-auto flex-1")}
-                      >
-                        {PLATAFORMAS.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.nombre}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => quitarRed(index)}
-                        aria-label="Quitar enlace"
-                        className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
-
-                    {red.plataforma === "personalizado" ? (
-                      <div className="flex gap-2">
                         <input
-                          value={red.label}
-                          onChange={(e) => actualizarRedLabel(index, e.target.value)}
-                          placeholder="Nombre"
-                          className={cn(inputClase, "w-28 shrink-0")}
-                        />
-                        <input
-                          value={red.url}
-                          onChange={(e) => actualizarRedValor(index, e.target.value)}
-                          placeholder={plataformaCfg.placeholder}
+                          value={servicio.descripcion ?? ""}
+                          onChange={(e) => actualizarServicioDescripcion(index, e.target.value)}
+                          onFocus={() => scrollPreviewTo("servicios")}
+                          placeholder="Descripción corta"
                           className={inputClase}
                         />
                       </div>
-                    ) : (
-                      <div className="flex items-center overflow-hidden rounded-xl border border-border bg-muted/60">
-                        <span className="shrink-0 pl-3 text-xs text-muted-foreground">
-                          {plataformaCfg.prefijo}
-                        </span>
+                    ))}
+
+                    {servicios.length < 8 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={agregarServicio}
+                        className="self-start"
+                      >
+                        <Plus className="size-3.5" /> Agregar servicio
+                      </Button>
+                    )}
+
+                    <label className="flex flex-col gap-1.5">
+                      <span className={labelClase}>Folleto o presentación (PDF)</span>
+                      <div className="flex items-center gap-3">
+                        {(brochureUrlExistente || brochureFile) && (
+                          <div className="flex shrink-0 items-center gap-2 rounded-xl border border-border bg-background/50 px-3 py-2">
+                            <FileText className="size-4 text-muted-foreground" />
+                            <span className="max-w-32 truncate text-xs text-foreground">
+                              {brochureFile?.name || "Folleto actual"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={quitarBrochure}
+                              aria-label="Quitar folleto"
+                              className="shrink-0 text-muted-foreground hover:text-foreground"
+                            >
+                              <X className="size-3.5" />
+                            </button>
+                          </div>
+                        )}
                         <input
-                          value={sufijo}
-                          onChange={(e) => actualizarRedValor(index, e.target.value)}
-                          placeholder={plataformaCfg.placeholder}
-                          className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
+                          key={brochureInputKey}
+                          type="file"
+                          accept="application/pdf"
+                          onChange={handleBrochureChange}
+                          onFocus={() => scrollPreviewTo("servicios")}
+                          className={cn(
+                            inputClase,
+                            "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                          )}
                         />
                       </div>
+                    </label>
+                  </div>
+                </Accordion.Panel>
+              </Accordion.Item>
+
+              <Accordion.Item value={8} className={panelClase}>
+                <Accordion.Header>
+                  <Accordion.Trigger className={triggerClase}>
+                    Productos
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                  </Accordion.Trigger>
+                </Accordion.Header>
+                <Accordion.Panel className={panelInnerClase}>
+                  <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+                    {productos.map((producto, index) => {
+                      const imagenMostrada = producto.imagenPreview || producto.imagenUrlExistente
+                      return (
+                        <div
+                          key={index}
+                          className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              value={producto.titulo}
+                              onChange={(e) => actualizarProductoTitulo(index, e.target.value)}
+                              onFocus={() => scrollPreviewTo("productos")}
+                              placeholder="Título del producto"
+                              className={cn(inputClase, "flex-1")}
+                            />
+                            <div className="flex w-32 shrink-0 items-center overflow-hidden rounded-xl border border-border bg-muted/60">
+                              <span className="shrink-0 pl-3 text-xs text-muted-foreground">$</span>
+                              <input
+                                value={producto.precio}
+                                onChange={(e) => actualizarProductoPrecio(index, e.target.value)}
+                                onFocus={() => scrollPreviewTo("productos")}
+                                placeholder="Precio"
+                                className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => quitarProducto(index)}
+                              aria-label="Quitar producto"
+                              className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </div>
+                          <input
+                            value={producto.descripcion}
+                            onChange={(e) => actualizarProductoDescripcion(index, e.target.value)}
+                            onFocus={() => scrollPreviewTo("productos")}
+                            placeholder="Descripción corta (opcional)"
+                            className={inputClase}
+                          />
+                          <input
+                            type="url"
+                            value={producto.enlaceUrl}
+                            onChange={(e) => actualizarProductoEnlace(index, e.target.value)}
+                            onFocus={() => scrollPreviewTo("productos")}
+                            placeholder="Enlace para comprar o ver más (opcional)"
+                            className={inputClase}
+                          />
+                          <div className="flex items-center gap-3">
+                            {imagenMostrada && (
+                              <div className="relative shrink-0">
+                                {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
+                                <img
+                                  src={imagenMostrada}
+                                  alt="Vista previa del producto"
+                                  className="size-12 rounded-lg border border-border object-cover"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => quitarProductoImagen(index)}
+                                  aria-label="Quitar imagen del producto"
+                                  className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+                                >
+                                  <X className="size-3" />
+                                </button>
+                              </div>
+                            )}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleProductoImagenChange(index, e)}
+                              onFocus={() => scrollPreviewTo("productos")}
+                              className={cn(
+                                inputClase,
+                                "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                              )}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    {productos.length < 12 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={agregarProducto}
+                        className="self-start"
+                      >
+                        <Plus className="size-3.5" /> Agregar producto
+                      </Button>
                     )}
                   </div>
-                )
-              })}
-
-              {redes.length < 5 && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={agregarRed}
-                  className="self-start"
-                >
-                  <Plus className="size-3.5" /> Agregar red
-                </Button>
-              )}
-            </fieldset>
-
-            <fieldset className={cn(panelClase, "flex flex-col gap-4")}>
-              <legend className="mb-1 px-1 text-sm font-semibold text-foreground">
-                Identidad visual
-              </legend>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
-                  <span className={labelClase}>Color primario</span>
-                  <input
-                    type="color"
-                    value={colorPrimario}
-                    onChange={(e) => setColorPrimario(e.target.value)}
-                    className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-                  />
-                </label>
-                <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
-                  <span className={labelClase}>Color secundario</span>
-                  <input
-                    type="color"
-                    value={colorSecundario}
-                    onChange={(e) => setColorSecundario(e.target.value)}
-                    className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-                  />
-                </label>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <span className={labelClase}>
-                  {esEmpresarial ? "Foto o logo" : "Foto de perfil"}
-                </span>
-                <div className="flex items-center gap-3">
-                  {avatarMostrado && (
-                    <div className="relative shrink-0">
-                      {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
-                      <img
-                        src={avatarMostrado}
-                        alt="Vista previa de la foto"
-                        className="size-12 rounded-full border border-border object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={quitarAvatar}
-                        aria-label="Quitar foto"
-                        className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
-                      >
-                        <X className="size-3" />
-                      </button>
-                    </div>
-                  )}
-                  <input
-                    key={avatarInputKey}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatarChange}
-                    className={cn(
-                      inputClase,
-                      "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-                    )}
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <span className={labelClase}>Fondo del banner</span>
-                <div className="grid grid-cols-5 gap-2">
-                  {BANNER_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => elegirPreset(preset.id)}
-                      title={preset.nombre}
-                      aria-label={preset.nombre}
-                      className={cn(
-                        "aspect-square rounded-xl border-2 transition-all hover:scale-105",
-                        bannerPresetId === preset.id && !bannerMostrado
-                          ? "border-foreground shadow-md"
-                          : "border-transparent"
-                      )}
-                      style={{ background: preset.background }}
-                    />
-                  ))}
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  o subí tu propia imagen
-                </span>
-                <div className="flex items-center gap-3">
-                  {bannerMostrado && (
-                    <div className="relative shrink-0">
-                      <div
-                        className="h-12 w-20 rounded-lg border border-border bg-cover bg-center"
-                        style={{ backgroundImage: `url(${bannerMostrado})` }}
-                      />
-                      <button
-                        type="button"
-                        onClick={quitarBanner}
-                        aria-label="Quitar banner"
-                        className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
-                      >
-                        <X className="size-3" />
-                      </button>
-                    </div>
-                  )}
-                  <input
-                    key={bannerInputKey}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleBannerFileChange}
-                    className={cn(
-                      inputClase,
-                      "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-                    )}
-                  />
-                </div>
-              </div>
-            </fieldset>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion.Root>
 
             {!esEdicion && (
               <fieldset className={cn(panelClase, "flex flex-col gap-3")}>
@@ -1675,6 +1955,12 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
           </Dialog.Popup>
         </Dialog.Portal>
       </Dialog.Root>
+
+      <RecortarAvatar
+        archivo={avatarPendiente}
+        onCancelar={handleRecorteCancelado}
+        onConfirmar={handleRecorteConfirmado}
+      />
     </div>
   )
 }

@@ -17,6 +17,7 @@ import {
 import * as React from "react"
 
 import { obtenerBannerPreset } from "@/lib/banner-presets"
+import { obtenerColorContraste } from "@/lib/contraste"
 import { obtenerPlataforma } from "@/lib/redes"
 import { cn } from "@/lib/utils"
 import { obtenerYoutubeEmbedUrl } from "@/lib/youtube"
@@ -92,6 +93,7 @@ export function TarjetaCard({
   const esEmpresarial = tipo === "empresarial"
   const {
     nombre,
+    empresa,
     puesto,
     telefono,
     whatsapp,
@@ -116,17 +118,41 @@ export function TarjetaCard({
     bannerUrl,
     bannerPreset,
     brochureUrl,
+    temaModo,
+    avatarForma,
+    estiloTipografia,
   } = identidadVisual
-  const [mostrarTodosProductos, setMostrarTodosProductos] = React.useState(false)
+  const [productosAbiertos, setProductosAbiertos] = React.useState(false)
+  const [serviciosAbiertos, setServiciosAbiertos] = React.useState<Set<number>>(
+    () => new Set()
+  )
+
+  function toggleServicio(index: number) {
+    setServiciosAbiertos((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(index)) siguiente.delete(index)
+      else siguiente.add(index)
+      return siguiente
+    })
+  }
 
   const nombrePrincipal = esEmpresarial ? nombreEmpresa : nombre
   const subtitulo = esEmpresarial ? giro : puesto
   const telefonoPrincipal = esEmpresarial ? telefonoCorporativo : telefono
   const videoEmbedUrl = obtenerYoutubeEmbedUrl(videoUrl)
-  const PRODUCTOS_VISIBLES = 3
-  const productosAMostrar = mostrarTodosProductos
-    ? productos
-    : productos?.slice(0, PRODUCTOS_VISIBLES)
+  const esOscuro = temaModo === "oscuro"
+  const AVATAR_FORMA_CLASE: Record<string, string> = {
+    circulo: "rounded-full",
+    suave: "rounded-[2rem]",
+    cuadrado: "rounded-xl",
+  }
+  const avatarFormaClase = AVATAR_FORMA_CLASE[avatarForma ?? "circulo"]
+  const fuenteEncabezado =
+    estiloTipografia === "elegante"
+      ? "var(--font-elegante)"
+      : estiloTipografia === "creativa"
+        ? "var(--font-creativa)"
+        : undefined
 
   const preset = obtenerBannerPreset(bannerPreset)
   const gradienteInline =
@@ -134,6 +160,13 @@ export function TarjetaCard({
       ? `linear-gradient(135deg, ${colorPrimario}, ${colorSecundario})`
       : undefined
   const fondoBanner = preset?.background ?? gradienteInline
+  const colorTextoCta = colorPrimario ? obtenerColorContraste(colorPrimario) : undefined
+  const estiloCta = colorPrimario
+    ? { backgroundColor: colorPrimario, color: colorTextoCta }
+    : undefined
+  const estiloBadge = colorSecundario
+    ? { backgroundColor: `${colorSecundario}1a`, color: colorSecundario }
+    : undefined
 
   // Colores en HEX/RGBA (no oklch/color-mix) para que html2canvas pueda exportar el PDF
   const accionClase =
@@ -175,7 +208,7 @@ export function TarjetaCard({
   }
 
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className={cn("flex flex-col items-center gap-4", esOscuro && "dark")}>
       <article
         ref={cardRef}
         className={cn(
@@ -183,7 +216,7 @@ export function TarjetaCard({
           className
         )}
       >
-        <div className="relative h-48 w-full overflow-hidden">
+        <div data-campo="banner" className="relative h-48 w-full overflow-hidden">
           {bannerUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- URL de Cloudinary o externa
             <img
@@ -204,7 +237,13 @@ export function TarjetaCard({
 
         <div className="relative -mt-14 rounded-t-[2rem] border-t border-[rgba(255,255,255,0.5)] bg-[rgba(255,255,255,0.85)] px-6 pb-7 pt-3 text-center shadow-[0_-8px_30px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(24,24,27,0.85)]">
           <div className="-mt-14 flex justify-center">
-            <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-full text-xl font-semibold text-[#71717a] shadow-lg ring-4 ring-white dark:text-[#d4d4d8] dark:ring-[#18181b]">
+            <div
+              data-campo="avatar"
+              className={cn(
+                "flex size-24 shrink-0 items-center justify-center overflow-hidden text-xl font-semibold text-[#71717a] shadow-lg ring-4 ring-white dark:text-[#d4d4d8] dark:ring-[#18181b]",
+                avatarFormaClase
+              )}
+            >
               {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element -- URL de Cloudinary o externa
                 <img
@@ -220,7 +259,14 @@ export function TarjetaCard({
             </div>
           </div>
 
-          <span className="mt-3 inline-flex items-center gap-1 rounded-full bg-[rgba(24,24,27,0.05)] px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-[#71717a] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#a1a1aa]">
+          <span
+            style={estiloBadge}
+            className={cn(
+              "mt-3 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide",
+              !estiloBadge &&
+                "bg-[rgba(24,24,27,0.05)] text-[#71717a] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#a1a1aa]"
+            )}
+          >
             {esEmpresarial ? (
               <Building2 className="size-3" />
             ) : (
@@ -229,15 +275,22 @@ export function TarjetaCard({
             {ETIQUETA_TIPO[tipo]}
           </span>
 
-          <h1 className="mt-2 text-xl font-semibold text-balance text-[#18181b] dark:text-[#fafafa]">
+          <h1
+            data-campo="nombre"
+            style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+            className="mt-2 text-xl font-semibold text-balance text-[#18181b] dark:text-[#fafafa]"
+          >
             {nombrePrincipal?.trim() || "Sin nombre"}
           </h1>
+          {empresa?.trim() && (
+            <p className="text-sm font-medium text-[#3f3f46] dark:text-[#d4d4d8]">{empresa}</p>
+          )}
           {subtitulo?.trim() && (
-            <p className="text-sm text-[#71717a] dark:text-[#a1a1aa]">{subtitulo}</p>
+            <p className="text-xs text-[#71717a] dark:text-[#a1a1aa]">{subtitulo}</p>
           )}
 
           {(direccion?.trim() || (esEmpresarial && horarios?.trim())) && (
-            <div className="mt-3 flex flex-col items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]">
+            <div data-campo="ubicacion" className="mt-3 flex flex-col items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]">
               {direccion?.trim() && (
                 <span className="inline-flex items-center gap-1">
                   <MapPin className="size-3.5" /> {direccion}
@@ -261,12 +314,13 @@ export function TarjetaCard({
           ) && (
             <div className="mt-5 flex w-full flex-wrap items-center justify-center gap-2">
               {telefonoPrincipal && (
-                <a href={`tel:${telefonoPrincipal}`} className={accionClase}>
+                <a data-campo="contacto" href={`tel:${telefonoPrincipal}`} className={accionClase}>
                   <Phone className="size-3.5" /> Llamar
                 </a>
               )}
               {!esEmpresarial && whatsapp && (
                 <a
+                  data-campo="contacto"
                   href={`https://wa.me/${soloDigitos(whatsapp)}`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -276,12 +330,13 @@ export function TarjetaCard({
                 </a>
               )}
               {email && (
-                <a href={`mailto:${email}`} className={accionClase}>
+                <a data-campo="contacto" href={`mailto:${email}`} className={accionClase}>
                   <Mail className="size-3.5" /> Email
                 </a>
               )}
               {esEmpresarial && sitioWeb && (
                 <a
+                  data-campo="contacto"
                   href={sitioWeb}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -292,6 +347,7 @@ export function TarjetaCard({
               )}
               {direccionMapsUrl && (
                 <a
+                  data-campo="ubicacion"
                   href={direccionMapsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -310,6 +366,7 @@ export function TarjetaCard({
                 return (
                   <a
                     key={red.url}
+                    data-campo="redes"
                     href={red.url}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -323,7 +380,7 @@ export function TarjetaCard({
           )}
 
           {videoEmbedUrl && (
-            <div className="mt-5 aspect-video w-full overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.1)]">
+            <div data-campo="video" className="mt-5 aspect-video w-full overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.1)]">
               <iframe
                 src={videoEmbedUrl}
                 title={`Video de ${nombrePrincipal || "la tarjeta"}`}
@@ -335,8 +392,11 @@ export function TarjetaCard({
           )}
 
           {(descripcionServicios?.trim() || servicios?.length || brochureUrl) && (
-            <div className="mt-5 w-full text-left">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]">
+            <div data-campo="servicios" className="mt-5 w-full text-left">
+              <h2
+                style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+                className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
+              >
                 Servicios
               </h2>
               {descripcionServicios?.trim() && (
@@ -346,21 +406,39 @@ export function TarjetaCard({
               )}
               {Boolean(servicios?.length) && (
                 <div className="mt-3 flex flex-col gap-2">
-                  {servicios?.map((servicio, index) => (
-                    <div
-                      key={index}
-                      className="rounded-xl border border-[rgba(0,0,0,0.05)] bg-[rgba(24,24,27,0.03)] p-3 dark:border-[rgba(255,255,255,0.08)] dark:bg-[rgba(255,255,255,0.05)]"
-                    >
-                      <p className="text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
-                        {servicio.titulo}
-                      </p>
-                      {servicio.descripcion?.trim() && (
-                        <p className="mt-0.5 text-xs text-[#71717a] dark:text-[#a1a1aa]">
-                          {servicio.descripcion}
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                  {servicios?.map((servicio, index) => {
+                    const abierto = serviciosAbiertos.has(index)
+                    const tieneDescripcion = Boolean(servicio.descripcion?.trim())
+                    return (
+                      <div
+                        key={index}
+                        className="overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => tieneDescripcion && toggleServicio(index)}
+                          className="flex w-full items-center justify-between gap-2 bg-[rgba(24,24,27,0.03)] p-3 text-left dark:bg-[rgba(255,255,255,0.05)]"
+                        >
+                          <span className="flex items-center gap-1.5 text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
+                            {servicio.titulo}
+                          </span>
+                          {tieneDescripcion && (
+                            <ChevronDown
+                              className={cn(
+                                "size-3.5 shrink-0 text-[#71717a] transition-transform dark:text-[#a1a1aa]",
+                                abierto && "rotate-180"
+                              )}
+                            />
+                          )}
+                        </button>
+                        {abierto && tieneDescripcion && (
+                          <p className="border-t border-[rgba(0,0,0,0.05)] p-3 text-xs text-[#71717a] dark:border-[rgba(255,255,255,0.08)] dark:text-[#a1a1aa]">
+                            {servicio.descripcion}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
               {brochureUrl && (
@@ -368,7 +446,11 @@ export function TarjetaCard({
                   href={brochureUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-foreground px-4 py-2.5 text-xs font-semibold text-background shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0"
+                  style={estiloCta}
+                  className={cn(
+                    "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
+                    !estiloCta && "bg-foreground text-background"
+                  )}
                 >
                   <FileText className="size-3.5" /> Descargar folleto (PDF)
                 </a>
@@ -377,70 +459,70 @@ export function TarjetaCard({
           )}
 
           {Boolean(productos?.length) && (
-            <div className="mt-5 w-full text-left">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]">
-                Productos
-              </h2>
-              <div className="mt-3 grid grid-cols-3 gap-2.5">
-                {productosAMostrar?.map((producto, index) => (
-                  <div
-                    key={index}
-                    className="flex flex-col overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
-                  >
-                    {producto.imagenUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- URL de Cloudinary
-                      <img
-                        src={producto.imagenUrl}
-                        alt={producto.titulo}
-                        className="aspect-square w-full object-cover"
-                      />
-                    ) : (
-                      <div className="aspect-square w-full bg-[#f4f4f5] dark:bg-[#27272a]" />
-                    )}
-                    <div className="px-1.5 py-1.5 text-center">
-                      <p className="truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]">
-                        {producto.titulo}
-                      </p>
-                      {producto.descripcion?.trim() && (
-                        <p className="mt-0.5 line-clamp-2 text-[10px] text-[#71717a] dark:text-[#a1a1aa]">
-                          {producto.descripcion}
-                        </p>
-                      )}
-                      {producto.precio?.trim() && (
-                        <p className="mt-0.5 text-[10px] font-semibold text-[#18181b] dark:text-[#fafafa]">
-                          ${producto.precio}
-                        </p>
-                      )}
-                      {producto.enlaceUrl?.trim() && (
-                        <a
-                          href={producto.enlaceUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-[#3f3f46] underline underline-offset-2 dark:text-[#d4d4d8]"
-                        >
-                          Ver producto <ExternalLink className="size-2.5" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {productos && productos.length > PRODUCTOS_VISIBLES && (
-                <button
-                  type="button"
-                  onClick={() => setMostrarTodosProductos((valor) => !valor)}
-                  className="mt-3 inline-flex w-full items-center justify-center gap-1 text-xs font-medium text-[#3f3f46] hover:underline dark:text-[#d4d4d8]"
+            <div data-campo="productos" className="mt-5 w-full text-left">
+              <button
+                type="button"
+                onClick={() => setProductosAbiertos((valor) => !valor)}
+                className="flex w-full items-center justify-between gap-2"
+              >
+                <h2
+                  style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+                  className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
                 >
-                  {mostrarTodosProductos
-                    ? "Ver menos"
-                    : `Ver más productos (${productos.length - PRODUCTOS_VISIBLES})`}
-                  <ChevronDown
-                    className={cn(
-                      "size-3.5 transition-transform",
-                      mostrarTodosProductos && "rotate-180"
-                    )}
-                  />
-                </button>
+                  Nuestros Productos ({productos?.length ?? 0})
+                </h2>
+                <ChevronDown
+                  className={cn(
+                    "size-3.5 shrink-0 text-[#71717a] transition-transform dark:text-[#a1a1aa]",
+                    productosAbiertos && "rotate-180"
+                  )}
+                />
+              </button>
+              {productosAbiertos && (
+                <div className="mt-3 grid grid-cols-3 gap-2.5">
+                  {productos?.map((producto, index) => (
+                    <div
+                      key={index}
+                      className="flex flex-col overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
+                    >
+                      {producto.imagenUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- URL de Cloudinary
+                        <img
+                          src={producto.imagenUrl}
+                          alt={producto.titulo}
+                          className="aspect-square w-full object-cover"
+                        />
+                      ) : (
+                        <div className="aspect-square w-full bg-[#f4f4f5] dark:bg-[#27272a]" />
+                      )}
+                      <div className="px-1.5 py-1.5 text-center">
+                        <p className="truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]">
+                          {producto.titulo}
+                        </p>
+                        {producto.descripcion?.trim() && (
+                          <p className="mt-0.5 line-clamp-2 text-[10px] text-[#71717a] dark:text-[#a1a1aa]">
+                            {producto.descripcion}
+                          </p>
+                        )}
+                        {producto.precio?.trim() && (
+                          <p className="mt-0.5 text-[10px] font-semibold text-[#18181b] dark:text-[#fafafa]">
+                            ${producto.precio}
+                          </p>
+                        )}
+                        {producto.enlaceUrl?.trim() && (
+                          <a
+                            href={producto.enlaceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-[#3f3f46] underline underline-offset-2 dark:text-[#d4d4d8]"
+                          >
+                            Ver producto <ExternalLink className="size-2.5" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -452,7 +534,11 @@ export function TarjetaCard({
           <button
             type="button"
             onClick={handleGuardarContacto}
-            className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2.5 text-xs font-semibold text-background shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0"
+            style={estiloCta}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
+              !estiloCta && "bg-foreground text-background"
+            )}
           >
             <IdCard className="size-3.5" /> Guardar contacto
           </button>

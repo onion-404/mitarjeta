@@ -21,6 +21,10 @@ export interface Servicio {
   descripcion?: string
 }
 
+export type TemaModo = "claro" | "oscuro"
+export type AvatarForma = "circulo" | "suave" | "cuadrado"
+export type EstiloTipografia = "moderna" | "elegante" | "creativa"
+
 export interface Producto {
   titulo: string
   descripcion?: string
@@ -32,6 +36,7 @@ export interface Producto {
 export interface DatosContacto {
   // Personal
   nombre?: string
+  empresa?: string
   puesto?: string
   telefono?: string
   whatsapp?: string
@@ -59,6 +64,9 @@ export interface IdentidadVisual {
   bannerUrl?: string
   bannerPreset?: string
   brochureUrl?: string
+  temaModo?: TemaModo
+  avatarForma?: AvatarForma
+  estiloTipografia?: EstiloTipografia
 }
 
 export type MetodoPago = "mercado_pago" | "transferencia"
