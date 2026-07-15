@@ -3,6 +3,7 @@
 import { Accordion } from "@base-ui/react/accordion"
 import { Dialog } from "@base-ui/react/dialog"
 import {
+  AlertTriangle,
   ArrowRight,
   Building2,
   Check,
@@ -73,7 +74,7 @@ const labelClase = "text-sm font-medium text-foreground"
 const panelClase =
   "rounded-3xl border border-black/5 bg-white/70 shadow-[0_10px_40px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/50 overflow-hidden"
 const triggerClase =
-  "group flex w-full items-center justify-between gap-2 px-5 py-4 text-left text-sm font-semibold text-foreground transition-colors data-panel-open:bg-[var(--acento-bg)]"
+  "group flex w-full items-center justify-between gap-2 px-5 py-4 text-left text-sm font-semibold text-foreground transition-colors duration-200 ease-out data-panel-open:bg-[var(--acento-bg)]"
 const panelInnerClase =
   "h-[var(--accordion-panel-height)] overflow-hidden transition-[height] duration-200 ease-out data-ending-style:h-0 data-starting-style:h-0"
 
@@ -97,6 +98,31 @@ function redesValidas(redes: RedSocial[]) {
     if (red.plataforma === "personalizado") return red.url.trim().length > 0
     return red.url.trim().length > obtenerPlataforma(red.plataforma).prefijo.length
   })
+}
+
+const TAMANO_MAXIMO_ARCHIVO_MB = 5
+const TAMANO_MAXIMO_ARCHIVO = TAMANO_MAXIMO_ARCHIVO_MB * 1024 * 1024
+
+/** Valida tipo y peso antes de aceptar una imagen (avatar, banner o producto). */
+function validarImagen(file: File): string | null {
+  if (!file.type.startsWith("image/")) {
+    return `"${file.name}" no es una imagen válida.`
+  }
+  if (file.size > TAMANO_MAXIMO_ARCHIVO) {
+    return `"${file.name}" pesa más de ${TAMANO_MAXIMO_ARCHIVO_MB}MB. Elegí una imagen más liviana para que tu tarjeta cargue rápido.`
+  }
+  return null
+}
+
+/** Valida tipo y peso antes de aceptar el folleto PDF. */
+function validarPdf(file: File): string | null {
+  if (file.type !== "application/pdf") {
+    return `"${file.name}" debe ser un PDF.`
+  }
+  if (file.size > TAMANO_MAXIMO_ARCHIVO) {
+    return `"${file.name}" pesa más de ${TAMANO_MAXIMO_ARCHIVO_MB}MB. Elegí un PDF más liviano.`
+  }
+  return null
 }
 
 interface TarjetaFormProps {
@@ -213,6 +239,34 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
   const [saving, setSaving] = React.useState(false)
   const [saveError, setSaveError] = React.useState<string | null>(null)
   const [guardadoOk, setGuardadoOk] = React.useState(false)
+  /** Breve estado visual (check verde) que se muestra en el botón justo
+   * después de guardar con éxito, antes de redirigir o abrir el modal. */
+  const [guardadoExito, setGuardadoExito] = React.useState(false)
+  const [toast, setToast] = React.useState<{ tipo: "advertencia" | "error"; mensaje: string } | null>(
+    null
+  )
+
+  function mostrarToast(tipo: "advertencia" | "error", mensaje: string) {
+    setToast({ tipo, mensaje })
+    window.setTimeout(() => {
+      setToast((actual) => (actual?.mensaje === mensaje ? null : actual))
+    }, 5000)
+  }
+
+  function mostrarErrorArchivo(mensaje: string) {
+    mostrarToast("advertencia", mensaje)
+  }
+
+  // Enlace personalizado (opcional, solo al crear)
+  const [slugPersonalizado, setSlugPersonalizado] = React.useState("")
+  // Último slug efectivamente consultado y su disponibilidad. `verificandoSlug`
+  // y `slugDisponible` se derivan de esto comparando contra el valor actual
+  // del input, en vez de guardarse aparte (evita setState síncrono en el
+  // efecto de chequeo).
+  const [resultadoSlug, setResultadoSlug] = React.useState<{
+    slug: string
+    disponible: boolean
+  } | null>(null)
   const [tarjetaCreada, setTarjetaCreada] = React.useState<{
     id: string
     slug: string
@@ -239,6 +293,29 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
     if (esEdicion) return
     getConfiguracionActiva().then(setConfiguracion)
   }, [esEdicion])
+
+  // Chequeo de disponibilidad del enlace personalizado, con debounce de 500ms.
+  React.useEffect(() => {
+    if (esEdicion) return
+
+    const slug = slugPersonalizado.trim()
+    if (!slug) return
+
+    const timeoutId = window.setTimeout(async () => {
+      const { data, error } = await supabase
+        .from("tarjetas")
+        .select("slug")
+        .eq("slug", slug)
+        .maybeSingle()
+
+      // Si falló la consulta (red, etc.) no bloqueamos: la unicidad real se
+      // valida igual al guardar, atrapando el error 23505 de Postgres.
+      if (error) return
+      setResultadoSlug({ slug, disponible: !data })
+    }, 500)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [slugPersonalizado, esEdicion])
 
   React.useEffect(() => {
     if (esEdicion) return
@@ -362,6 +439,12 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
   function handleBrochureChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
+    const error = validarPdf(file)
+    if (error) {
+      mostrarErrorArchivo(error)
+      event.target.value = ""
+      return
+    }
     setBrochureFile(file)
     setBrochureUrlExistente("")
   }
@@ -423,6 +506,12 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
   ) {
     const file = event.target.files?.[0]
     if (!file) return
+    const error = validarImagen(file)
+    if (error) {
+      mostrarErrorArchivo(error)
+      event.target.value = ""
+      return
+    }
     setProductos((prev) =>
       prev.map((producto, i) => {
         if (i !== index) return producto
@@ -458,6 +547,12 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
   function handleAvatarChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
+    const error = validarImagen(file)
+    if (error) {
+      mostrarErrorArchivo(error)
+      event.target.value = ""
+      return
+    }
     setAvatarPendiente(file)
   }
 
@@ -491,6 +586,12 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
   function handleBannerFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
+    const error = validarImagen(file)
+    if (error) {
+      mostrarErrorArchivo(error)
+      event.target.value = ""
+      return
+    }
     setBannerFile(file)
     setBannerPresetId(undefined)
     setBannerUrlExistente("")
@@ -541,80 +642,117 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
     setSaving(true)
     setSaveError(null)
     setGuardadoOk(false)
+    setGuardadoExito(false)
 
     let avatarUrl: string | undefined = avatarUrlExistente || undefined
+    let bannerUrl: string | undefined = bannerUrlExistente || undefined
+    let brochureUrl: string | undefined = brochureUrlExistente || undefined
+    const imagenesProductoPorIndice = new Map<number, string>()
+
+    type TareaSubida =
+      | { tipo: "avatar"; etiqueta: string; promesa: Promise<string | null> }
+      | { tipo: "banner"; etiqueta: string; promesa: Promise<string | null> }
+      | { tipo: "brochure"; etiqueta: string; promesa: Promise<string | null> }
+      | { tipo: "producto"; indice: number; etiqueta: string; promesa: Promise<string | null> }
+
+    const tareas: TareaSubida[] = []
+
     if (avatarFile) {
       avatarAbortRef.current = new AbortController()
-      const url = await subirImagenCloudinary(
-        avatarFile,
-        "mitarjeta/avatars",
-        avatarAbortRef.current.signal
-      )
-      avatarAbortRef.current = null
-      if (!url) {
-        setSaveError("No pudimos subir la foto. Probá de nuevo.")
-        setSaving(false)
-        return
-      }
-      avatarUrl = url
+      tareas.push({
+        tipo: "avatar",
+        etiqueta: "la foto",
+        promesa: subirImagenCloudinary(
+          avatarFile,
+          "mitarjeta/avatars",
+          avatarAbortRef.current.signal
+        ).catch(() => null),
+      })
     }
 
-    let bannerUrl: string | undefined = bannerUrlExistente || undefined
     if (bannerFile) {
       bannerAbortRef.current = new AbortController()
-      const url = await subirImagenCloudinary(
-        bannerFile,
-        "mitarjeta/banners",
-        bannerAbortRef.current.signal
-      )
-      bannerAbortRef.current = null
-      if (!url) {
-        setSaveError("No pudimos subir el banner. Probá de nuevo.")
-        setSaving(false)
-        return
-      }
-      bannerUrl = url
+      tareas.push({
+        tipo: "banner",
+        etiqueta: "el banner",
+        promesa: subirImagenCloudinary(
+          bannerFile,
+          "mitarjeta/banners",
+          bannerAbortRef.current.signal
+        ).catch(() => null),
+      })
     }
 
-    let brochureUrl: string | undefined = brochureUrlExistente || undefined
     if (brochureFile) {
       brochureAbortRef.current = new AbortController()
-      const url = await subirImagenCloudinary(
-        brochureFile,
-        "mitarjeta/brochures",
-        brochureAbortRef.current.signal,
-        "raw"
-      )
-      brochureAbortRef.current = null
-      if (!url) {
-        setSaveError("No pudimos subir el folleto PDF. Probá de nuevo.")
-        setSaving(false)
-        return
-      }
-      brochureUrl = url
+      tareas.push({
+        tipo: "brochure",
+        etiqueta: "el folleto PDF",
+        promesa: subirImagenCloudinary(
+          brochureFile,
+          "mitarjeta/brochures",
+          brochureAbortRef.current.signal,
+          "raw"
+        ).catch(() => null),
+      })
     }
 
-    const productosFinales: Producto[] = []
-    for (const producto of productos) {
-      if (!producto.titulo.trim()) continue
-      let imagenUrl = producto.imagenUrlExistente || undefined
-      if (producto.imagenFile) {
-        const url = await subirImagenCloudinary(producto.imagenFile, "mitarjeta/productos")
-        if (!url) {
-          setSaveError("No pudimos subir la imagen de un producto. Probá de nuevo.")
-          setSaving(false)
-          return
-        }
-        imagenUrl = url
+    productos.forEach((producto, indice) => {
+      if (producto.titulo.trim() && producto.imagenFile) {
+        tareas.push({
+          tipo: "producto",
+          indice,
+          etiqueta: `la imagen de "${producto.titulo.trim()}"`,
+          promesa: subirImagenCloudinary(producto.imagenFile, "mitarjeta/productos").catch(
+            () => null
+          ),
+        })
       }
-      productosFinales.push({
+    })
+
+    // Todas las subidas (avatar, banner, folleto y fotos de productos) se
+    // disparan en paralelo en vez de esperarse una por una: en una conexión
+    // móvil esto reduce el tiempo de guardado a una fracción del secuencial.
+    const resultados =
+      tareas.length > 0 ? await Promise.all(tareas.map((tarea) => tarea.promesa)) : []
+
+    avatarAbortRef.current = null
+    bannerAbortRef.current = null
+    brochureAbortRef.current = null
+
+    const fallidas: string[] = []
+    tareas.forEach((tarea, i) => {
+      const url = resultados[i]
+      if (!url) {
+        fallidas.push(tarea.etiqueta)
+        return
+      }
+      if (tarea.tipo === "avatar") avatarUrl = url
+      else if (tarea.tipo === "banner") bannerUrl = url
+      else if (tarea.tipo === "brochure") brochureUrl = url
+      else imagenesProductoPorIndice.set(tarea.indice, url)
+    })
+
+    if (fallidas.length > 0) {
+      setSaveError(
+        fallidas.length === 1
+          ? `No pudimos subir ${fallidas[0]}. Probá de nuevo.`
+          : `No pudimos subir ${fallidas.length} archivos (${fallidas.join(", ")}). Probá de nuevo.`
+      )
+      setSaving(false)
+      return
+    }
+
+    const productosFinales: Producto[] = productos
+      .map((producto, indice) => ({ producto, indice }))
+      .filter(({ producto }) => producto.titulo.trim())
+      .map(({ producto, indice }) => ({
         titulo: producto.titulo.trim(),
         descripcion: producto.descripcion.trim() || undefined,
         precio: producto.precio.trim() || undefined,
         enlaceUrl: producto.enlaceUrl.trim() || undefined,
-        imagenUrl,
-      })
-    }
+        imagenUrl: imagenesProductoPorIndice.get(indice) ?? producto.imagenUrlExistente ?? undefined,
+      }))
 
     const redesFinales = redesValidas(redes)
     const serviciosFinales = servicios.filter((servicio) => servicio.titulo.trim())
@@ -670,6 +808,8 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
         return
       }
       setGuardadoOk(true)
+      setGuardadoExito(true)
+      window.setTimeout(() => setGuardadoExito(false), 1600)
       return
     }
 
@@ -681,54 +821,101 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
       return
     }
 
-    for (let intento = 0; intento < 2; intento += 1) {
-      const slug = generarSlug(nombrePrincipal)
+    async function alGuardarConExito(data: { id: string; slug: string }) {
+      guardarTarjetaPendiente(data)
+      setTarjetaCreada(data)
+
+      if (esGratis || metodoPago === "transferencia") {
+        setGuardadoExito(true)
+        await new Promise((resolve) => window.setTimeout(resolve, 700))
+        setGuardadoExito(false)
+        setModalOpen(true)
+        setSaving(false)
+        return
+      }
+
+      const checkoutRes = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tarjetaId: data.id,
+          titulo: nombrePrincipal,
+          precio: precioFinal,
+        }),
+      })
+      const checkoutData = (await checkoutRes.json()) as { initPoint?: string }
+
+      if (checkoutData.initPoint) {
+        // Un instante de confirmación visual antes de salir hacia Mercado
+        // Pago; se siente más premium que un redirect abrupto.
+        setGuardadoExito(true)
+        await new Promise((resolve) => window.setTimeout(resolve, 700))
+        window.location.assign(checkoutData.initPoint)
+        return
+      }
+
+      setSaveError(
+        "Tu tarjeta se guardó, pero no pudimos iniciar el pago con Mercado Pago. Probá de nuevo o elegí transferencia."
+      )
+      setSaving(false)
+    }
+
+    const datosBase = {
+      tipo,
+      datos_contacto,
+      identidad_visual,
+      estado_pago: esGratis ? "aprobado" : "pendiente",
+      metodo_pago: esGratis ? null : metodoPago,
+      publicado: true,
+      precio_pagado: precioFinal,
+      cupon_codigo: cuponValidado?.codigo ?? null,
+    }
+
+    const slugElegido = slugPersonalizado.trim()
+
+    if (slugElegido) {
+      if (slugDisponible === false) {
+        setSaveError("Ese enlace ya está en uso. Elegí otro para continuar.")
+        setSaving(false)
+        return
+      }
+
       const { data, error } = await supabase
         .from("tarjetas")
-        .insert({
-          slug,
-          tipo,
-          datos_contacto,
-          identidad_visual,
-          estado_pago: esGratis ? "aprobado" : "pendiente",
-          metodo_pago: esGratis ? null : metodoPago,
-          publicado: true,
-          precio_pagado: precioFinal,
-          cupon_codigo: cuponValidado?.codigo ?? null,
-        })
+        .insert({ slug: slugElegido, ...datosBase })
         .select("id, slug")
         .single()
 
       if (!error && data) {
-        guardarTarjetaPendiente(data)
-        setTarjetaCreada(data)
+        await alGuardarConExito(data)
+        return
+      }
 
-        if (esGratis || metodoPago === "transferencia") {
-          setModalOpen(true)
-          setSaving(false)
-          return
-        }
-
-        const checkoutRes = await fetch("/api/checkout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tarjetaId: data.id,
-            titulo: nombrePrincipal,
-            precio: precioFinal,
-          }),
-        })
-        const checkoutData = (await checkoutRes.json()) as { initPoint?: string }
-
-        if (checkoutData.initPoint) {
-          window.location.assign(checkoutData.initPoint)
-          return
-        }
-
-        setSaveError(
-          "Tu tarjeta se guardó, pero no pudimos iniciar el pago con Mercado Pago. Probá de nuevo o elegí transferencia."
-        )
+      if (error?.code === "23505") {
+        // Carrera de concurrencia: alguien tomó el enlace justo entre el
+        // chequeo en vivo y este guardado. Se lo marcamos como no disponible
+        // para que la etiqueta bajo el input quede consistente con el toast.
+        setResultadoSlug({ slug: slugElegido, disponible: false })
+        mostrarToast("error", "Justo tomaron ese enlace. Elegí otro y volvé a guardar.")
         setSaving(false)
+        return
+      }
+
+      setSaveError("No pudimos guardar tu tarjeta. Probá de nuevo en unos segundos.")
+      setSaving(false)
+      return
+    }
+
+    for (let intento = 0; intento < 2; intento += 1) {
+      const slug = generarSlug(nombrePrincipal)
+      const { data, error } = await supabase
+        .from("tarjetas")
+        .insert({ slug, ...datosBase })
+        .select("id, slug")
+        .single()
+
+      if (!error && data) {
+        await alGuardarConExito(data)
         return
       }
 
@@ -830,6 +1017,13 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
       ? Math.round(precioBase * (1 - descuentoPorcentaje / 100) * 100) / 100
       : null
 
+  const slugActualTrim = slugPersonalizado.trim()
+  const verificandoSlug = Boolean(slugActualTrim) && resultadoSlug?.slug !== slugActualTrim
+  const slugDisponible = resultadoSlug?.slug === slugActualTrim ? resultadoSlug.disponible : null
+
+  const slugBloqueaGuardado =
+    !esEdicion && Boolean(slugActualTrim) && (verificandoSlug || slugDisponible === false)
+
   return (
     <div className="relative flex flex-1 flex-col overflow-clip bg-gradient-to-b from-indigo-50 via-white to-white dark:from-zinc-950 dark:via-black dark:to-black">
       <div
@@ -842,6 +1036,20 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
         className="pointer-events-none absolute -right-32 top-64 size-96 rounded-full opacity-20 blur-3xl"
         style={{ backgroundColor: colorSecundario }}
       />
+
+      {toast && (
+        <div
+          className={cn(
+            "fixed inset-x-0 top-4 z-50 mx-auto flex w-fit max-w-[90vw] animate-in items-center gap-2 rounded-full border px-4 py-2.5 text-center text-sm font-medium shadow-lg backdrop-blur fade-in slide-in-from-top-2 duration-300",
+            toast.tipo === "advertencia"
+              ? "border-amber-200 bg-amber-50/95 text-amber-700 dark:border-amber-900 dark:bg-amber-950/95 dark:text-amber-300"
+              : "border-red-200 bg-red-50/95 text-red-700 dark:border-red-900 dark:bg-red-950/95 dark:text-red-300"
+          )}
+        >
+          <AlertTriangle className="size-4 shrink-0" />
+          {toast.mensaje}
+        </div>
+      )}
 
       <div className="relative mx-auto w-full max-w-6xl px-4 pt-10 sm:px-6 lg:px-10">
         <h1 className="text-2xl font-semibold text-foreground">
@@ -876,7 +1084,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
               type="button"
               onClick={() => setVista("editar")}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-all",
+                "inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 ease-out",
                 vista === "editar"
                   ? "bg-foreground text-background shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -888,7 +1096,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
               type="button"
               onClick={() => setVista("ver")}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-all",
+                "inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 ease-out",
                 vista === "ver"
                   ? "bg-foreground text-background shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -952,7 +1160,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                   type="button"
                   onClick={() => setTipo(opcion)}
                   className={cn(
-                    "rounded-full px-4 py-1.5 text-sm font-medium transition-all",
+                    "rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 ease-out",
                     tipo === opcion
                       ? "bg-foreground text-background shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -972,7 +1180,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                 <Accordion.Header>
                   <Accordion.Trigger className={triggerClase}>
                     Diseño de tarjeta
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
                   </Accordion.Trigger>
                 </Accordion.Header>
                 <Accordion.Panel className={panelInnerClase}>
@@ -986,7 +1194,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                             type="button"
                             onClick={() => setTemaModo(opcion)}
                             className={cn(
-                              "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors",
+                              "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors duration-200 ease-out",
                               temaModo === opcion
                                 ? "border-foreground bg-background"
                                 : "border-border bg-background/50 hover:bg-background"
@@ -1018,7 +1226,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                             type="button"
                             onClick={() => setAvatarForma(opcion.valor)}
                             className={cn(
-                              "flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs transition-colors",
+                              "flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs transition-colors duration-200 ease-out",
                               avatarForma === opcion.valor
                                 ? "border-foreground bg-background"
                                 : "border-border bg-background/50 hover:bg-background"
@@ -1051,7 +1259,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                             type="button"
                             onClick={() => setEstiloTipografia(opcion.valor)}
                             className={cn(
-                              "flex flex-col items-center gap-1 rounded-xl border-2 px-2 py-2.5 text-xs transition-colors",
+                              "flex flex-col items-center gap-1 rounded-xl border-2 px-2 py-2.5 text-xs transition-colors duration-200 ease-out",
                               estiloTipografia === opcion.valor
                                 ? "border-foreground bg-background"
                                 : "border-border bg-background/50 hover:bg-background"
@@ -1076,7 +1284,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                 <Accordion.Header>
                   <Accordion.Trigger className={triggerClase}>
                     Datos esenciales
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
                   </Accordion.Trigger>
                 </Accordion.Header>
                 <Accordion.Panel className={panelInnerClase}>
@@ -1140,6 +1348,57 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                         </label>
                       </>
                     )}
+
+                    {!esEdicion && (
+                      <label className="flex flex-col gap-1.5">
+                        <span className={labelClase}>Enlace personalizado (opcional)</span>
+                        <div className="flex items-stretch overflow-hidden rounded-xl border border-border bg-white/70 backdrop-blur transition-colors duration-200 ease-out focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-zinc-900/60">
+                          <span className="flex shrink-0 items-center border-r border-border bg-muted/60 px-3 text-sm text-muted-foreground">
+                            mitarjeta.app/
+                          </span>
+                          <input
+                            value={slugPersonalizado}
+                            onChange={(e) =>
+                              setSlugPersonalizado(
+                                e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "")
+                              )
+                            }
+                            placeholder="tu-nombre"
+                            className="w-full bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                          />
+                        </div>
+                        {slugPersonalizado.trim() && (
+                          <p
+                            className={cn(
+                              "flex items-center gap-1 text-xs",
+                              verificandoSlug
+                                ? "text-muted-foreground"
+                                : slugDisponible === true
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : slugDisponible === false
+                                    ? "text-destructive"
+                                    : "text-muted-foreground"
+                            )}
+                          >
+                            {verificandoSlug ? (
+                              <>
+                                <Loader2 className="size-3 animate-spin" /> Verificando
+                                disponibilidad...
+                              </>
+                            ) : slugDisponible === true ? (
+                              <>
+                                <Check className="size-3" /> Enlace disponible
+                              </>
+                            ) : slugDisponible === false ? (
+                              <>
+                                <X className="size-3" /> Este enlace ya está en uso
+                              </>
+                            ) : null}
+                          </p>
+                        )}
+                      </label>
+                    )}
+
                     <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
                       ¡No te preocupes! El único campo obligatorio es tu nombre.
                       Todos los demás datos los puedes agregar, cambiar o
@@ -1153,7 +1412,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                 <Accordion.Header>
                   <Accordion.Trigger className={triggerClase}>
                     Identidad visual
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
                   </Accordion.Trigger>
                 </Accordion.Header>
                 <Accordion.Panel className={panelInnerClase}>
@@ -1230,7 +1489,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                             title={preset.nombre}
                             aria-label={preset.nombre}
                             className={cn(
-                              "aspect-square rounded-xl border-2 transition-all hover:scale-105",
+                              "aspect-square rounded-xl border-2 transition-all duration-200 ease-out hover:scale-105",
                               bannerPresetId === preset.id && !bannerMostrado
                                 ? "border-foreground shadow-md"
                                 : "border-transparent"
@@ -1280,7 +1539,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                 <Accordion.Header>
                   <Accordion.Trigger className={triggerClase}>
                     Canales de contacto
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
                   </Accordion.Trigger>
                 </Accordion.Header>
                 <Accordion.Panel className={panelInnerClase}>
@@ -1356,7 +1615,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                 <Accordion.Header>
                   <Accordion.Trigger className={triggerClase}>
                     Redes sociales
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
                   </Accordion.Trigger>
                 </Accordion.Header>
                 <Accordion.Panel className={panelInnerClase}>
@@ -1454,7 +1713,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                 <Accordion.Header>
                   <Accordion.Trigger className={triggerClase}>
                     Ubicación y negocio
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
                   </Accordion.Trigger>
                 </Accordion.Header>
                 <Accordion.Panel className={panelInnerClase}>
@@ -1501,7 +1760,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                 <Accordion.Header>
                   <Accordion.Trigger className={triggerClase}>
                     Contenido multimedia
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
                   </Accordion.Trigger>
                 </Accordion.Header>
                 <Accordion.Panel className={panelInnerClase}>
@@ -1524,7 +1783,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                 <Accordion.Header>
                   <Accordion.Trigger className={triggerClase}>
                     Servicios
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
                   </Accordion.Trigger>
                 </Accordion.Header>
                 <Accordion.Panel className={panelInnerClase}>
@@ -1625,7 +1884,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                 <Accordion.Header>
                   <Accordion.Trigger className={triggerClase}>
                     Productos
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
                   </Accordion.Trigger>
                 </Accordion.Header>
                 <Accordion.Panel className={panelInnerClase}>
@@ -1799,7 +2058,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                         type="button"
                         onClick={() => setMetodoPago("mercado_pago")}
                         className={cn(
-                          "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors",
+                          "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors duration-200 ease-out",
                           metodoPago === "mercado_pago"
                             ? "border-foreground bg-background"
                             : "border-border bg-background/50 hover:bg-background"
@@ -1812,7 +2071,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                         type="button"
                         onClick={() => setMetodoPago("transferencia")}
                         className={cn(
-                          "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors",
+                          "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors duration-200 ease-out",
                           metodoPago === "transferencia"
                             ? "border-foreground bg-background"
                             : "border-border bg-background/50 hover:bg-background"
@@ -1869,12 +2128,25 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
 
             {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
-            <Button type="submit" size="lg" disabled={saving} className="w-full">
-              {saving ? (
-                <>
+            <Button
+              type="submit"
+              size="lg"
+              disabled={saving || guardadoExito || slugBloqueaGuardado}
+              className={cn(
+                "w-full transition-colors duration-300 ease-out",
+                guardadoExito && "bg-emerald-600 text-white hover:bg-emerald-600"
+              )}
+            >
+              {guardadoExito ? (
+                <span className="inline-flex animate-in items-center gap-1.5 zoom-in-95 duration-300">
+                  <Check className="size-4" />
+                  {esEdicion ? "¡Guardado!" : "¡Listo!"}
+                </span>
+              ) : saving ? (
+                <span className="inline-flex items-center gap-1.5 animate-pulse">
                   <Loader2 className="size-4 animate-spin" />
                   {esEdicion ? "Guardando..." : "Creando..."}
-                </>
+                </span>
               ) : esEdicion ? (
                 <>
                   Guardar cambios <Check className="size-4" />
@@ -1891,8 +2163,8 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
 
       <Dialog.Root open={modalOpen} onOpenChange={setModalOpen}>
         <Dialog.Portal>
-          <Dialog.Backdrop className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity data-ending-style:opacity-0 data-starting-style:opacity-0 dark:bg-black/60" />
-          <Dialog.Popup className="fixed top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-border bg-background p-6 shadow-2xl transition-all data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+          <Dialog.Backdrop className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-200 ease-out data-ending-style:opacity-0 data-starting-style:opacity-0 dark:bg-black/60" />
+          <Dialog.Popup className="fixed top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-border bg-background p-6 shadow-2xl transition-all duration-300 ease-out data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
             <Dialog.Close
               aria-label="Cerrar"
               className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted"

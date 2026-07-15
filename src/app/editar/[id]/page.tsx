@@ -1,13 +1,13 @@
 "use client"
 
 import type { Session } from "@supabase/supabase-js"
-import { Loader2 } from "lucide-react"
 import Link from "next/link"
 import { use } from "react"
 import * as React from "react"
 
 import { AuthMethods } from "@/components/auth/auth-methods"
 import { TarjetaForm } from "@/components/tarjeta/tarjeta-form"
+import { TarjetaSkeleton } from "@/components/tarjeta/tarjeta-skeleton"
 import { getTarjetaPorId } from "@/lib/tarjetas"
 import { supabase } from "@/lib/supabase"
 import type { Tarjeta } from "@/lib/types"
@@ -36,8 +36,8 @@ export default function EditarTarjetaPage({ params }: EditarTarjetaPageProps) {
 
   if (session === undefined || (session && tarjeta === undefined)) {
     return (
-      <div className="flex flex-1 items-center justify-center py-24">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      <div className="flex flex-1 items-center justify-center px-4 py-16">
+        <TarjetaSkeleton />
       </div>
     )
   }

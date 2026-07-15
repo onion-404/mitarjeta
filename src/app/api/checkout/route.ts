@@ -1,6 +1,18 @@
 import { crearPreferenciaPago } from "@/lib/mercadopago"
+import { excedeLimite, obtenerIpCliente } from "@/lib/rate-limit"
+
+// Iniciar un checkout es una acción poco frecuente por usuario real; un
+// límite bajo alcanza para frenar scripts que spameen creación de preferencias.
+const LIMITE_CHECKOUT = { maximo: 10, ventanaMs: 60_000 }
 
 export async function POST(request: Request) {
+  if (excedeLimite(`checkout:${obtenerIpCliente(request)}`, LIMITE_CHECKOUT)) {
+    return Response.json(
+      { error: "Demasiadas solicitudes. Esperá un momento y volvé a intentar." },
+      { status: 429 }
+    )
+  }
+
   const { tarjetaId, titulo, precio } = (await request.json()) as {
     tarjetaId?: string
     titulo?: string

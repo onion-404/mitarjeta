@@ -14,6 +14,7 @@ import {
   Phone,
   Sparkles,
 } from "lucide-react"
+import Image from "next/image"
 import * as React from "react"
 
 import { obtenerBannerPreset } from "@/lib/banner-presets"
@@ -55,6 +56,13 @@ function iniciales(nombre?: string) {
 
 function soloDigitos(valor: string) {
   return valor.replace(/[^\d]/g, "")
+}
+
+// Las URL de Cloudinary son http(s) y pueden optimizarse con next/image; las
+// vistas previas locales sin guardar todavía (blob:) no, porque no existen
+// en un servidor al que next/image pueda pedirlas.
+function esUrlOptimizable(url: string) {
+  return url.startsWith("http://") || url.startsWith("https://")
 }
 
 function construirVCard(tipo: TarjetaTipo, datos: DatosContacto) {
@@ -170,7 +178,7 @@ export function TarjetaCard({
 
   // Colores en HEX/RGBA (no oklch/color-mix) para que html2canvas pueda exportar el PDF
   const accionClase =
-    "inline-flex items-center gap-1.5 rounded-full border border-[rgba(0,0,0,0.05)] bg-[rgba(255,255,255,0.8)] px-3.5 py-1.5 text-xs font-medium text-[#3f3f46] shadow-sm backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#f4f4f5]"
+    "inline-flex items-center gap-1.5 rounded-full border border-[rgba(0,0,0,0.05)] bg-[rgba(255,255,255,0.8)] px-3.5 py-1.5 text-xs font-medium text-[#3f3f46] shadow-sm backdrop-blur transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#f4f4f5]"
 
   const nombreArchivo = (nombrePrincipal || "tarjeta")
     .toLowerCase()
@@ -218,11 +226,14 @@ export function TarjetaCard({
       >
         <div data-campo="banner" className="relative h-48 w-full overflow-hidden">
           {bannerUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element -- URL de Cloudinary o externa
-            <img
+            <Image
               src={bannerUrl}
               alt=""
-              className="size-full w-full object-cover object-center"
+              fill
+              priority
+              sizes="(max-width: 640px) 100vw, 384px"
+              unoptimized={!esUrlOptimizable(bannerUrl)}
+              className="object-cover object-center"
             />
           ) : (
             <div
@@ -240,16 +251,18 @@ export function TarjetaCard({
             <div
               data-campo="avatar"
               className={cn(
-                "flex size-24 shrink-0 items-center justify-center overflow-hidden text-xl font-semibold text-[#71717a] shadow-lg ring-4 ring-white dark:text-[#d4d4d8] dark:ring-[#18181b]",
+                "relative flex size-24 shrink-0 items-center justify-center overflow-hidden text-xl font-semibold text-[#71717a] shadow-lg ring-4 ring-white dark:text-[#d4d4d8] dark:ring-[#18181b]",
                 avatarFormaClase
               )}
             >
               {avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- URL de Cloudinary o externa
-                <img
+                <Image
                   src={avatarUrl}
                   alt={nombrePrincipal ?? "Avatar"}
-                  className="size-full object-cover"
+                  fill
+                  sizes="96px"
+                  unoptimized={!esUrlOptimizable(avatarUrl)}
+                  className="object-cover"
                 />
               ) : (
                 <span className="flex size-full items-center justify-center bg-[#f4f4f5] dark:bg-[#27272a]">
@@ -425,7 +438,7 @@ export function TarjetaCard({
                           {tieneDescripcion && (
                             <ChevronDown
                               className={cn(
-                                "size-3.5 shrink-0 text-[#71717a] transition-transform dark:text-[#a1a1aa]",
+                                "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
                                 abierto && "rotate-180"
                               )}
                             />
@@ -448,7 +461,7 @@ export function TarjetaCard({
                   rel="noopener noreferrer"
                   style={estiloCta}
                   className={cn(
-                    "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
+                    "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
                     !estiloCta && "bg-foreground text-background"
                   )}
                 >
@@ -473,7 +486,7 @@ export function TarjetaCard({
                 </h2>
                 <ChevronDown
                   className={cn(
-                    "size-3.5 shrink-0 text-[#71717a] transition-transform dark:text-[#a1a1aa]",
+                    "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
                     productosAbiertos && "rotate-180"
                   )}
                 />
@@ -486,12 +499,16 @@ export function TarjetaCard({
                       className="flex flex-col overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
                     >
                       {producto.imagenUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element -- URL de Cloudinary
-                        <img
-                          src={producto.imagenUrl}
-                          alt={producto.titulo}
-                          className="aspect-square w-full object-cover"
-                        />
+                        <div className="relative aspect-square w-full">
+                          <Image
+                            src={producto.imagenUrl}
+                            alt={producto.titulo}
+                            fill
+                            sizes="(max-width: 640px) 30vw, 128px"
+                            unoptimized={!esUrlOptimizable(producto.imagenUrl)}
+                            className="object-cover"
+                          />
+                        </div>
                       ) : (
                         <div className="aspect-square w-full bg-[#f4f4f5] dark:bg-[#27272a]" />
                       )}
@@ -536,7 +553,7 @@ export function TarjetaCard({
             onClick={handleGuardarContacto}
             style={estiloCta}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
+              "inline-flex items-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
               !estiloCta && "bg-foreground text-background"
             )}
           >
@@ -546,7 +563,7 @@ export function TarjetaCard({
             type="button"
             onClick={handleDescargarPdf}
             disabled={descargandoPdf}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
           >
             <Download className="size-3.5" />
             {descargandoPdf ? "Generando..." : "Descargar PDF"}
