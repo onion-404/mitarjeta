@@ -48,9 +48,9 @@
   `planes` (con seed), `tarjetas.plan_id`, `suscripciones`,
   `configuracion.descuento_tarjeta_adicional_pct`, `eventos_metricas`,
   `metricas_diarias` + trigger de rollup.
-- Schema de agenda (`servicios_agendables`, `disponibilidad_semanal`,
-  `disponibilidad_excepciones`, `citas`, `liquidaciones`): NO diseñado todavía,
-  pendiente por completo.
+- Migración `20260717100000_add_agenda_servicios.sql` (`servicios_agendables`,
+  `disponibilidad_semanal`, `disponibilidad_excepciones`, `citas`,
+  `liquidaciones`): APLICADA.
 
 ## Pendiente técnico sin resolver
 - `eventos_metricas` y `suscripciones` no permiten insert desde authenticated/anon a
