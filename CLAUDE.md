@@ -48,9 +48,9 @@
   `planes` (con seed), `tarjetas.plan_id`, `suscripciones`,
   `configuracion.descuento_tarjeta_adicional_pct`, `eventos_metricas`,
   `metricas_diarias` + trigger de rollup.
-- Migración de agenda (`servicios_agendables`, `disponibilidad_semanal`,
-  `disponibilidad_excepciones`, `citas`, `liquidaciones`): DISEÑADA, AÚN NO aplicada
-  contra la base de datos.
+- Schema de agenda (`servicios_agendables`, `disponibilidad_semanal`,
+  `disponibilidad_excepciones`, `citas`, `liquidaciones`): NO diseñado todavía,
+  pendiente por completo.
 
 ## Pendiente técnico sin resolver
 - `eventos_metricas` y `suscripciones` no permiten insert desde authenticated/anon a
@@ -60,6 +60,11 @@
 - `reclamo.ts` y `admin/dashboard/page.tsx` escriben directo a `tarjetas` desde rol
   `authenticated` — deuda técnica identificada, no resuelta (impide aplicar
   GRANT/REVOKE más estricto sobre esa tabla).
+- `existe_solapamiento_cita()` valida disponibilidad pero NO previene condición de
+  carrera entre dos inserts simultáneos del mismo horario (doble booking posible si
+  dos personas agendan la misma franja al mismo instante). Hardening futuro: EXCLUDE
+  constraint con extensión btree_gist. Aceptado como riesgo bajo para el volumen
+  inicial, revisar si el doble booking se vuelve un problema real.
 
 ## Notas de proceso
 - Proyecto de Supabase: producción única, sin staging. Antes de cualquier migración:
