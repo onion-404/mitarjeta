@@ -33,11 +33,150 @@ function mapearEstado(estadoMp: string | undefined): EstadoPago | null {
   return null
 }
 
+// Una cita rechazada libera el horario (a diferencia de una tarjeta
+// rechazada, que conserva su fila): 'cancelada' es el único estado no
+// terminal-de-pago que existe_solapamiento_cita() ya excluye del bloqueo.
+function mapearEstadoCita(estadoMp: string | undefined): "pagada" | "cancelada" | null {
+  if (estadoMp === "approved") return "pagada"
+  if (estadoMp === "rejected") return "cancelada"
+  return null
+}
+
+type PagoVerificado = NonNullable<Awaited<ReturnType<typeof verificarPago>>>
+
 /**
- * Verifica un pago de Mercado Pago contra su API y, si corresponde, aprueba
- * o rechaza la tarjeta asociada (por external_reference) usando el cliente
- * de service role. Usada tanto por el webhook server-to-server
- * (/api/mercadopago/webhook) como por las páginas de retorno /pago/*.
+ * `external_reference` viene como `"tarjeta:<id>"` o `"cita:<id>"` (ver
+ * lib/mercadopago.ts). Sin prefijo se asume `tarjeta` por compatibilidad
+ * con preferencias creadas antes de introducir el prefijo.
+ */
+function parseReferenciaExterna(externalReference: string): {
+  tipo: "tarjeta" | "cita"
+  id: string
+} {
+  const separador = externalReference.indexOf(":")
+  if (separador === -1) return { tipo: "tarjeta", id: externalReference }
+
+  const prefijo = externalReference.slice(0, separador)
+  const id = externalReference.slice(separador + 1)
+  if (prefijo === "cita") return { tipo: "cita", id }
+  if (prefijo === "tarjeta") return { tipo: "tarjeta", id }
+  return { tipo: "tarjeta", id: externalReference }
+}
+
+async function obtenerComisionVentaPct(
+  admin: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
+  tarjetaId: string
+): Promise<number | null> {
+  const { data: tarjeta } = await admin
+    .from("tarjetas")
+    .select("plan_id")
+    .eq("id", tarjetaId)
+    .maybeSingle()
+
+  if (!tarjeta?.plan_id) return null
+
+  const { data: plan } = await admin
+    .from("planes")
+    .select("features")
+    .eq("id", tarjeta.plan_id)
+    .maybeSingle()
+
+  const pct = plan?.features?.comision_venta_pct
+  return typeof pct === "number" ? pct : null
+}
+
+/**
+ * Confirma el pago de una cita: la pasa a 'pagada'/'cancelada' y, si se
+ * aprobó, calcula comisión de Mercado Pago y de plataforma. Si la tarjeta
+ * todavía no tiene un plan asignado (suscripciones aún no implementado, ver
+ * CLAUDE.md) la cita igual se marca 'pagada' pero comision_plataforma y
+ * monto_neto_proveedor quedan en null: mejor dejarlo pendiente de ajuste
+ * manual en la liquidación que inventar una tasa.
+ */
+async function confirmarPagoCita(citaId: string, pago: PagoVerificado): Promise<void> {
+  const nuevoEstado = mapearEstadoCita(pago.status)
+  if (!nuevoEstado) return
+
+  const admin = getSupabaseAdmin()
+  if (!admin) {
+    throw new ActualizacionPagoError(
+      "Supabase admin no disponible: falta SUPABASE_SERVICE_ROLE_KEY.",
+      pago.status ?? null
+    )
+  }
+
+  const { data: cita, error: errorLectura } = await admin
+    .from("citas")
+    .select("id, tarjeta_id, monto_bruto, estado")
+    .eq("id", citaId)
+    .maybeSingle()
+
+  if (errorLectura) {
+    throw new ActualizacionPagoError(
+      `No se pudo leer la cita en Supabase: ${errorLectura.message}`,
+      pago.status ?? null
+    )
+  }
+  if (!cita) {
+    console.error(`[confirmar-pago] Pago recibido para una cita inexistente: ${citaId}`)
+    return
+  }
+
+  // Idempotencia: Mercado Pago puede reenviar la misma notificación.
+  if (cita.estado === "pagada" || cita.estado === "cancelada") return
+
+  let comisionMercadopago: number | null = null
+  if (Array.isArray(pago.fee_details)) {
+    const total = pago.fee_details
+      .filter((f) => f.type === "mercadopago_fee")
+      .reduce((suma, f) => suma + (f.amount ?? 0), 0)
+    if (total > 0) comisionMercadopago = total
+  }
+
+  let comisionPlataforma: number | null = null
+  let montoNetoProveedor: number | null = null
+
+  if (nuevoEstado === "pagada") {
+    const comisionPct = await obtenerComisionVentaPct(admin, cita.tarjeta_id)
+    if (comisionPct !== null) {
+      comisionPlataforma = Number((cita.monto_bruto * (comisionPct / 100)).toFixed(2))
+      montoNetoProveedor = Number(
+        (cita.monto_bruto - (comisionMercadopago ?? 0) - comisionPlataforma).toFixed(2)
+      )
+    } else {
+      console.error(
+        `[confirmar-pago] Tarjeta ${cita.tarjeta_id} sin plan asignado: no se pudo calcular ` +
+          `comision_plataforma para la cita ${citaId}, requiere ajuste manual antes de liquidar.`
+      )
+    }
+  }
+
+  const { error: errorUpdate } = await admin
+    .from("citas")
+    .update({
+      estado: nuevoEstado,
+      comision_mercadopago: comisionMercadopago,
+      comision_plataforma: comisionPlataforma,
+      monto_neto_proveedor: montoNetoProveedor,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", citaId)
+
+  if (errorUpdate) {
+    throw new ActualizacionPagoError(
+      `No se pudo actualizar la cita en Supabase: ${errorUpdate.message}`,
+      pago.status ?? null
+    )
+  }
+}
+
+/**
+ * Verifica un pago de Mercado Pago contra su API y, según a qué corresponda
+ * external_reference, aprueba/rechaza la tarjeta o confirma/cancela la cita
+ * asociada, usando el cliente de service role. Usada tanto por el webhook
+ * server-to-server (/api/mercadopago/webhook) como por las páginas de
+ * retorno /pago/* (estas últimas solo aplican al flujo de tarjeta: una cita
+ * no tiene una página de retorno propia todavía).
  *
  * Lanza `ActualizacionPagoError` si el pago se verificó pero la escritura en
  * Supabase falló, para que el llamador decida si reintentar.
@@ -48,6 +187,13 @@ export async function actualizarEstadoPagoTarjeta(
   const pago = await verificarPago(paymentId)
   if (!pago) return { estadoPago: null, slug: null }
   if (!pago.external_reference) return { estadoPago: pago.status ?? null, slug: null }
+
+  const referencia = parseReferenciaExterna(pago.external_reference)
+
+  if (referencia.tipo === "cita") {
+    await confirmarPagoCita(referencia.id, pago)
+    return { estadoPago: pago.status ?? null, slug: null }
+  }
 
   const nuevoEstado = mapearEstado(pago.status)
   if (!nuevoEstado) return { estadoPago: pago.status ?? null, slug: null }
@@ -63,7 +209,7 @@ export async function actualizarEstadoPagoTarjeta(
   const { data, error } = await admin
     .from("tarjetas")
     .update({ estado_pago: nuevoEstado, metodo_pago: "mercado_pago" })
-    .eq("id", pago.external_reference)
+    .eq("id", referencia.id)
     .select("slug")
     .single()
 

@@ -23,14 +23,19 @@ export async function POST(request: Request) {
     return Response.json({ error: "Datos de checkout inválidos." }, { status: 400 })
   }
 
-  const initPoint = await crearPreferenciaPago({ tarjetaId, titulo, precio })
+  const preferencia = await crearPreferenciaPago({
+    referenciaId: tarjetaId,
+    tipo: "tarjeta",
+    titulo,
+    precio,
+  })
 
-  if (!initPoint) {
+  if (!preferencia) {
     return Response.json(
       { error: "No pudimos iniciar el pago con Mercado Pago." },
       { status: 502 }
     )
   }
 
-  return Response.json({ initPoint })
+  return Response.json({ initPoint: preferencia.initPoint })
 }

@@ -15,6 +15,11 @@
 - Descuento configurable para tarjetas adicionales del mismo usuario (columna
   `configuracion.descuento_tarjeta_adicional_pct`), aplicado vía función
   `posicion_tarjeta_para_usuario()`.
+- Toda tarjeta nueva arranca en el plan "presencia" automáticamente: `tarjetas.plan_id`
+  tiene un DEFAULT (función `plan_id_por_defecto()`) que lo resuelve si el insert no lo
+  especifica, que es lo que hace hoy todo el código de creación de tarjetas. Mecanismo
+  temporal mientras no exista Suscripciones — ese flujo futuro actualizará `plan_id` en
+  upgrades/downgrades sin reemplazar este default.
 
 ## Pagos — IMPORTANTE, dos flujos separados que coexisten
 - Checkout Pro (preferencias, ya integrado en `lib/mercadopago.ts`): pagos ÚNICOS. Se
@@ -27,7 +32,10 @@
 - Pago OPCIONAL por servicio, default = contra entrega (`requiere_pago_inmediato: false`).
 - Duración variable por servicio, definida por el dueño.
 - Disponibilidad híbrida: horario semanal recurrente (`disponibilidad_semanal`) +
-  excepciones puntuales (`disponibilidad_excepciones`).
+  excepciones puntuales (`disponibilidad_excepciones`), definida en la hora LOCAL del
+  dueño. `tarjetas.zona_horaria` (texto IANA, default `America/Mexico_City`) es la
+  fuente de verdad para convertir esa hora local a UTC; `src/lib/agenda.ts` hace la
+  conversión con `Intl.DateTimeFormat` nativo (sin librería de fechas nueva).
 - Comisión modelo tipo Didi/Rappi: corte periódico MANUAL vía tabla `liquidaciones`,
   admin marca como pagado tras transferir manualmente. Sin automatización de
   transferencias aún.
@@ -51,6 +59,9 @@
 - Migración `20260717100000_add_agenda_servicios.sql` (`servicios_agendables`,
   `disponibilidad_semanal`, `disponibilidad_excepciones`, `citas`,
   `liquidaciones`): APLICADA.
+- Migración `20260717180000_add_plan_default_y_zona_horaria.sql` (default de
+  `tarjetas.plan_id` a "presencia" + backfill de tarjetas existentes,
+  `tarjetas.zona_horaria`): APLICADA.
 
 ## Pendiente técnico sin resolver
 - `eventos_metricas` y `suscripciones` no permiten insert desde authenticated/anon a

@@ -24,17 +24,29 @@ function getConfig() {
   return new MercadoPagoConfig({ accessToken })
 }
 
+// "tarjeta" = pago único de la tarjeta de presentación. "cita" = pago
+// opcional e inmediato de una cita agendada. Ambos son Checkout Pro (pagos
+// únicos); esto NO tiene relación con la API de Suscripciones (preapproval).
+type TipoReferenciaPago = "tarjeta" | "cita"
+
 interface CrearPreferenciaParams {
-  tarjetaId: string
+  referenciaId: string
+  tipo: TipoReferenciaPago
   titulo: string
   precio: number
 }
 
+interface PreferenciaCreada {
+  initPoint: string
+  preferenceId: string
+}
+
 export async function crearPreferenciaPago({
-  tarjetaId,
+  referenciaId,
+  tipo,
   titulo,
   precio,
-}: CrearPreferenciaParams) {
+}: CrearPreferenciaParams): Promise<PreferenciaCreada | null> {
   const config = getConfig()
   if (!config) return null
 
@@ -43,14 +55,16 @@ export async function crearPreferenciaPago({
       body: {
         items: [
           {
-            id: tarjetaId,
+            id: referenciaId,
             title: titulo,
             quantity: 1,
             unit_price: precio,
             currency_id: "MXN",
           },
         ],
-        external_reference: tarjetaId,
+        // Prefijo para que el webhook sepa qué tabla actualizar al confirmar
+        // el pago (ver parseReferenciaExterna en lib/confirmar-pago.ts).
+        external_reference: `${tipo}:${referenciaId}`,
         back_urls: {
           success: `${APP_URL}/pago/exito`,
           pending: `${APP_URL}/pago/pendiente`,
@@ -59,7 +73,8 @@ export async function crearPreferenciaPago({
         ...(permiteAutoReturn ? { auto_return: "approved" as const } : {}),
       },
     })
-    return preferencia.init_point ?? null
+    if (!preferencia.init_point || !preferencia.id) return null
+    return { initPoint: preferencia.init_point, preferenceId: preferencia.id }
   } catch (error) {
     logErrorMp("Error al crear la preferencia de Mercado Pago:", error)
     return null
