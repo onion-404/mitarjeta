@@ -7,8 +7,19 @@ import type { EstadoPago } from "@/lib/types"
 interface ResultadoConfirmacion {
   /** Estado real del pago según Mercado Pago (approved, pending, rejected, etc). */
   estadoPago: string | null
-  /** Slug de la tarjeta afectada, si se pudo identificar y actualizar. */
+  /** Slug de la tarjeta afectada, si se pudo identificar y actualizar (solo tipo "tarjeta"). */
   slug: string | null
+  /** A qué correspondía external_reference, para que la página de retorno sepa qué texto mostrar. */
+  tipo: "tarjeta" | "cita" | null
+  /** Id de la cita afectada (solo tipo "cita"); la página la usa para traer datos de despliegue. */
+  citaId: string | null
+}
+
+const SIN_REFERENCIA: ResultadoConfirmacion = {
+  estadoPago: null,
+  slug: null,
+  tipo: null,
+  citaId: null,
 }
 
 /**
@@ -175,8 +186,8 @@ async function confirmarPagoCita(citaId: string, pago: PagoVerificado): Promise<
  * external_reference, aprueba/rechaza la tarjeta o confirma/cancela la cita
  * asociada, usando el cliente de service role. Usada tanto por el webhook
  * server-to-server (/api/mercadopago/webhook) como por las páginas de
- * retorno /pago/* (estas últimas solo aplican al flujo de tarjeta: una cita
- * no tiene una página de retorno propia todavía).
+ * retorno /pago/* (que usan `tipo`/`citaId` del resultado para saber qué
+ * texto mostrar y, si aplica, traer los datos de la cita para desplegarlos).
  *
  * Lanza `ActualizacionPagoError` si el pago se verificó pero la escritura en
  * Supabase falló, para que el llamador decida si reintentar.
@@ -185,18 +196,20 @@ export async function actualizarEstadoPagoTarjeta(
   paymentId: string
 ): Promise<ResultadoConfirmacion> {
   const pago = await verificarPago(paymentId)
-  if (!pago) return { estadoPago: null, slug: null }
-  if (!pago.external_reference) return { estadoPago: pago.status ?? null, slug: null }
+  if (!pago) return SIN_REFERENCIA
+  if (!pago.external_reference) return { ...SIN_REFERENCIA, estadoPago: pago.status ?? null }
 
   const referencia = parseReferenciaExterna(pago.external_reference)
 
   if (referencia.tipo === "cita") {
     await confirmarPagoCita(referencia.id, pago)
-    return { estadoPago: pago.status ?? null, slug: null }
+    return { estadoPago: pago.status ?? null, slug: null, tipo: "cita", citaId: referencia.id }
   }
 
   const nuevoEstado = mapearEstado(pago.status)
-  if (!nuevoEstado) return { estadoPago: pago.status ?? null, slug: null }
+  if (!nuevoEstado) {
+    return { estadoPago: pago.status ?? null, slug: null, tipo: "tarjeta", citaId: null }
+  }
 
   const admin = getSupabaseAdmin()
   if (!admin) {
@@ -220,7 +233,7 @@ export async function actualizarEstadoPagoTarjeta(
     )
   }
 
-  return { estadoPago: pago.status ?? null, slug: data?.slug ?? null }
+  return { estadoPago: pago.status ?? null, slug: data?.slug ?? null, tipo: "tarjeta", citaId: null }
 }
 
 /**
@@ -232,12 +245,12 @@ export async function actualizarEstadoPagoTarjeta(
 export async function confirmarPagoDesdeRedirect(
   paymentId: string | undefined
 ): Promise<ResultadoConfirmacion> {
-  if (!paymentId) return { estadoPago: null, slug: null }
+  if (!paymentId) return SIN_REFERENCIA
 
   try {
     return await actualizarEstadoPagoTarjeta(paymentId)
   } catch (error) {
     const estadoPago = error instanceof ActualizacionPagoError ? error.estadoPago : null
-    return { estadoPago, slug: null }
+    return { ...SIN_REFERENCIA, estadoPago }
   }
 }

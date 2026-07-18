@@ -3,6 +3,7 @@ import Link from "next/link"
 
 import { ReclamarTarjeta } from "@/components/pago/reclamar-tarjeta"
 import { buttonVariants } from "@/components/ui/button"
+import { formatearFechaHoraLocal, getCitaParaConfirmacion } from "@/lib/citas"
 import { confirmarPagoDesdeRedirect } from "@/lib/confirmar-pago"
 
 interface PagoExitoPageProps {
@@ -11,10 +12,29 @@ interface PagoExitoPageProps {
 
 export default async function PagoExitoPage({ searchParams }: PagoExitoPageProps) {
   const params = await searchParams
-  const { estadoPago, slug } = await confirmarPagoDesdeRedirect(
+  const { estadoPago, slug, tipo, citaId } = await confirmarPagoDesdeRedirect(
     params.payment_id ?? params.collection_id
   )
   const aprobado = estadoPago === "approved"
+  const cita = tipo === "cita" && citaId ? await getCitaParaConfirmacion(citaId) : null
+
+  const titulo =
+    tipo === "cita"
+      ? aprobado
+        ? "¡Tu cita quedó confirmada!"
+        : "Estamos confirmando tu pago"
+      : aprobado
+        ? "¡Tu pago fue aprobado!"
+        : "Estamos confirmando tu pago"
+
+  const descripcion =
+    tipo === "cita"
+      ? aprobado && cita
+        ? `Tu cita de ${cita.servicioNombre} quedó agendada para el ${formatearFechaHoraLocal(cita.fechaHoraInicio, cita.zonaHoraria)}.`
+        : "En cuanto Mercado Pago confirme tu pago, tu cita quedará agendada automáticamente."
+      : aprobado
+        ? "Tu tarjeta ya está activa y lista para compartir."
+        : "En cuanto Mercado Pago confirme tu pago, tu tarjeta se activará automáticamente."
 
   return (
     <div className="relative flex w-full flex-1 flex-col items-center justify-center gap-6 overflow-hidden bg-zinc-50 px-4 py-16 text-center dark:bg-black">
@@ -31,24 +51,30 @@ export default async function PagoExitoPage({ searchParams }: PagoExitoPageProps
         <span className="flex size-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
           <Check className="size-6" />
         </span>
-        <h1 className="text-xl font-semibold text-foreground">
-          {aprobado ? "¡Tu pago fue aprobado!" : "Estamos confirmando tu pago"}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {aprobado
-            ? "Tu tarjeta ya está activa y lista para compartir."
-            : "En cuanto Mercado Pago confirme tu pago, tu tarjeta se activará automáticamente."}
-        </p>
+        <h1 className="text-xl font-semibold text-foreground">{titulo}</h1>
+        <p className="text-sm text-muted-foreground">{descripcion}</p>
 
-        {slug && (
-          <Link href={`/${slug}`} className={buttonVariants({ size: "lg", className: "mt-2" })}>
-            Ver mi tarjeta
+        {tipo === "cita" && cita?.tarjetaSlug && (
+          <Link
+            href={`/${cita.tarjetaSlug}`}
+            className={buttonVariants({ size: "lg", className: "mt-2" })}
+          >
+            Ver la tarjeta
           </Link>
         )}
 
-        <div className="mt-2 w-full border-t border-border/60 pt-4">
-          <ReclamarTarjeta />
-        </div>
+        {tipo !== "cita" && (
+          <>
+            {slug && (
+              <Link href={`/${slug}`} className={buttonVariants({ size: "lg", className: "mt-2" })}>
+                Ver mi tarjeta
+              </Link>
+            )}
+            <div className="mt-2 w-full border-t border-border/60 pt-4">
+              <ReclamarTarjeta />
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

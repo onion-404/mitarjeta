@@ -39,6 +39,14 @@
 - Comisión modelo tipo Didi/Rappi: corte periódico MANUAL vía tabla `liquidaciones`,
   admin marca como pagado tras transferir manualmente. Sin automatización de
   transferencias aún.
+- Las páginas `/pago/exito`, `/pago/pendiente` y `/pago/error` son compartidas entre
+  el pago de una tarjeta y el pago opcional de una cita: bifurcan según `tipo`
+  (`"tarjeta" | "cita"`, derivado del prefijo de `external_reference` en Mercado
+  Pago) devuelto por `confirmarPagoDesdeRedirect`. Los datos de despliegue de la
+  cita (servicio, fecha/hora en la zona horaria de la tarjeta, slug para volver a
+  agendar) se leen aparte con `lib/citas.ts` (`getCitaParaConfirmacion`), una
+  lectura de solo presentación con service role — no reimplementa nada de
+  `confirmar-pago.ts`.
 
 ## Diferido a fase posterior (NO construir todavía salvo instrucción explícita)
 - Integración con Google Calendar (OAuth + sync) — candidato a feature de plan "poder".
