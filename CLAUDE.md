@@ -10,23 +10,74 @@
 - Plataforma tipo link-in-bio + agenda de servicios + venta de productos.
 - El plan vive en la TARJETA, no en el usuario. Un usuario puede tener múltiples
   tarjetas, cada una con su propio plan y suscripción independiente.
-- 3 planes: "presencia", "alcance", "poder" (slugs en DB, sin acentos). Ya sembrados
-  en la tabla `planes` con precios placeholder — pendiente ajustar precios reales.
+- 3 planes: "presencia", "alcance", "poder" (slugs en DB, sin acentos), **los 3 de
+  pago — no existe tier gratuito**. Ya sembrados en la tabla `planes` con precios
+  placeholder — pendiente ajustar precios reales.
 - Descuento configurable para tarjetas adicionales del mismo usuario (columna
   `configuracion.descuento_tarjeta_adicional_pct`), aplicado vía función
   `posicion_tarjeta_para_usuario()`.
-- Toda tarjeta nueva arranca en el plan "presencia" automáticamente: `tarjetas.plan_id`
-  tiene un DEFAULT (función `plan_id_por_defecto()`) que lo resuelve si el insert no lo
-  especifica, que es lo que hace hoy todo el código de creación de tarjetas. Mecanismo
-  temporal mientras no exista Suscripciones — ese flujo futuro actualizará `plan_id` en
-  upgrades/downgrades sin reemplazar este default.
+- **Ya NO hay DEFAULT de `plan_id` en tarjetas nuevas** (revertido: con los 3 planes
+  pagos, arrancar en "presencia" gratis por defecto daba gating de un plan pagado sin
+  ningún intento de pago). Una tarjeta se registra igual aunque el pago se abandone o
+  falle, pero `plan_id` queda `null` hasta que exista una suscripción `'autorizada'`
+  real. La función `plan_id_por_defecto()` sigue existiendo (sin uso como default de
+  columna) por si hiciera falta reutilizarla. Migración:
+  `20260717230000_drop_default_plan_id_tarjetas.sql`.
 
 ## Pagos — IMPORTANTE, dos flujos separados que coexisten
 - Checkout Pro (preferencias, ya integrado en `lib/mercadopago.ts`): pagos ÚNICOS. Se
   usa para venta de productos y para el pago opcional de una cita.
-- Suscripciones (preapproval): EXCLUSIVO para el cobro recurrente mensual/anual del
-  plan de la tarjeta. Aún NO implementado, pendiente.
-- Nunca confundir ni mezclar ambos flujos.
+- Suscripciones (preapproval, `lib/mercadopago-suscripciones.ts`): EXCLUSIVO para el
+  cobro recurrente mensual/anual del plan de la tarjeta. Backend implementado
+  (funciones + endpoint + webhook), ver sección propia abajo.
+- Nunca confundir ni mezclar ambos flujos — son archivos, tablas y webhooks
+  separados a propósito.
+
+## Suscripciones (cobro recurrente del plan) — estado del backend
+- Modalidad elegida: preapproval **"sin plan asociado"** (términos inline en cada
+  suscripción), NO "con plan asociado". La razón: Mercado Pago exige que una
+  suscripción "con plan asociado" se cree ya con `card_token_id` (tarjeta
+  tokenizada vía Checkout Bricks en el frontend) y status `authorized` **sin
+  ningún redirect posible**. "Sin plan asociado" permite mandar `auto_recurring`
+  directo y redirigir a un `init_point`, igual que Checkout Pro — sin agregar
+  Bricks ni scope de tarjeta al frontend. Consecuencia: **no se usa
+  `preapproval_plan`** en absoluto; `suscripciones.preapproval_plan_id` (ya
+  existía, nullable) queda sin usar. El precio final se calcula igual que
+  Checkout Pro: inline, al momento de crear cada suscripción.
+- `POST /api/suscripciones` (`{ tarjetaId, planId, periodicidad, cuponCodigo? }`):
+  a diferencia de `/api/checkout`/`/api/citas` (flujos de invitado), este
+  endpoint SÍ requiere autenticación — exige `Authorization: Bearer <access_token>`
+  de la sesión de Supabase del dueño de la tarjeta (verificado con
+  `supabase.auth.getUser(token)`). Calcula el ranking real de la tarjeta entre
+  las del usuario (NO reutiliza `posicion_tarjeta_para_usuario()`: esa función
+  está pensada para "qué posición tendría una tarjeta nueva", no para rankear
+  una ya existente), inserta `suscripciones` en 'pendiente' antes de llamar a
+  Mercado Pago, y guarda `preapproval_id` al volver.
+- Regla de combinación de descuentos (tarjeta adicional + cupón): **se aplica el
+  mayor de los dos, no se suman** — confirmado explícitamente con el cliente.
+  Al ser un cobro recurrente, acumular descuentos indefinidamente cada ciclo es
+  más riesgoso que en una compra única.
+- Cupón reutiliza la tabla `cupones` ya existente (mismo flujo que el pago único
+  viejo de tarjeta). Se guarda en `suscripciones.cupon_codigo` (columna nueva,
+  migración `20260717210000_add_suscripciones_cupon_codigo.sql`) para trazabilidad.
+- Webhook: `/api/mercadopago/webhook` ahora bifurca por tipo de notificación —
+  `payment` (como siempre) vs `subscription_preapproval` (nuevo, delegado a
+  `lib/confirmar-suscripcion.ts`). Actualiza `suscripciones.estado` y mantiene
+  `tarjetas.plan_id` sincronizado en LAS DOS direcciones: lo asigna al quedar
+  `autorizada`, y lo vuelve a `null` en cualquier otro estado (pausada,
+  cancelada, vencida) — no hay plan gratuito al que "bajar". Con idempotencia y
+  protección contra notificaciones fuera de orden (no regresa un estado terminal).
+- Gracias a que el caché (`tarjetas.plan_id`) se mantiene sincronizado en ambas
+  direcciones, el código que lo lee para gating de features (comisión de citas en
+  `confirmar-pago.ts`, límite `servicios_agendables_max` en `agenda-servicios.tsx`)
+  **no necesita consultar `suscripciones` por separado** — ambos ya manejan `null`
+  de forma fail-closed (sin plan confirmado = sin acceso, no "sin límite"). Riesgo
+  residual aceptado: esto depende de que el webhook llegue, mismo modelo que ya
+  acepta el resto del código de pagos (no hay job de reconciliación).
+- Pendiente (no construido en esta tarea, fuera de alcance): el botón/UI en el
+  editor que dispare `POST /api/suscripciones` (el "upgrade de plan"), y una
+  página de confirmación dedicada — `back_url` hoy vuelve a `/editar/[tarjetaId]`
+  sin más, no hay pantalla de éxito tipo `/pago/exito` para suscripciones.
 
 ## Agenda de servicios
 - Pago OPCIONAL por servicio, default = contra entrega (`requiere_pago_inmediato: false`).
@@ -47,6 +98,38 @@
   agendar) se leen aparte con `lib/citas.ts` (`getCitaParaConfirmacion`), una
   lectura de solo presentación con service role — no reimplementa nada de
   `confirmar-pago.ts`.
+- Editor de agenda (CRUD servicios/horario/excepciones) en
+  `src/components/tarjeta/agenda-servicios.tsx`, sección "Agenda" de `TarjetaForm`
+  (solo visible en modo edición, una tarjeta nueva sin guardar no tiene dónde
+  colgar servicios). Escribe directo a Supabase desde el cliente (RLS de owner ya
+  lo permite, sin endpoint server-side) con actualización optimista de estado +
+  reversión si falla. Valida `servicios_agendables_max` del plan vigente antes de
+  permitir crear un servicio nuevo, con mensaje de upsell si se llegó al límite.
+- Si `tarjeta.plan_id` es `null` (nunca hubo suscripción autorizada, o se
+  pausó/canceló), la sección de Agenda se bloquea ENTERA con un mensaje de
+  "necesitás un plan activo" — no solo el límite de servicios — y ni siquiera
+  consulta Supabase.
+
+## Patrón de UI del editor principal (TarjetaForm)
+- Reescrito para seguir el patrón Linktree: en **desktop**, sin cambios (grid de 2
+  columnas, formulario izquierda + preview sticky derecha, accordion de
+  `@base-ui/react/accordion`). En **mobile**, el preview ocupa toda la pantalla
+  (`fixed inset-0`, sin el mockup de teléfono) y los controles bajan a una barra
+  fija inferior: botón "Guardar"/"Crear" siempre visible + una fila de tabs
+  horizontal scrolleable (uno por sección). Tocar un tab abre un `Drawer` de
+  `@base-ui/react/drawer` (bottom sheet) con los controles de esa sección sobre
+  el preview — **no se agregó ninguna librería nueva**, Base UI (ya usado para
+  Accordion/Dialog/Menu) trae un primitivo Drawer nativo con swipe-to-dismiss.
+- El toggle viejo "Modo edición / Ver tarjeta" en mobile se eliminó (redundante
+  con el preview ya siempre visible); su contenido (QR + compartir) ahora es un
+  tab más, "Compartir". En desktop el toggle sigue igual que siempre.
+- Cada sección define su JSX **una sola vez** (`contenidoDiseno`,
+  `contenidoServicios`, etc. en `tarjeta-form.tsx`) y se reutiliza tanto en el
+  `Accordion.Panel` de desktop como en el `Drawer.Popup` de mobile — nada
+  duplicado entre los dos shells.
+- Esta es la referencia a seguir para cualquier sección nueva del editor
+  (agregar un id al array `SECCIONES`, no reinventar el patrón). "Agenda" ya se
+  construyó así.
 
 ## Diferido a fase posterior (NO construir todavía salvo instrucción explícita)
 - Integración con Google Calendar (OAuth + sync) — candidato a feature de plan "poder".
@@ -70,12 +153,16 @@
 - Migración `20260717180000_add_plan_default_y_zona_horaria.sql` (default de
   `tarjetas.plan_id` a "presencia" + backfill de tarjetas existentes,
   `tarjetas.zona_horaria`): APLICADA.
+- Migración `20260717210000_add_suscripciones_cupon_codigo.sql`
+  (`suscripciones.cupon_codigo`): DISEÑADA, AÚN NO aplicada contra la base de datos.
+- Migración `20260717230000_drop_default_plan_id_tarjetas.sql` (quita el DEFAULT de
+  `tarjetas.plan_id`): DISEÑADA, AÚN NO aplicada contra la base de datos.
 
 ## Pendiente técnico sin resolver
-- `eventos_metricas` y `suscripciones` no permiten insert desde authenticated/anon a
-  propósito (por diseño, evita manipulación de métricas/pagos). Falta crear el
-  endpoint server-side con `service_role_key` que inserte eventos y gestione el
-  ciclo de vida de suscripciones/citas con pago.
+- `eventos_metricas` no permite insert desde authenticated/anon a propósito (por
+  diseño, evita inflar métricas). Falta crear el endpoint server-side con
+  `service_role_key` que inserte eventos — `citas` (`/api/citas`) y `suscripciones`
+  (`/api/suscripciones`) ya tienen su endpoint propio, este es el que falta.
 - `reclamo.ts` y `admin/dashboard/page.tsx` escriben directo a `tarjetas` desde rol
   `authenticated` — deuda técnica identificada, no resuelta (impide aplicar
   GRANT/REVOKE más estricto sobre esa tabla).

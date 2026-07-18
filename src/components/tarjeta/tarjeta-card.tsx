@@ -22,7 +22,7 @@ import { obtenerColorContraste } from "@/lib/contraste"
 import { obtenerPlataforma } from "@/lib/redes"
 import { cn } from "@/lib/utils"
 import { obtenerYoutubeEmbedUrl } from "@/lib/youtube"
-import type { DatosContacto, IdentidadVisual, TarjetaTipo } from "@/lib/types"
+import type { DatosContacto, IdentidadVisual, ServicioAgendable, TarjetaTipo } from "@/lib/types"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 
 interface TarjetaCardProps {
@@ -31,6 +31,15 @@ interface TarjetaCardProps {
   identidadVisual: IdentidadVisual
   className?: string
   mostrarAcciones?: boolean
+  /** Servicios agendables activos, para la sección "Agendar" (no viene de datosContacto: son filas propias, no JSONB). */
+  agendaServicios?: ServicioAgendable[]
+}
+
+function formatDuracion(minutos: number) {
+  if (minutos < 60) return `${minutos} min`
+  const horas = Math.floor(minutos / 60)
+  const resto = minutos % 60
+  return resto === 0 ? `${horas} h` : `${horas} h ${resto} min`
 }
 
 // Gradientes en HEX (no oklch/lab) para compatibilidad con el exportador de PDF
@@ -94,6 +103,7 @@ export function TarjetaCard({
   identidadVisual,
   className,
   mostrarAcciones = false,
+  agendaServicios,
 }: TarjetaCardProps) {
   const cardRef = React.useRef<HTMLElement>(null)
   const [descargandoPdf, setDescargandoPdf] = React.useState(false)
@@ -468,6 +478,39 @@ export function TarjetaCard({
                   <FileText className="size-3.5" /> Descargar folleto (PDF)
                 </a>
               )}
+            </div>
+          )}
+
+          {Boolean(agendaServicios?.length) && (
+            <div data-campo="agenda" className="mt-5 w-full text-left">
+              <h2
+                style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+                className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
+              >
+                Agendar
+              </h2>
+              <div className="mt-3 flex flex-col gap-2">
+                {agendaServicios?.map((servicio) => (
+                  <div
+                    key={servicio.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-[rgba(0,0,0,0.05)] p-3 dark:border-[rgba(255,255,255,0.08)]"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
+                        {servicio.nombre}
+                      </p>
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]">
+                        <Clock className="size-3" /> {formatDuracion(servicio.duracion_minutos)}
+                        {" · "}
+                        {servicio.requiere_pago_inmediato ? "Pago al agendar" : "Pago contra entrega"}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-sm font-semibold text-[#18181b] dark:text-[#fafafa]">
+                      ${servicio.precio}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

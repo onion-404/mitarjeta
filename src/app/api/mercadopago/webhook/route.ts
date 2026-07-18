@@ -3,6 +3,7 @@ import "server-only"
 import crypto from "crypto"
 
 import { ActualizacionPagoError, actualizarEstadoPagoTarjeta } from "@/lib/confirmar-pago"
+import { actualizarEstadoSuscripcion } from "@/lib/confirmar-suscripcion"
 
 // Configurar en el panel de Mercado Pago junto con la URL del webhook para
 // que las notificaciones se puedan validar por firma. Si todavía no está
@@ -81,14 +82,35 @@ export async function POST(request: Request) {
 
   const { tipo, dataId } = extraerNotificacion(body, url)
 
-  if (tipo !== "payment" || !dataId) {
-    log("info", "Notificación ignorada (no es de tipo payment o no trae id)", { tipo, dataId })
+  // "payment" es Checkout Pro (tarjetas/citas); "subscription_preapproval"
+  // es Suscripciones (cobro recurrente del plan) — dos productos de Mercado
+  // Pago distintos que llegan al mismo webhook, cada uno con su propio flujo.
+  if (tipo !== "payment" && tipo !== "subscription_preapproval") {
+    log("info", "Notificación ignorada (tipo no manejado)", { tipo, dataId })
+    return Response.json({ received: true }, { status: 200 })
+  }
+  if (!dataId) {
+    log("info", "Notificación ignorada (sin id)", { tipo })
     return Response.json({ received: true }, { status: 200 })
   }
 
   if (!firmaValida(request, dataId)) {
     log("error", "Firma inválida, se rechaza la notificación", { dataId })
     return Response.json({ error: "Firma inválida" }, { status: 401 })
+  }
+
+  if (tipo === "subscription_preapproval") {
+    try {
+      await actualizarEstadoSuscripcion(dataId)
+      log("info", "Suscripción procesada correctamente", { dataId })
+      return Response.json({ received: true }, { status: 200 })
+    } catch (error) {
+      log("error", "Error al actualizar la suscripción, Mercado Pago reintentará", {
+        dataId,
+        mensaje: error instanceof Error ? error.message : String(error),
+      })
+      return Response.json({ error: "Error temporal, se reintentará" }, { status: 500 })
+    }
   }
 
   try {

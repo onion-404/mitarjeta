@@ -10,10 +10,17 @@ interface CompartirTarjetaProps {
   slug: string
   titulo: string
   className?: string
+  /** "flotante" (default): botón fijo con su propio Menu, como hasta ahora.
+   *  "inline": lista de opciones de compartir sin botón/menú propio — para
+   *  embeber dentro de otro contenedor (ej. un Drawer). */
+  variant?: "flotante" | "inline"
 }
 
 const itemClase =
   "flex cursor-default items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-foreground outline-none select-none data-highlighted:bg-muted"
+
+const itemClaseInline =
+  "flex items-center gap-2.5 rounded-xl border border-border px-3 py-2.5 text-sm text-foreground hover:bg-muted"
 
 const botonClase =
   "fixed bottom-6 left-6 z-40 flex items-center gap-2 rounded-full bg-foreground px-5 py-3.5 text-sm font-semibold text-background shadow-xl transition-transform hover:scale-105 data-popup-open:scale-105"
@@ -30,7 +37,53 @@ function detectarShareNativoServidor() {
   return false
 }
 
-export function CompartirTarjeta({ slug, titulo, className }: CompartirTarjetaProps) {
+function ContenidoCompartirInline({ slug, titulo }: { slug: string; titulo: string }) {
+  const [copiado, setCopiado] = React.useState(false)
+  const url = typeof window !== "undefined" ? `${window.location.origin}/${slug}` : ""
+  const textoCompartido = encodeURIComponent(`${titulo} · ${url}`)
+  const urlCodificada = encodeURIComponent(url)
+
+  async function copiarEnlace() {
+    await navigator.clipboard.writeText(url)
+    setCopiado(true)
+    setTimeout(() => setCopiado(false), 2000)
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <button type="button" onClick={copiarEnlace} className={itemClaseInline}>
+        {copiado ? <Check className="size-4" /> : <Copy className="size-4" />}
+        {copiado ? "¡Copiado!" : "Copiar enlace"}
+      </button>
+      <a
+        href={`https://wa.me/?text=${textoCompartido}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={itemClaseInline}
+      >
+        <SOCIAL_ICONS.whatsapp className="size-4" /> WhatsApp
+      </a>
+      <a
+        href={`https://www.facebook.com/sharer/sharer.php?u=${urlCodificada}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={itemClaseInline}
+      >
+        <SOCIAL_ICONS.facebook className="size-4" /> Facebook
+      </a>
+      <a
+        href={`https://twitter.com/intent/tweet?text=${textoCompartido}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={itemClaseInline}
+      >
+        <SOCIAL_ICONS.x className="size-4" /> X / Twitter
+      </a>
+    </div>
+  )
+}
+
+export function CompartirTarjeta({ slug, titulo, className, variant = "flotante" }: CompartirTarjetaProps) {
   const [copiado, setCopiado] = React.useState(false)
   const tieneShareNativo = React.useSyncExternalStore(
     suscribirseSinCambios,
@@ -55,6 +108,8 @@ export function CompartirTarjeta({ slug, titulo, className }: CompartirTarjetaPr
     setCopiado(true)
     setTimeout(() => setCopiado(false), 2000)
   }
+
+  if (variant === "inline") return <ContenidoCompartirInline slug={slug} titulo={titulo} />
 
   if (tieneShareNativo) {
     return (

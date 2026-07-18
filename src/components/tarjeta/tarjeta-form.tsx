@@ -2,6 +2,7 @@
 
 import { Accordion } from "@base-ui/react/accordion"
 import { Dialog } from "@base-ui/react/dialog"
+import { Drawer } from "@base-ui/react/drawer"
 import {
   AlertTriangle,
   ArrowRight,
@@ -11,12 +12,10 @@ import {
   Clock,
   Copy,
   CreditCard,
-  Eye,
   FileText,
   Loader2,
   Lock,
   Moon,
-  Pencil,
   Plus,
   ShieldCheck,
   Sun,
@@ -26,6 +25,7 @@ import {
 import Link from "next/link"
 import * as React from "react"
 
+import { AgendaServicios } from "@/components/tarjeta/agenda-servicios"
 import { AuthMethods } from "@/components/auth/auth-methods"
 import { Button } from "@/components/ui/button"
 import { CompartirTarjeta } from "@/components/tarjeta/compartir-tarjeta"
@@ -50,6 +50,7 @@ import type {
   PlataformaRed,
   Producto,
   RedSocial,
+  ServicioAgendable,
   Servicio,
   Tarjeta,
   TarjetaTipo,
@@ -77,6 +78,13 @@ const triggerClase =
   "group flex w-full items-center justify-between gap-2 px-5 py-4 text-left text-sm font-semibold text-foreground transition-colors duration-200 ease-out data-panel-open:bg-[var(--acento-bg)]"
 const panelInnerClase =
   "h-[var(--accordion-panel-height)] overflow-hidden transition-[height] duration-200 ease-out data-ending-style:h-0 data-starting-style:h-0"
+const tabMovilClase =
+  "shrink-0 rounded-full border border-border px-3.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+const drawerBackdropClase =
+  "fixed inset-0 z-50 bg-black/40 backdrop-blur-sm transition-opacity duration-200 ease-out data-ending-style:opacity-0 data-starting-style:opacity-0 dark:bg-black/60"
+const drawerViewportClase = "fixed inset-0 z-50 flex items-end justify-center"
+const drawerPopupClase =
+  "w-full max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-border bg-background pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-300 ease-out [transform:translateY(var(--drawer-swipe-movement-y))] data-ending-style:[transform:translateY(100%)] data-starting-style:[transform:translateY(100%)]"
 
 function generarSlug(nombre: string) {
   const base = nombre
@@ -275,6 +283,16 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
   const [copied, setCopied] = React.useState(false)
   const [claimed, setClaimed] = React.useState(false)
   const [vista, setVista] = React.useState<"editar" | "ver">("editar")
+
+  // Tab/drawer móvil (patrón Linktree): id de la sección abierta, o null.
+  const [tabMovilAbierto, setTabMovilAbierto] = React.useState<string | null>(null)
+  const [agendaServiciosPreview, setAgendaServiciosPreview] = React.useState<ServicioAgendable[]>(
+    []
+  )
+  const onAgendaServiciosChange = React.useCallback(
+    (activos: ServicioAgendable[]) => setAgendaServiciosPreview(activos),
+    []
+  )
 
   // Precio, cupón y método de pago (solo al crear)
   const [configuracion, setConfiguracion] = React.useState<Configuracion | null>(null)
@@ -1024,6 +1042,933 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
   const slugBloqueaGuardado =
     !esEdicion && Boolean(slugActualTrim) && (verificandoSlug || slugDisponible === false)
 
+  // --------------------------------------------------------------------
+  // Contenido de cada sección, definido una sola vez y reutilizado tanto
+  // en el accordion de desktop como en los drawers móviles (mismo patrón,
+  // dos contenedores: nada se duplica).
+  // --------------------------------------------------------------------
+  const contenidoDiseno = (
+    <div className="flex flex-col gap-5 px-5 pb-5 pt-1">
+      <div className="flex flex-col gap-2">
+        <span className={labelClase}>Tema de la tarjeta</span>
+        <div className="grid grid-cols-2 gap-2">
+          {(["claro", "oscuro"] as const).map((opcion) => (
+            <button
+              key={opcion}
+              type="button"
+              onClick={() => setTemaModo(opcion)}
+              className={cn(
+                "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors duration-200 ease-out",
+                temaModo === opcion
+                  ? "border-foreground bg-background"
+                  : "border-border bg-background/50 hover:bg-background"
+              )}
+            >
+              {opcion === "claro" ? (
+                <Sun className="size-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <Moon className="size-4 shrink-0 text-muted-foreground" />
+              )}
+              {opcion === "claro" ? "Claro" : "Oscuro"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className={labelClase}>Forma del avatar</span>
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              { valor: "circulo", etiqueta: "Círculo", clase: "rounded-full" },
+              { valor: "suave", etiqueta: "Suave", clase: "rounded-2xl" },
+              { valor: "cuadrado", etiqueta: "Cuadrado", clase: "rounded-md" },
+            ] as const
+          ).map((opcion) => (
+            <button
+              key={opcion.valor}
+              type="button"
+              onClick={() => setAvatarForma(opcion.valor)}
+              className={cn(
+                "flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs transition-colors duration-200 ease-out",
+                avatarForma === opcion.valor
+                  ? "border-foreground bg-background"
+                  : "border-border bg-background/50 hover:bg-background"
+              )}
+            >
+              <span
+                className={cn(
+                  "size-6 border-2 border-muted-foreground",
+                  opcion.clase
+                )}
+              />
+              {opcion.etiqueta}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className={labelClase}>Estilo tipográfico</span>
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              { valor: "moderna", etiqueta: "Moderna", fuente: undefined },
+              { valor: "elegante", etiqueta: "Elegante", fuente: "var(--font-elegante)" },
+              { valor: "creativa", etiqueta: "Creativa", fuente: "var(--font-creativa)" },
+            ] as const
+          ).map((opcion) => (
+            <button
+              key={opcion.valor}
+              type="button"
+              onClick={() => setEstiloTipografia(opcion.valor)}
+              className={cn(
+                "flex flex-col items-center gap-1 rounded-xl border-2 px-2 py-2.5 text-xs transition-colors duration-200 ease-out",
+                estiloTipografia === opcion.valor
+                  ? "border-foreground bg-background"
+                  : "border-border bg-background/50 hover:bg-background"
+              )}
+            >
+              <span
+                style={opcion.fuente ? { fontFamily: opcion.fuente } : undefined}
+                className="text-lg font-semibold"
+              >
+                Aa
+              </span>
+              {opcion.etiqueta}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  const contenidoDatosEsenciales = (
+    <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+      {esEmpresarial ? (
+        <>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClase}>Nombre de la empresa</span>
+            <input
+              required
+              value={nombreEmpresa}
+              onChange={(e) => setNombreEmpresa(e.target.value)}
+              onFocus={() => scrollPreviewTo("nombre")}
+              placeholder="Ej. Café Aroma"
+              className={inputClase}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClase}>Giro / Razón social</span>
+            <input
+              value={giro}
+              onChange={(e) => setGiro(e.target.value)}
+              onFocus={() => scrollPreviewTo("nombre")}
+              placeholder="Ej. Cafetería"
+              className={inputClase}
+            />
+          </label>
+        </>
+      ) : (
+        <>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClase}>Nombre completo</span>
+            <input
+              required
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              onFocus={() => scrollPreviewTo("nombre")}
+              placeholder="Ej. María Gómez"
+              className={inputClase}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClase}>Empresa</span>
+            <input
+              value={empresa}
+              onChange={(e) => setEmpresa(e.target.value)}
+              onFocus={() => scrollPreviewTo("nombre")}
+              placeholder="Ej. Grupo Aroma"
+              className={inputClase}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClase}>Puesto o profesión</span>
+            <input
+              value={puesto}
+              onChange={(e) => setPuesto(e.target.value)}
+              onFocus={() => scrollPreviewTo("nombre")}
+              placeholder="Ej. Abogada"
+              className={inputClase}
+            />
+          </label>
+        </>
+      )}
+
+      {!esEdicion && (
+        <label className="flex flex-col gap-1.5">
+          <span className={labelClase}>Enlace personalizado (opcional)</span>
+          <div className="flex items-stretch overflow-hidden rounded-xl border border-border bg-white/70 backdrop-blur transition-colors duration-200 ease-out focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-zinc-900/60">
+            <span className="flex shrink-0 items-center border-r border-border bg-muted/60 px-3 text-sm text-muted-foreground">
+              mitarjeta.app/
+            </span>
+            <input
+              value={slugPersonalizado}
+              onChange={(e) =>
+                setSlugPersonalizado(
+                  e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "")
+                )
+              }
+              placeholder="tu-nombre"
+              className="w-full bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+          {slugPersonalizado.trim() && (
+            <p
+              className={cn(
+                "flex items-center gap-1 text-xs",
+                verificandoSlug
+                  ? "text-muted-foreground"
+                  : slugDisponible === true
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : slugDisponible === false
+                      ? "text-destructive"
+                      : "text-muted-foreground"
+              )}
+            >
+              {verificandoSlug ? (
+                <>
+                  <Loader2 className="size-3 animate-spin" /> Verificando
+                  disponibilidad...
+                </>
+              ) : slugDisponible === true ? (
+                <>
+                  <Check className="size-3" /> Enlace disponible
+                </>
+              ) : slugDisponible === false ? (
+                <>
+                  <X className="size-3" /> Este enlace ya está en uso
+                </>
+              ) : null}
+            </p>
+          )}
+        </label>
+      )}
+
+      <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+        ¡No te preocupes! El único campo obligatorio es tu nombre.
+        Todos los demás datos los puedes agregar, cambiar o
+        mejorar en el momento que quieras.
+      </p>
+    </div>
+  )
+
+  const contenidoIdentidadVisual = (
+    <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+          <span className={labelClase}>Color primario</span>
+          <input
+            type="color"
+            value={colorPrimario}
+            onChange={(e) => setColorPrimario(e.target.value)}
+            onFocus={() => scrollPreviewTo("banner")}
+            className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+          />
+        </label>
+        <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+          <span className={labelClase}>Color secundario</span>
+          <input
+            type="color"
+            value={colorSecundario}
+            onChange={(e) => setColorSecundario(e.target.value)}
+            onFocus={() => scrollPreviewTo("banner")}
+            className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+          />
+        </label>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span className={labelClase}>
+          {esEmpresarial ? "Foto o logo" : "Foto de perfil"}
+        </span>
+        <div className="flex items-center gap-3">
+          {avatarMostrado && (
+            <div className="relative shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
+              <img
+                src={avatarMostrado}
+                alt="Vista previa de la foto"
+                className="size-12 rounded-full border border-border object-cover"
+              />
+              <button
+                type="button"
+                onClick={quitarAvatar}
+                aria-label="Quitar foto"
+                className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          )}
+          <input
+            key={avatarInputKey}
+            type="file"
+            accept="image/*"
+            onChange={handleAvatarChange}
+            onFocus={() => scrollPreviewTo("avatar")}
+            className={cn(
+              inputClase,
+              "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+            )}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className={labelClase}>Fondo del banner</span>
+        <div className="grid grid-cols-5 gap-2">
+          {BANNER_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => elegirPreset(preset.id)}
+              onFocus={() => scrollPreviewTo("banner")}
+              title={preset.nombre}
+              aria-label={preset.nombre}
+              className={cn(
+                "aspect-square rounded-xl border-2 transition-all duration-200 ease-out hover:scale-105",
+                bannerPresetId === preset.id && !bannerMostrado
+                  ? "border-foreground shadow-md"
+                  : "border-transparent"
+              )}
+              style={{ background: preset.background }}
+            />
+          ))}
+        </div>
+        <span className="text-xs text-muted-foreground">
+          o subí tu propia imagen
+        </span>
+        <div className="flex items-center gap-3">
+          {bannerMostrado && (
+            <div className="relative shrink-0">
+              <div
+                className="h-12 w-20 rounded-lg border border-border bg-cover bg-center"
+                style={{ backgroundImage: `url(${bannerMostrado})` }}
+              />
+              <button
+                type="button"
+                onClick={quitarBanner}
+                aria-label="Quitar banner"
+                className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          )}
+          <input
+            key={bannerInputKey}
+            type="file"
+            accept="image/*"
+            onChange={handleBannerFileChange}
+            onFocus={() => scrollPreviewTo("banner")}
+            className={cn(
+              inputClase,
+              "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+            )}
+          />
+        </div>
+      </div>
+    </div>
+  )
+
+  const contenidoContacto = (
+    <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+      {esEmpresarial ? (
+        <>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClase}>Teléfono corporativo</span>
+            <input
+              type="tel"
+              value={telefonoCorporativo}
+              onChange={(e) => setTelefonoCorporativo(e.target.value)}
+              onFocus={() => scrollPreviewTo("contacto")}
+              placeholder="+54 11 5555-5555"
+              className={inputClase}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClase}>Sitio web</span>
+            <input
+              value={sitioWeb}
+              onChange={(e) => setSitioWeb(e.target.value)}
+              onFocus={() => scrollPreviewTo("contacto")}
+              placeholder="https://..."
+              className={inputClase}
+            />
+          </label>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClase}>Teléfono celular</span>
+              <input
+                type="tel"
+                value={telefono}
+                onChange={(e) => setTelefono(e.target.value)}
+                onFocus={() => scrollPreviewTo("contacto")}
+                placeholder="+54 11 5555-5555"
+                className={inputClase}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClase}>WhatsApp</span>
+              <input
+                type="tel"
+                value={whatsapp}
+                onChange={(e) => setWhatsapp(e.target.value)}
+                onFocus={() => scrollPreviewTo("contacto")}
+                placeholder="+54 11 5555-5555"
+                className={inputClase}
+              />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClase}>Email</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onFocus={() => scrollPreviewTo("contacto")}
+              placeholder="tu@correo.com"
+              className={inputClase}
+            />
+          </label>
+        </>
+      )}
+    </div>
+  )
+
+  const contenidoRedes = (
+    <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+      {redes.map((red, index) => {
+        const plataformaCfg = obtenerPlataforma(red.plataforma)
+        const Icono = SOCIAL_ICONS[red.plataforma]
+        const sufijo =
+          red.plataforma === "personalizado"
+            ? red.url
+            : red.url.slice(plataformaCfg.prefijo.length)
+
+        return (
+          <div
+            key={index}
+            className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
+          >
+            <div className="flex items-center gap-2">
+              <Icono className="size-4 shrink-0 text-muted-foreground" />
+              <select
+                value={red.plataforma}
+                onChange={(e) =>
+                  actualizarRedPlataforma(index, e.target.value as PlataformaRed)
+                }
+                onFocus={() => scrollPreviewTo("redes")}
+                className={cn(inputClase, "w-auto flex-1")}
+              >
+                {PLATAFORMAS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nombre}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => quitarRed(index)}
+                aria-label="Quitar enlace"
+                className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
+
+            {red.plataforma === "personalizado" ? (
+              <div className="flex gap-2">
+                <input
+                  value={red.label}
+                  onChange={(e) => actualizarRedLabel(index, e.target.value)}
+                  onFocus={() => scrollPreviewTo("redes")}
+                  placeholder="Nombre"
+                  className={cn(inputClase, "w-28 shrink-0")}
+                />
+                <input
+                  value={red.url}
+                  onChange={(e) => actualizarRedValor(index, e.target.value)}
+                  onFocus={() => scrollPreviewTo("redes")}
+                  placeholder={plataformaCfg.placeholder}
+                  className={inputClase}
+                />
+              </div>
+            ) : (
+              <div className="flex items-center overflow-hidden rounded-xl border border-border bg-muted/60">
+                <span className="shrink-0 pl-3 text-xs text-muted-foreground">
+                  {plataformaCfg.prefijo}
+                </span>
+                <input
+                  value={sufijo}
+                  onChange={(e) => actualizarRedValor(index, e.target.value)}
+                  onFocus={() => scrollPreviewTo("redes")}
+                  placeholder={plataformaCfg.placeholder}
+                  className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
+                />
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {redes.length < 5 && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={agregarRed}
+          className="self-start"
+        >
+          <Plus className="size-3.5" /> Agregar red
+        </Button>
+      )}
+    </div>
+  )
+
+  const contenidoUbicacion = (
+    <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <label className="flex flex-col gap-1.5">
+          <span className={labelClase}>Dirección física</span>
+          <input
+            value={direccion}
+            onChange={(e) => setDireccion(e.target.value)}
+            onFocus={() => scrollPreviewTo("ubicacion")}
+            placeholder="Av. Siempre Viva 742"
+            className={inputClase}
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className={labelClase}>Enlace de Google Maps</span>
+          <input
+            value={direccionMapsUrl}
+            onChange={(e) => setDireccionMapsUrl(e.target.value)}
+            onFocus={() => scrollPreviewTo("ubicacion")}
+            placeholder="https://maps.google.com/..."
+            className={inputClase}
+          />
+        </label>
+      </div>
+      {esEmpresarial && (
+        <label className="flex flex-col gap-1.5">
+          <span className={labelClase}>Horarios de atención</span>
+          <input
+            value={horarios}
+            onChange={(e) => setHorarios(e.target.value)}
+            onFocus={() => scrollPreviewTo("ubicacion")}
+            placeholder="Lun a Vie 9 a 18hs"
+            className={inputClase}
+          />
+        </label>
+      )}
+    </div>
+  )
+
+  const contenidoMultimedia = (
+    <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+      <label className="flex flex-col gap-1.5">
+        <span className={labelClase}>Video de YouTube (opcional)</span>
+        <input
+          value={videoUrl}
+          onChange={(e) => setVideoUrl(e.target.value)}
+          onFocus={() => scrollPreviewTo("video")}
+          placeholder="https://www.youtube.com/watch?v=..."
+          className={inputClase}
+        />
+      </label>
+    </div>
+  )
+
+  const contenidoServicios = (
+    <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+      <label className="flex flex-col gap-1.5">
+        <span className={labelClase}>Descripción general</span>
+        <textarea
+          value={descripcionServicios}
+          onChange={(e) => setDescripcionServicios(e.target.value)}
+          onFocus={() => scrollPreviewTo("servicios")}
+          placeholder="Contá brevemente qué ofrecés"
+          rows={2}
+          className={inputClase}
+        />
+      </label>
+
+      {servicios.map((servicio, index) => (
+        <div
+          key={index}
+          className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
+        >
+          <div className="flex items-center gap-2">
+            <input
+              value={servicio.titulo}
+              onChange={(e) => actualizarServicioTitulo(index, e.target.value)}
+              onFocus={() => scrollPreviewTo("servicios")}
+              placeholder="Título del servicio"
+              className={cn(inputClase, "flex-1")}
+            />
+            <button
+              type="button"
+              onClick={() => quitarServicio(index)}
+              aria-label="Quitar servicio"
+              className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+          <input
+            value={servicio.descripcion ?? ""}
+            onChange={(e) => actualizarServicioDescripcion(index, e.target.value)}
+            onFocus={() => scrollPreviewTo("servicios")}
+            placeholder="Descripción corta"
+            className={inputClase}
+          />
+        </div>
+      ))}
+
+      {servicios.length < 8 && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={agregarServicio}
+          className="self-start"
+        >
+          <Plus className="size-3.5" /> Agregar servicio
+        </Button>
+      )}
+
+      <label className="flex flex-col gap-1.5">
+        <span className={labelClase}>Folleto o presentación (PDF)</span>
+        <div className="flex items-center gap-3">
+          {(brochureUrlExistente || brochureFile) && (
+            <div className="flex shrink-0 items-center gap-2 rounded-xl border border-border bg-background/50 px-3 py-2">
+              <FileText className="size-4 text-muted-foreground" />
+              <span className="max-w-32 truncate text-xs text-foreground">
+                {brochureFile?.name || "Folleto actual"}
+              </span>
+              <button
+                type="button"
+                onClick={quitarBrochure}
+                aria-label="Quitar folleto"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )}
+          <input
+            key={brochureInputKey}
+            type="file"
+            accept="application/pdf"
+            onChange={handleBrochureChange}
+            onFocus={() => scrollPreviewTo("servicios")}
+            className={cn(
+              inputClase,
+              "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+            )}
+          />
+        </div>
+      </label>
+    </div>
+  )
+
+  const contenidoProductos = (
+    <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+      {productos.map((producto, index) => {
+        const imagenMostrada = producto.imagenPreview || producto.imagenUrlExistente
+        return (
+          <div
+            key={index}
+            className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
+          >
+            <div className="flex items-center gap-2">
+              <input
+                value={producto.titulo}
+                onChange={(e) => actualizarProductoTitulo(index, e.target.value)}
+                onFocus={() => scrollPreviewTo("productos")}
+                placeholder="Título del producto"
+                className={cn(inputClase, "flex-1")}
+              />
+              <div className="flex w-32 shrink-0 items-center overflow-hidden rounded-xl border border-border bg-muted/60">
+                <span className="shrink-0 pl-3 text-xs text-muted-foreground">$</span>
+                <input
+                  value={producto.precio}
+                  onChange={(e) => actualizarProductoPrecio(index, e.target.value)}
+                  onFocus={() => scrollPreviewTo("productos")}
+                  placeholder="Precio"
+                  className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => quitarProducto(index)}
+                aria-label="Quitar producto"
+                className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
+            <input
+              value={producto.descripcion}
+              onChange={(e) => actualizarProductoDescripcion(index, e.target.value)}
+              onFocus={() => scrollPreviewTo("productos")}
+              placeholder="Descripción corta (opcional)"
+              className={inputClase}
+            />
+            <input
+              type="url"
+              value={producto.enlaceUrl}
+              onChange={(e) => actualizarProductoEnlace(index, e.target.value)}
+              onFocus={() => scrollPreviewTo("productos")}
+              placeholder="Enlace para comprar o ver más (opcional)"
+              className={inputClase}
+            />
+            <div className="flex items-center gap-3">
+              {imagenMostrada && (
+                <div className="relative shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
+                  <img
+                    src={imagenMostrada}
+                    alt="Vista previa del producto"
+                    className="size-12 rounded-lg border border-border object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => quitarProductoImagen(index)}
+                    aria-label="Quitar imagen del producto"
+                    className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleProductoImagenChange(index, e)}
+                onFocus={() => scrollPreviewTo("productos")}
+                className={cn(
+                  inputClase,
+                  "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                )}
+              />
+            </div>
+          </div>
+        )
+      })}
+
+      {productos.length < 12 && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={agregarProducto}
+          className="self-start"
+        >
+          <Plus className="size-3.5" /> Agregar producto
+        </Button>
+      )}
+    </div>
+  )
+
+  const contenidoAgenda = esEdicion && tarjeta && (
+    <div className="px-5 pb-5 pt-1">
+      <AgendaServicios
+        tarjetaId={tarjeta.id}
+        planId={tarjeta.plan_id}
+        onServiciosChange={onAgendaServiciosChange}
+      />
+    </div>
+  )
+
+  const contenidoResumenPago = !esEdicion && (
+    <div className="flex flex-col gap-3">
+      {precioBase !== null && (
+        <div className="flex items-baseline gap-2">
+          {hayPromo && precioRegular !== null && (
+            <span className="text-sm text-muted-foreground line-through">
+              ${precioRegular.toLocaleString("es-MX")}
+            </span>
+          )}
+          <span className="text-2xl font-semibold text-foreground">
+            ${(precioFinal ?? precioBase).toLocaleString("es-MX")}{" "}
+            <span className="text-sm font-normal text-muted-foreground">
+              MXN/año
+            </span>
+          </span>
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <input
+          value={cuponInput}
+          onChange={(e) => setCuponInput(e.target.value)}
+          placeholder="Código de descuento (opcional)"
+          disabled={Boolean(cuponValidado)}
+          className={cn(inputClase, "flex-1 disabled:opacity-60")}
+        />
+        {cuponValidado ? (
+          <Button type="button" variant="outline" onClick={quitarCupon}>
+            Quitar
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleValidarCupon}
+            disabled={validandoCupon || !cuponInput.trim()}
+          >
+            {validandoCupon ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              "Aplicar"
+            )}
+          </Button>
+        )}
+      </div>
+
+      {cuponValidado && (
+        <p className="text-sm text-emerald-600 dark:text-emerald-400">
+          Código {cuponValidado.codigo} aplicado:{" "}
+          {cuponValidado.porcentaje_descuento}% de descuento
+          {descuentoPorcentaje >= 100 &&
+            " — ¡tu tarjeta se activa de inmediato!"}
+        </p>
+      )}
+      {cuponError && (
+        <p className="text-sm text-destructive">{cuponError}</p>
+      )}
+
+      {descuentoPorcentaje < 100 && (
+        <div className="flex flex-col gap-2">
+          <span className={labelClase}>Método de pago</span>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setMetodoPago("mercado_pago")}
+              className={cn(
+                "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors duration-200 ease-out",
+                metodoPago === "mercado_pago"
+                  ? "border-foreground bg-background"
+                  : "border-border bg-background/50 hover:bg-background"
+              )}
+            >
+              <CreditCard className="size-4 shrink-0 text-muted-foreground" />
+              Mercado Pago
+            </button>
+            <button
+              type="button"
+              onClick={() => setMetodoPago("transferencia")}
+              className={cn(
+                "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors duration-200 ease-out",
+                metodoPago === "transferencia"
+                  ? "border-foreground bg-background"
+                  : "border-border bg-background/50 hover:bg-background"
+              )}
+            >
+              <Building2 className="size-4 shrink-0 text-muted-foreground" />
+              Transferencia o depósito
+            </button>
+          </div>
+
+          {metodoPago === "transferencia" && (
+            <div className="mt-1 flex flex-col gap-1.5 rounded-xl border border-border bg-background/50 p-3 text-sm">
+              <p className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Banco</span>
+                <span className="font-medium text-foreground">
+                  {DATOS_BANCARIOS.banco}
+                </span>
+              </p>
+              <p className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Titular</span>
+                <span className="font-medium text-foreground">
+                  {DATOS_BANCARIOS.titular}
+                </span>
+              </p>
+              <p className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">CLABE</span>
+                <span className="flex items-center gap-1.5 font-medium text-foreground">
+                  {DATOS_BANCARIOS.clabe}
+                  <button
+                    type="button"
+                    onClick={handleCopiarClabe}
+                    aria-label="Copiar CLABE"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    {copiadoClabe ? (
+                      <Check className="size-3.5" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
+                  </button>
+                </span>
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Después de transferir, confirmá tu tarjeta con el botón
+                de abajo. Quedará pendiente hasta que verifiquemos el
+                depósito.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  const contenidoBotonGuardar = guardadoExito ? (
+    <span className="inline-flex animate-in items-center gap-1.5 zoom-in-95 duration-300">
+      <Check className="size-4" />
+      {esEdicion ? "¡Guardado!" : "¡Listo!"}
+    </span>
+  ) : saving ? (
+    <span className="inline-flex items-center gap-1.5 animate-pulse">
+      <Loader2 className="size-4 animate-spin" />
+      {esEdicion ? "Guardando..." : "Creando..."}
+    </span>
+  ) : esEdicion ? (
+    <>
+      Guardar cambios <Check className="size-4" />
+    </>
+  ) : (
+    <>
+      Crear mi tarjeta <ArrowRight className="size-4" />
+    </>
+  )
+
+  interface Seccion {
+    id: string
+    titulo: string
+    contenido: React.ReactNode
+  }
+
+  const SECCIONES: Seccion[] = [
+    { id: "diseno", titulo: "Diseño de tarjeta", contenido: contenidoDiseno },
+    { id: "datos", titulo: "Datos esenciales", contenido: contenidoDatosEsenciales },
+    { id: "visual", titulo: "Identidad visual", contenido: contenidoIdentidadVisual },
+    { id: "contacto", titulo: "Canales de contacto", contenido: contenidoContacto },
+    { id: "redes", titulo: "Redes sociales", contenido: contenidoRedes },
+    { id: "ubicacion", titulo: "Ubicación y negocio", contenido: contenidoUbicacion },
+    { id: "multimedia", titulo: "Contenido multimedia", contenido: contenidoMultimedia },
+    { id: "servicios", titulo: "Servicios", contenido: contenidoServicios },
+    { id: "productos", titulo: "Productos", contenido: contenidoProductos },
+    ...(esEdicion && tarjeta ? [{ id: "agenda", titulo: "Agenda", contenido: contenidoAgenda }] : []),
+  ]
+
   return (
     <div className="relative flex flex-1 flex-col overflow-clip bg-gradient-to-b from-indigo-50 via-white to-white dark:from-zinc-950 dark:via-black dark:to-black">
       <div
@@ -1051,7 +1996,10 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
         </div>
       )}
 
-      <div className="relative mx-auto w-full max-w-6xl px-4 pt-10 sm:px-6 lg:px-10">
+      {/* Encabezado (título, banners, toggle ver/editar): solo desktop. En
+          mobile el preview ocupa toda la pantalla y esta información no
+          tiene lugar; el botón "Guardar" ya da feedback propio. */}
+      <div className="relative mx-auto hidden w-full max-w-6xl px-4 pt-10 sm:px-6 lg:block lg:px-10">
         <h1 className="text-2xl font-semibold text-foreground">
           {esEdicion ? "Editá tu tarjeta" : "Creá tu tarjeta digital"}
         </h1>
@@ -1090,7 +2038,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Pencil className="size-3.5" /> Modo edición
+              Modo edición
             </button>
             <button
               type="button"
@@ -1102,18 +2050,21 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Eye className="size-3.5" /> Ver tarjeta
+              Ver tarjeta
             </button>
           </div>
         )}
       </div>
 
-      {esEdicion && vista === "ver" && tarjeta ? (
-        <div className="relative mx-auto flex w-full max-w-6xl flex-1 items-center justify-center px-4 py-10">
+      {/* Modo "ver tarjeta": solo existe en desktop (en mobile el preview ya
+          está siempre visible a pantalla completa detrás de los tabs). */}
+      {esEdicion && vista === "ver" && tarjeta && (
+        <div className="relative mx-auto hidden w-full max-w-6xl flex-1 items-center justify-center px-4 py-10 lg:flex">
           <TarjetaCard
             tipo={tipo}
             datosContacto={datosContactoActual}
             identidadVisual={identidadVisualActual}
+            agendaServicios={agendaServiciosPreview}
             mostrarAcciones
             className="relative"
           />
@@ -1125,1041 +2076,252 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
             }
           />
         </div>
-      ) : (
-        <div className="relative mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 items-start gap-8 px-4 py-8 sm:px-6 lg:grid-cols-2 lg:gap-12 lg:px-10">
-          <div className="order-first flex justify-center self-start lg:sticky lg:top-8 lg:order-last lg:flex lg:h-[calc(100vh-4rem)] lg:items-center lg:justify-center">
-            <div className="flex w-full max-w-sm flex-col items-center gap-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Vista previa en tiempo real
-              </span>
-              <div className="relative mx-auto aspect-[9/19.5] w-72 overflow-hidden rounded-[2.5rem] border-[8px] border-neutral-800 bg-neutral-800 shadow-2xl lg:w-96 dark:border-neutral-700">
-                <div className="absolute left-1/2 top-2 z-10 h-6 w-28 -translate-x-1/2 rounded-full bg-neutral-800" />
-                <div
-                  ref={previewRef}
-                  className={cn(
-                    "size-full overflow-y-auto rounded-[2rem]",
-                    temaModo === "oscuro" ? "bg-neutral-950" : "bg-white"
-                  )}
-                >
-                  <TarjetaCard
-                    tipo={tipo}
-                    datosContacto={datosContactoActual}
-                    identidadVisual={identidadVisualActual}
-                    className="w-full min-w-0 rounded-none border-0 shadow-none"
-                  />
-                </div>
+      )}
+
+      <div
+        className={cn(
+          "relative mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 items-start gap-8 px-4 py-8 sm:px-6 lg:grid-cols-2 lg:gap-12 lg:px-10",
+          esEdicion && vista === "ver" && "lg:hidden"
+        )}
+      >
+        {/* Preview: pantalla completa en mobile (fixed, sin bezel), mockup
+            de teléfono sticky en desktop — igual que antes en lg: y arriba. */}
+        <div className="fixed inset-0 z-0 overflow-y-auto bg-neutral-100 dark:bg-neutral-950 lg:static lg:z-auto lg:order-last lg:flex lg:h-[calc(100vh-4rem)] lg:items-center lg:justify-center lg:self-start lg:overflow-visible lg:bg-transparent lg:sticky lg:top-8">
+          <div className="mx-auto w-full max-w-sm pb-28 lg:flex lg:flex-col lg:items-center lg:gap-2 lg:pb-0">
+            <span className="hidden text-xs font-medium uppercase tracking-wide text-muted-foreground lg:block">
+              Vista previa en tiempo real
+            </span>
+            <div className="relative mx-auto w-full overflow-hidden lg:aspect-[9/19.5] lg:w-96 lg:rounded-[2.5rem] lg:border-[8px] lg:border-neutral-800 lg:bg-neutral-800 lg:shadow-2xl lg:dark:border-neutral-700">
+              <div className="hidden lg:absolute lg:left-1/2 lg:top-2 lg:z-10 lg:block lg:h-6 lg:w-28 lg:-translate-x-1/2 lg:rounded-full lg:bg-neutral-800" />
+              <div
+                ref={previewRef}
+                className={cn(
+                  "size-full overflow-y-auto lg:rounded-[2rem]",
+                  temaModo === "oscuro" ? "bg-neutral-950" : "bg-white"
+                )}
+              >
+                <TarjetaCard
+                  tipo={tipo}
+                  datosContacto={datosContactoActual}
+                  identidadVisual={identidadVisualActual}
+                  agendaServicios={agendaServiciosPreview}
+                  className="w-full min-w-0 rounded-none border-0 shadow-none"
+                />
               </div>
             </div>
           </div>
+        </div>
 
-          <form onSubmit={handleGuardar} className="flex flex-col gap-6">
-            <div className="inline-flex w-fit rounded-full border border-border bg-white/70 p-1 shadow-sm backdrop-blur dark:bg-zinc-900/50">
-              {(["personal", "empresarial"] as const).map((opcion) => (
-                <button
-                  key={opcion}
-                  type="button"
-                  onClick={() => setTipo(opcion)}
-                  className={cn(
-                    "rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 ease-out",
-                    tipo === opcion
-                      ? "bg-foreground text-background shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {opcion === "personal" ? "Personal" : "Empresarial"}
-                </button>
-              ))}
-            </div>
-
-            <Accordion.Root
-              defaultValue={[1]}
-              className="flex flex-col gap-3"
-              style={{ "--acento-bg": `${colorSecundario || "#71717a"}1a` } as React.CSSProperties}
-            >
-              <Accordion.Item value={0} className={panelClase}>
-                <Accordion.Header>
-                  <Accordion.Trigger className={triggerClase}>
-                    Diseño de tarjeta
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
-                  </Accordion.Trigger>
-                </Accordion.Header>
-                <Accordion.Panel className={panelInnerClase}>
-                  <div className="flex flex-col gap-5 px-5 pb-5 pt-1">
-                    <div className="flex flex-col gap-2">
-                      <span className={labelClase}>Tema de la tarjeta</span>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(["claro", "oscuro"] as const).map((opcion) => (
-                          <button
-                            key={opcion}
-                            type="button"
-                            onClick={() => setTemaModo(opcion)}
-                            className={cn(
-                              "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors duration-200 ease-out",
-                              temaModo === opcion
-                                ? "border-foreground bg-background"
-                                : "border-border bg-background/50 hover:bg-background"
-                            )}
-                          >
-                            {opcion === "claro" ? (
-                              <Sun className="size-4 shrink-0 text-muted-foreground" />
-                            ) : (
-                              <Moon className="size-4 shrink-0 text-muted-foreground" />
-                            )}
-                            {opcion === "claro" ? "Claro" : "Oscuro"}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                      <span className={labelClase}>Forma del avatar</span>
-                      <div className="grid grid-cols-3 gap-2">
-                        {(
-                          [
-                            { valor: "circulo", etiqueta: "Círculo", clase: "rounded-full" },
-                            { valor: "suave", etiqueta: "Suave", clase: "rounded-2xl" },
-                            { valor: "cuadrado", etiqueta: "Cuadrado", clase: "rounded-md" },
-                          ] as const
-                        ).map((opcion) => (
-                          <button
-                            key={opcion.valor}
-                            type="button"
-                            onClick={() => setAvatarForma(opcion.valor)}
-                            className={cn(
-                              "flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs transition-colors duration-200 ease-out",
-                              avatarForma === opcion.valor
-                                ? "border-foreground bg-background"
-                                : "border-border bg-background/50 hover:bg-background"
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                "size-6 border-2 border-muted-foreground",
-                                opcion.clase
-                              )}
-                            />
-                            {opcion.etiqueta}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                      <span className={labelClase}>Estilo tipográfico</span>
-                      <div className="grid grid-cols-3 gap-2">
-                        {(
-                          [
-                            { valor: "moderna", etiqueta: "Moderna", fuente: undefined },
-                            { valor: "elegante", etiqueta: "Elegante", fuente: "var(--font-elegante)" },
-                            { valor: "creativa", etiqueta: "Creativa", fuente: "var(--font-creativa)" },
-                          ] as const
-                        ).map((opcion) => (
-                          <button
-                            key={opcion.valor}
-                            type="button"
-                            onClick={() => setEstiloTipografia(opcion.valor)}
-                            className={cn(
-                              "flex flex-col items-center gap-1 rounded-xl border-2 px-2 py-2.5 text-xs transition-colors duration-200 ease-out",
-                              estiloTipografia === opcion.valor
-                                ? "border-foreground bg-background"
-                                : "border-border bg-background/50 hover:bg-background"
-                            )}
-                          >
-                            <span
-                              style={opcion.fuente ? { fontFamily: opcion.fuente } : undefined}
-                              className="text-lg font-semibold"
-                            >
-                              Aa
-                            </span>
-                            {opcion.etiqueta}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </Accordion.Panel>
-              </Accordion.Item>
-
-              <Accordion.Item value={1} className={panelClase}>
-                <Accordion.Header>
-                  <Accordion.Trigger className={triggerClase}>
-                    Datos esenciales
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
-                  </Accordion.Trigger>
-                </Accordion.Header>
-                <Accordion.Panel className={panelInnerClase}>
-                  <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
-                    {esEmpresarial ? (
-                      <>
-                        <label className="flex flex-col gap-1.5">
-                          <span className={labelClase}>Nombre de la empresa</span>
-                          <input
-                            required
-                            value={nombreEmpresa}
-                            onChange={(e) => setNombreEmpresa(e.target.value)}
-                            onFocus={() => scrollPreviewTo("nombre")}
-                            placeholder="Ej. Café Aroma"
-                            className={inputClase}
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1.5">
-                          <span className={labelClase}>Giro / Razón social</span>
-                          <input
-                            value={giro}
-                            onChange={(e) => setGiro(e.target.value)}
-                            onFocus={() => scrollPreviewTo("nombre")}
-                            placeholder="Ej. Cafetería"
-                            className={inputClase}
-                          />
-                        </label>
-                      </>
-                    ) : (
-                      <>
-                        <label className="flex flex-col gap-1.5">
-                          <span className={labelClase}>Nombre completo</span>
-                          <input
-                            required
-                            value={nombre}
-                            onChange={(e) => setNombre(e.target.value)}
-                            onFocus={() => scrollPreviewTo("nombre")}
-                            placeholder="Ej. María Gómez"
-                            className={inputClase}
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1.5">
-                          <span className={labelClase}>Empresa</span>
-                          <input
-                            value={empresa}
-                            onChange={(e) => setEmpresa(e.target.value)}
-                            onFocus={() => scrollPreviewTo("nombre")}
-                            placeholder="Ej. Grupo Aroma"
-                            className={inputClase}
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1.5">
-                          <span className={labelClase}>Puesto o profesión</span>
-                          <input
-                            value={puesto}
-                            onChange={(e) => setPuesto(e.target.value)}
-                            onFocus={() => scrollPreviewTo("nombre")}
-                            placeholder="Ej. Abogada"
-                            className={inputClase}
-                          />
-                        </label>
-                      </>
-                    )}
-
-                    {!esEdicion && (
-                      <label className="flex flex-col gap-1.5">
-                        <span className={labelClase}>Enlace personalizado (opcional)</span>
-                        <div className="flex items-stretch overflow-hidden rounded-xl border border-border bg-white/70 backdrop-blur transition-colors duration-200 ease-out focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-zinc-900/60">
-                          <span className="flex shrink-0 items-center border-r border-border bg-muted/60 px-3 text-sm text-muted-foreground">
-                            mitarjeta.app/
-                          </span>
-                          <input
-                            value={slugPersonalizado}
-                            onChange={(e) =>
-                              setSlugPersonalizado(
-                                e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "")
-                              )
-                            }
-                            placeholder="tu-nombre"
-                            className="w-full bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-                          />
-                        </div>
-                        {slugPersonalizado.trim() && (
-                          <p
-                            className={cn(
-                              "flex items-center gap-1 text-xs",
-                              verificandoSlug
-                                ? "text-muted-foreground"
-                                : slugDisponible === true
-                                  ? "text-emerald-600 dark:text-emerald-400"
-                                  : slugDisponible === false
-                                    ? "text-destructive"
-                                    : "text-muted-foreground"
-                            )}
-                          >
-                            {verificandoSlug ? (
-                              <>
-                                <Loader2 className="size-3 animate-spin" /> Verificando
-                                disponibilidad...
-                              </>
-                            ) : slugDisponible === true ? (
-                              <>
-                                <Check className="size-3" /> Enlace disponible
-                              </>
-                            ) : slugDisponible === false ? (
-                              <>
-                                <X className="size-3" /> Este enlace ya está en uso
-                              </>
-                            ) : null}
-                          </p>
-                        )}
-                      </label>
-                    )}
-
-                    <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                      ¡No te preocupes! El único campo obligatorio es tu nombre.
-                      Todos los demás datos los puedes agregar, cambiar o
-                      mejorar en el momento que quieras.
-                    </p>
-                  </div>
-                </Accordion.Panel>
-              </Accordion.Item>
-
-              <Accordion.Item value={2} className={panelClase}>
-                <Accordion.Header>
-                  <Accordion.Trigger className={triggerClase}>
-                    Identidad visual
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
-                  </Accordion.Trigger>
-                </Accordion.Header>
-                <Accordion.Panel className={panelInnerClase}>
-                  <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
-                        <span className={labelClase}>Color primario</span>
-                        <input
-                          type="color"
-                          value={colorPrimario}
-                          onChange={(e) => setColorPrimario(e.target.value)}
-                          onFocus={() => scrollPreviewTo("banner")}
-                          className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-                        />
-                      </label>
-                      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
-                        <span className={labelClase}>Color secundario</span>
-                        <input
-                          type="color"
-                          value={colorSecundario}
-                          onChange={(e) => setColorSecundario(e.target.value)}
-                          onFocus={() => scrollPreviewTo("banner")}
-                          className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-                        />
-                      </label>
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <span className={labelClase}>
-                        {esEmpresarial ? "Foto o logo" : "Foto de perfil"}
-                      </span>
-                      <div className="flex items-center gap-3">
-                        {avatarMostrado && (
-                          <div className="relative shrink-0">
-                            {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
-                            <img
-                              src={avatarMostrado}
-                              alt="Vista previa de la foto"
-                              className="size-12 rounded-full border border-border object-cover"
-                            />
-                            <button
-                              type="button"
-                              onClick={quitarAvatar}
-                              aria-label="Quitar foto"
-                              className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
-                            >
-                              <X className="size-3" />
-                            </button>
-                          </div>
-                        )}
-                        <input
-                          key={avatarInputKey}
-                          type="file"
-                          accept="image/*"
-                          onChange={handleAvatarChange}
-                          onFocus={() => scrollPreviewTo("avatar")}
-                          className={cn(
-                            inputClase,
-                            "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-                          )}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                      <span className={labelClase}>Fondo del banner</span>
-                      <div className="grid grid-cols-5 gap-2">
-                        {BANNER_PRESETS.map((preset) => (
-                          <button
-                            key={preset.id}
-                            type="button"
-                            onClick={() => elegirPreset(preset.id)}
-                            onFocus={() => scrollPreviewTo("banner")}
-                            title={preset.nombre}
-                            aria-label={preset.nombre}
-                            className={cn(
-                              "aspect-square rounded-xl border-2 transition-all duration-200 ease-out hover:scale-105",
-                              bannerPresetId === preset.id && !bannerMostrado
-                                ? "border-foreground shadow-md"
-                                : "border-transparent"
-                            )}
-                            style={{ background: preset.background }}
-                          />
-                        ))}
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        o subí tu propia imagen
-                      </span>
-                      <div className="flex items-center gap-3">
-                        {bannerMostrado && (
-                          <div className="relative shrink-0">
-                            <div
-                              className="h-12 w-20 rounded-lg border border-border bg-cover bg-center"
-                              style={{ backgroundImage: `url(${bannerMostrado})` }}
-                            />
-                            <button
-                              type="button"
-                              onClick={quitarBanner}
-                              aria-label="Quitar banner"
-                              className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
-                            >
-                              <X className="size-3" />
-                            </button>
-                          </div>
-                        )}
-                        <input
-                          key={bannerInputKey}
-                          type="file"
-                          accept="image/*"
-                          onChange={handleBannerFileChange}
-                          onFocus={() => scrollPreviewTo("banner")}
-                          className={cn(
-                            inputClase,
-                            "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-                          )}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </Accordion.Panel>
-              </Accordion.Item>
-
-              <Accordion.Item value={3} className={panelClase}>
-                <Accordion.Header>
-                  <Accordion.Trigger className={triggerClase}>
-                    Canales de contacto
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
-                  </Accordion.Trigger>
-                </Accordion.Header>
-                <Accordion.Panel className={panelInnerClase}>
-                  <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
-                    {esEmpresarial ? (
-                      <>
-                        <label className="flex flex-col gap-1.5">
-                          <span className={labelClase}>Teléfono corporativo</span>
-                          <input
-                            type="tel"
-                            value={telefonoCorporativo}
-                            onChange={(e) => setTelefonoCorporativo(e.target.value)}
-                            onFocus={() => scrollPreviewTo("contacto")}
-                            placeholder="+54 11 5555-5555"
-                            className={inputClase}
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1.5">
-                          <span className={labelClase}>Sitio web</span>
-                          <input
-                            value={sitioWeb}
-                            onChange={(e) => setSitioWeb(e.target.value)}
-                            onFocus={() => scrollPreviewTo("contacto")}
-                            placeholder="https://..."
-                            className={inputClase}
-                          />
-                        </label>
-                      </>
-                    ) : (
-                      <>
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                          <label className="flex flex-col gap-1.5">
-                            <span className={labelClase}>Teléfono celular</span>
-                            <input
-                              type="tel"
-                              value={telefono}
-                              onChange={(e) => setTelefono(e.target.value)}
-                              onFocus={() => scrollPreviewTo("contacto")}
-                              placeholder="+54 11 5555-5555"
-                              className={inputClase}
-                            />
-                          </label>
-                          <label className="flex flex-col gap-1.5">
-                            <span className={labelClase}>WhatsApp</span>
-                            <input
-                              type="tel"
-                              value={whatsapp}
-                              onChange={(e) => setWhatsapp(e.target.value)}
-                              onFocus={() => scrollPreviewTo("contacto")}
-                              placeholder="+54 11 5555-5555"
-                              className={inputClase}
-                            />
-                          </label>
-                        </div>
-                        <label className="flex flex-col gap-1.5">
-                          <span className={labelClase}>Email</span>
-                          <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            onFocus={() => scrollPreviewTo("contacto")}
-                            placeholder="tu@correo.com"
-                            className={inputClase}
-                          />
-                        </label>
-                      </>
-                    )}
-                  </div>
-                </Accordion.Panel>
-              </Accordion.Item>
-
-              <Accordion.Item value={4} className={panelClase}>
-                <Accordion.Header>
-                  <Accordion.Trigger className={triggerClase}>
-                    Redes sociales
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
-                  </Accordion.Trigger>
-                </Accordion.Header>
-                <Accordion.Panel className={panelInnerClase}>
-                  <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
-                    {redes.map((red, index) => {
-                      const plataformaCfg = obtenerPlataforma(red.plataforma)
-                      const Icono = SOCIAL_ICONS[red.plataforma]
-                      const sufijo =
-                        red.plataforma === "personalizado"
-                          ? red.url
-                          : red.url.slice(plataformaCfg.prefijo.length)
-
-                      return (
-                        <div
-                          key={index}
-                          className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Icono className="size-4 shrink-0 text-muted-foreground" />
-                            <select
-                              value={red.plataforma}
-                              onChange={(e) =>
-                                actualizarRedPlataforma(index, e.target.value as PlataformaRed)
-                              }
-                              onFocus={() => scrollPreviewTo("redes")}
-                              className={cn(inputClase, "w-auto flex-1")}
-                            >
-                              {PLATAFORMAS.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  {p.nombre}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => quitarRed(index)}
-                              aria-label="Quitar enlace"
-                              className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
-                            >
-                              <Trash2 className="size-4" />
-                            </button>
-                          </div>
-
-                          {red.plataforma === "personalizado" ? (
-                            <div className="flex gap-2">
-                              <input
-                                value={red.label}
-                                onChange={(e) => actualizarRedLabel(index, e.target.value)}
-                                onFocus={() => scrollPreviewTo("redes")}
-                                placeholder="Nombre"
-                                className={cn(inputClase, "w-28 shrink-0")}
-                              />
-                              <input
-                                value={red.url}
-                                onChange={(e) => actualizarRedValor(index, e.target.value)}
-                                onFocus={() => scrollPreviewTo("redes")}
-                                placeholder={plataformaCfg.placeholder}
-                                className={inputClase}
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex items-center overflow-hidden rounded-xl border border-border bg-muted/60">
-                              <span className="shrink-0 pl-3 text-xs text-muted-foreground">
-                                {plataformaCfg.prefijo}
-                              </span>
-                              <input
-                                value={sufijo}
-                                onChange={(e) => actualizarRedValor(index, e.target.value)}
-                                onFocus={() => scrollPreviewTo("redes")}
-                                placeholder={plataformaCfg.placeholder}
-                                className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-
-                    {redes.length < 5 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={agregarRed}
-                        className="self-start"
-                      >
-                        <Plus className="size-3.5" /> Agregar red
-                      </Button>
-                    )}
-                  </div>
-                </Accordion.Panel>
-              </Accordion.Item>
-
-              <Accordion.Item value={5} className={panelClase}>
-                <Accordion.Header>
-                  <Accordion.Trigger className={triggerClase}>
-                    Ubicación y negocio
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
-                  </Accordion.Trigger>
-                </Accordion.Header>
-                <Accordion.Panel className={panelInnerClase}>
-                  <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <label className="flex flex-col gap-1.5">
-                        <span className={labelClase}>Dirección física</span>
-                        <input
-                          value={direccion}
-                          onChange={(e) => setDireccion(e.target.value)}
-                          onFocus={() => scrollPreviewTo("ubicacion")}
-                          placeholder="Av. Siempre Viva 742"
-                          className={inputClase}
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1.5">
-                        <span className={labelClase}>Enlace de Google Maps</span>
-                        <input
-                          value={direccionMapsUrl}
-                          onChange={(e) => setDireccionMapsUrl(e.target.value)}
-                          onFocus={() => scrollPreviewTo("ubicacion")}
-                          placeholder="https://maps.google.com/..."
-                          className={inputClase}
-                        />
-                      </label>
-                    </div>
-                    {esEmpresarial && (
-                      <label className="flex flex-col gap-1.5">
-                        <span className={labelClase}>Horarios de atención</span>
-                        <input
-                          value={horarios}
-                          onChange={(e) => setHorarios(e.target.value)}
-                          onFocus={() => scrollPreviewTo("ubicacion")}
-                          placeholder="Lun a Vie 9 a 18hs"
-                          className={inputClase}
-                        />
-                      </label>
-                    )}
-                  </div>
-                </Accordion.Panel>
-              </Accordion.Item>
-
-              <Accordion.Item value={6} className={panelClase}>
-                <Accordion.Header>
-                  <Accordion.Trigger className={triggerClase}>
-                    Contenido multimedia
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
-                  </Accordion.Trigger>
-                </Accordion.Header>
-                <Accordion.Panel className={panelInnerClase}>
-                  <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
-                    <label className="flex flex-col gap-1.5">
-                      <span className={labelClase}>Video de YouTube (opcional)</span>
-                      <input
-                        value={videoUrl}
-                        onChange={(e) => setVideoUrl(e.target.value)}
-                        onFocus={() => scrollPreviewTo("video")}
-                        placeholder="https://www.youtube.com/watch?v=..."
-                        className={inputClase}
-                      />
-                    </label>
-                  </div>
-                </Accordion.Panel>
-              </Accordion.Item>
-
-              <Accordion.Item value={7} className={panelClase}>
-                <Accordion.Header>
-                  <Accordion.Trigger className={triggerClase}>
-                    Servicios
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
-                  </Accordion.Trigger>
-                </Accordion.Header>
-                <Accordion.Panel className={panelInnerClase}>
-                  <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
-                    <label className="flex flex-col gap-1.5">
-                      <span className={labelClase}>Descripción general</span>
-                      <textarea
-                        value={descripcionServicios}
-                        onChange={(e) => setDescripcionServicios(e.target.value)}
-                        onFocus={() => scrollPreviewTo("servicios")}
-                        placeholder="Contá brevemente qué ofrecés"
-                        rows={2}
-                        className={inputClase}
-                      />
-                    </label>
-
-                    {servicios.map((servicio, index) => (
-                      <div
-                        key={index}
-                        className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
-                      >
-                        <div className="flex items-center gap-2">
-                          <input
-                            value={servicio.titulo}
-                            onChange={(e) => actualizarServicioTitulo(index, e.target.value)}
-                            onFocus={() => scrollPreviewTo("servicios")}
-                            placeholder="Título del servicio"
-                            className={cn(inputClase, "flex-1")}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => quitarServicio(index)}
-                            aria-label="Quitar servicio"
-                            className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
-                          >
-                            <Trash2 className="size-4" />
-                          </button>
-                        </div>
-                        <input
-                          value={servicio.descripcion ?? ""}
-                          onChange={(e) => actualizarServicioDescripcion(index, e.target.value)}
-                          onFocus={() => scrollPreviewTo("servicios")}
-                          placeholder="Descripción corta"
-                          className={inputClase}
-                        />
-                      </div>
-                    ))}
-
-                    {servicios.length < 8 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={agregarServicio}
-                        className="self-start"
-                      >
-                        <Plus className="size-3.5" /> Agregar servicio
-                      </Button>
-                    )}
-
-                    <label className="flex flex-col gap-1.5">
-                      <span className={labelClase}>Folleto o presentación (PDF)</span>
-                      <div className="flex items-center gap-3">
-                        {(brochureUrlExistente || brochureFile) && (
-                          <div className="flex shrink-0 items-center gap-2 rounded-xl border border-border bg-background/50 px-3 py-2">
-                            <FileText className="size-4 text-muted-foreground" />
-                            <span className="max-w-32 truncate text-xs text-foreground">
-                              {brochureFile?.name || "Folleto actual"}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={quitarBrochure}
-                              aria-label="Quitar folleto"
-                              className="shrink-0 text-muted-foreground hover:text-foreground"
-                            >
-                              <X className="size-3.5" />
-                            </button>
-                          </div>
-                        )}
-                        <input
-                          key={brochureInputKey}
-                          type="file"
-                          accept="application/pdf"
-                          onChange={handleBrochureChange}
-                          onFocus={() => scrollPreviewTo("servicios")}
-                          className={cn(
-                            inputClase,
-                            "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-                          )}
-                        />
-                      </div>
-                    </label>
-                  </div>
-                </Accordion.Panel>
-              </Accordion.Item>
-
-              <Accordion.Item value={8} className={panelClase}>
-                <Accordion.Header>
-                  <Accordion.Trigger className={triggerClase}>
-                    Productos
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
-                  </Accordion.Trigger>
-                </Accordion.Header>
-                <Accordion.Panel className={panelInnerClase}>
-                  <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
-                    {productos.map((producto, index) => {
-                      const imagenMostrada = producto.imagenPreview || producto.imagenUrlExistente
-                      return (
-                        <div
-                          key={index}
-                          className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
-                        >
-                          <div className="flex items-center gap-2">
-                            <input
-                              value={producto.titulo}
-                              onChange={(e) => actualizarProductoTitulo(index, e.target.value)}
-                              onFocus={() => scrollPreviewTo("productos")}
-                              placeholder="Título del producto"
-                              className={cn(inputClase, "flex-1")}
-                            />
-                            <div className="flex w-32 shrink-0 items-center overflow-hidden rounded-xl border border-border bg-muted/60">
-                              <span className="shrink-0 pl-3 text-xs text-muted-foreground">$</span>
-                              <input
-                                value={producto.precio}
-                                onChange={(e) => actualizarProductoPrecio(index, e.target.value)}
-                                onFocus={() => scrollPreviewTo("productos")}
-                                placeholder="Precio"
-                                className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => quitarProducto(index)}
-                              aria-label="Quitar producto"
-                              className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
-                            >
-                              <Trash2 className="size-4" />
-                            </button>
-                          </div>
-                          <input
-                            value={producto.descripcion}
-                            onChange={(e) => actualizarProductoDescripcion(index, e.target.value)}
-                            onFocus={() => scrollPreviewTo("productos")}
-                            placeholder="Descripción corta (opcional)"
-                            className={inputClase}
-                          />
-                          <input
-                            type="url"
-                            value={producto.enlaceUrl}
-                            onChange={(e) => actualizarProductoEnlace(index, e.target.value)}
-                            onFocus={() => scrollPreviewTo("productos")}
-                            placeholder="Enlace para comprar o ver más (opcional)"
-                            className={inputClase}
-                          />
-                          <div className="flex items-center gap-3">
-                            {imagenMostrada && (
-                              <div className="relative shrink-0">
-                                {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
-                                <img
-                                  src={imagenMostrada}
-                                  alt="Vista previa del producto"
-                                  className="size-12 rounded-lg border border-border object-cover"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => quitarProductoImagen(index)}
-                                  aria-label="Quitar imagen del producto"
-                                  className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
-                                >
-                                  <X className="size-3" />
-                                </button>
-                              </div>
-                            )}
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handleProductoImagenChange(index, e)}
-                              onFocus={() => scrollPreviewTo("productos")}
-                              className={cn(
-                                inputClase,
-                                "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-                              )}
-                            />
-                          </div>
-                        </div>
-                      )
-                    })}
-
-                    {productos.length < 12 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={agregarProducto}
-                        className="self-start"
-                      >
-                        <Plus className="size-3.5" /> Agregar producto
-                      </Button>
-                    )}
-                  </div>
-                </Accordion.Panel>
-              </Accordion.Item>
-            </Accordion.Root>
-
-            {!esEdicion && (
-              <fieldset className={cn(panelClase, "flex flex-col gap-3")}>
-                <legend className="mb-1 px-1 text-sm font-semibold text-foreground">
-                  Resumen y pago
-                </legend>
-
-                {precioBase !== null && (
-                  <div className="flex items-baseline gap-2">
-                    {hayPromo && precioRegular !== null && (
-                      <span className="text-sm text-muted-foreground line-through">
-                        ${precioRegular.toLocaleString("es-MX")}
-                      </span>
-                    )}
-                    <span className="text-2xl font-semibold text-foreground">
-                      ${(precioFinal ?? precioBase).toLocaleString("es-MX")}{" "}
-                      <span className="text-sm font-normal text-muted-foreground">
-                        MXN/año
-                      </span>
-                    </span>
-                  </div>
+        {/* Formulario desktop: exactamente el accordion de siempre. */}
+        <form
+          id="tarjeta-form"
+          onSubmit={handleGuardar}
+          className="relative z-10 hidden flex-col gap-6 lg:flex"
+        >
+          <div className="inline-flex w-fit rounded-full border border-border bg-white/70 p-1 shadow-sm backdrop-blur dark:bg-zinc-900/50">
+            {(["personal", "empresarial"] as const).map((opcion) => (
+              <button
+                key={opcion}
+                type="button"
+                onClick={() => setTipo(opcion)}
+                className={cn(
+                  "rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 ease-out",
+                  tipo === opcion
+                    ? "bg-foreground text-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
+              >
+                {opcion === "personal" ? "Personal" : "Empresarial"}
+              </button>
+            ))}
+          </div>
 
-                <div className="flex gap-2">
-                  <input
-                    value={cuponInput}
-                    onChange={(e) => setCuponInput(e.target.value)}
-                    placeholder="Código de descuento (opcional)"
-                    disabled={Boolean(cuponValidado)}
-                    className={cn(inputClase, "flex-1 disabled:opacity-60")}
-                  />
-                  {cuponValidado ? (
-                    <Button type="button" variant="outline" onClick={quitarCupon}>
-                      Quitar
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleValidarCupon}
-                      disabled={validandoCupon || !cuponInput.trim()}
-                    >
-                      {validandoCupon ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        "Aplicar"
-                      )}
-                    </Button>
-                  )}
-                </div>
+          <Accordion.Root
+            defaultValue={["datos"]}
+            className="flex flex-col gap-3"
+            style={{ "--acento-bg": `${colorSecundario || "#71717a"}1a` } as React.CSSProperties}
+          >
+            {SECCIONES.map((seccion) => (
+              <Accordion.Item key={seccion.id} value={seccion.id} className={panelClase}>
+                <Accordion.Header>
+                  <Accordion.Trigger className={triggerClase}>
+                    {seccion.titulo}
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
+                  </Accordion.Trigger>
+                </Accordion.Header>
+                <Accordion.Panel className={panelInnerClase}>{seccion.contenido}</Accordion.Panel>
+              </Accordion.Item>
+            ))}
+          </Accordion.Root>
 
-                {cuponValidado && (
-                  <p className="text-sm text-emerald-600 dark:text-emerald-400">
-                    Código {cuponValidado.codigo} aplicado:{" "}
-                    {cuponValidado.porcentaje_descuento}% de descuento
-                    {descuentoPorcentaje >= 100 &&
-                      " — ¡tu tarjeta se activa de inmediato!"}
-                  </p>
-                )}
-                {cuponError && (
-                  <p className="text-sm text-destructive">{cuponError}</p>
-                )}
+          {!esEdicion && (
+            <fieldset className={cn(panelClase, "flex flex-col gap-3 p-5")}>
+              <legend className="mb-1 px-1 text-sm font-semibold text-foreground">
+                Resumen y pago
+              </legend>
+              {contenidoResumenPago}
+            </fieldset>
+          )}
 
-                {descuentoPorcentaje < 100 && (
-                  <div className="flex flex-col gap-2">
-                    <span className={labelClase}>Método de pago</span>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => setMetodoPago("mercado_pago")}
-                        className={cn(
-                          "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors duration-200 ease-out",
-                          metodoPago === "mercado_pago"
-                            ? "border-foreground bg-background"
-                            : "border-border bg-background/50 hover:bg-background"
-                        )}
-                      >
-                        <CreditCard className="size-4 shrink-0 text-muted-foreground" />
-                        Mercado Pago
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setMetodoPago("transferencia")}
-                        className={cn(
-                          "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors duration-200 ease-out",
-                          metodoPago === "transferencia"
-                            ? "border-foreground bg-background"
-                            : "border-border bg-background/50 hover:bg-background"
-                        )}
-                      >
-                        <Building2 className="size-4 shrink-0 text-muted-foreground" />
-                        Transferencia o depósito
-                      </button>
-                    </div>
+          {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
-                    {metodoPago === "transferencia" && (
-                      <div className="mt-1 flex flex-col gap-1.5 rounded-xl border border-border bg-background/50 p-3 text-sm">
-                        <p className="flex justify-between gap-2">
-                          <span className="text-muted-foreground">Banco</span>
-                          <span className="font-medium text-foreground">
-                            {DATOS_BANCARIOS.banco}
-                          </span>
-                        </p>
-                        <p className="flex justify-between gap-2">
-                          <span className="text-muted-foreground">Titular</span>
-                          <span className="font-medium text-foreground">
-                            {DATOS_BANCARIOS.titular}
-                          </span>
-                        </p>
-                        <p className="flex items-center justify-between gap-2">
-                          <span className="text-muted-foreground">CLABE</span>
-                          <span className="flex items-center gap-1.5 font-medium text-foreground">
-                            {DATOS_BANCARIOS.clabe}
-                            <button
-                              type="button"
-                              onClick={handleCopiarClabe}
-                              aria-label="Copiar CLABE"
-                              className="text-muted-foreground hover:text-foreground"
-                            >
-                              {copiadoClabe ? (
-                                <Check className="size-3.5" />
-                              ) : (
-                                <Copy className="size-3.5" />
-                              )}
-                            </button>
-                          </span>
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Después de transferir, confirmá tu tarjeta con el botón
-                          de abajo. Quedará pendiente hasta que verifiquemos el
-                          depósito.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </fieldset>
+          <Button
+            type="submit"
+            size="lg"
+            disabled={saving || guardadoExito || slugBloqueaGuardado}
+            className={cn(
+              "w-full transition-colors duration-300 ease-out",
+              guardadoExito && "bg-emerald-600 text-white hover:bg-emerald-600"
             )}
+          >
+            {contenidoBotonGuardar}
+          </Button>
+        </form>
 
-            {saveError && <p className="text-sm text-destructive">{saveError}</p>}
-
+        {/* Barra fija + tabs: solo mobile. El submit apunta a #tarjeta-form
+            vía el atributo `form`, aunque el <form> esté oculto en mobile. */}
+        <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col gap-2 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] pt-2.5 backdrop-blur lg:hidden">
+          {saveError && <p className="px-4 text-xs text-destructive">{saveError}</p>}
+          <div className="px-4">
             <Button
               type="submit"
-              size="lg"
+              form="tarjeta-form"
+              size="sm"
               disabled={saving || guardadoExito || slugBloqueaGuardado}
               className={cn(
                 "w-full transition-colors duration-300 ease-out",
                 guardadoExito && "bg-emerald-600 text-white hover:bg-emerald-600"
               )}
             >
-              {guardadoExito ? (
-                <span className="inline-flex animate-in items-center gap-1.5 zoom-in-95 duration-300">
-                  <Check className="size-4" />
-                  {esEdicion ? "¡Guardado!" : "¡Listo!"}
-                </span>
-              ) : saving ? (
-                <span className="inline-flex items-center gap-1.5 animate-pulse">
-                  <Loader2 className="size-4 animate-spin" />
-                  {esEdicion ? "Guardando..." : "Creando..."}
-                </span>
-              ) : esEdicion ? (
-                <>
-                  Guardar cambios <Check className="size-4" />
-                </>
-              ) : (
-                <>
-                  Crear mi tarjeta <ArrowRight className="size-4" />
-                </>
-              )}
+              {contenidoBotonGuardar}
             </Button>
-          </form>
+          </div>
+          <nav className="flex gap-1.5 overflow-x-auto px-4 pb-2.5">
+            {SECCIONES.map((seccion) => (
+              <button
+                key={seccion.id}
+                type="button"
+                onClick={() => setTabMovilAbierto(seccion.id)}
+                className={tabMovilClase}
+              >
+                {seccion.titulo}
+              </button>
+            ))}
+            {!esEdicion && (
+              <button
+                type="button"
+                onClick={() => setTabMovilAbierto("pago")}
+                className={tabMovilClase}
+              >
+                Pago
+              </button>
+            )}
+            {esEdicion && tarjeta && (
+              <button
+                type="button"
+                onClick={() => setTabMovilAbierto("compartir")}
+                className={tabMovilClase}
+              >
+                Compartir
+              </button>
+            )}
+          </nav>
         </div>
-      )}
+
+        {/* Drawers mobile: un Drawer por sección, mismo `seccion.contenido`
+            que usa el accordion de desktop (nada duplicado). */}
+        {SECCIONES.map((seccion) => (
+          <Drawer.Root
+            key={seccion.id}
+            open={tabMovilAbierto === seccion.id}
+            onOpenChange={(open) => setTabMovilAbierto(open ? seccion.id : null)}
+          >
+            <Drawer.Portal>
+              <Drawer.Backdrop className={drawerBackdropClase} />
+              <Drawer.Viewport className={drawerViewportClase}>
+                <Drawer.Popup className={drawerPopupClase}>
+                  <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border" />
+                  <div className="flex items-center justify-between px-5 py-3">
+                    <Drawer.Title className="text-sm font-semibold text-foreground">
+                      {seccion.titulo}
+                    </Drawer.Title>
+                    <Drawer.Close
+                      aria-label="Cerrar"
+                      className="rounded-full p-1.5 text-muted-foreground hover:bg-muted"
+                    >
+                      <X className="size-4" />
+                    </Drawer.Close>
+                  </div>
+                  {seccion.contenido}
+                </Drawer.Popup>
+              </Drawer.Viewport>
+            </Drawer.Portal>
+          </Drawer.Root>
+        ))}
+
+        {!esEdicion && (
+          <Drawer.Root
+            open={tabMovilAbierto === "pago"}
+            onOpenChange={(open) => setTabMovilAbierto(open ? "pago" : null)}
+          >
+            <Drawer.Portal>
+              <Drawer.Backdrop className={drawerBackdropClase} />
+              <Drawer.Viewport className={drawerViewportClase}>
+                <Drawer.Popup className={drawerPopupClase}>
+                  <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border" />
+                  <div className="flex items-center justify-between px-5 py-3">
+                    <Drawer.Title className="text-sm font-semibold text-foreground">
+                      Resumen y pago
+                    </Drawer.Title>
+                    <Drawer.Close
+                      aria-label="Cerrar"
+                      className="rounded-full p-1.5 text-muted-foreground hover:bg-muted"
+                    >
+                      <X className="size-4" />
+                    </Drawer.Close>
+                  </div>
+                  <div className="px-5 pb-5">{contenidoResumenPago}</div>
+                </Drawer.Popup>
+              </Drawer.Viewport>
+            </Drawer.Portal>
+          </Drawer.Root>
+        )}
+
+        {esEdicion && tarjeta && (
+          <Drawer.Root
+            open={tabMovilAbierto === "compartir"}
+            onOpenChange={(open) => setTabMovilAbierto(open ? "compartir" : null)}
+          >
+            <Drawer.Portal>
+              <Drawer.Backdrop className={drawerBackdropClase} />
+              <Drawer.Viewport className={drawerViewportClase}>
+                <Drawer.Popup className={drawerPopupClase}>
+                  <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border" />
+                  <div className="flex items-center justify-between px-5 py-3">
+                    <Drawer.Title className="text-sm font-semibold text-foreground">
+                      Compartir
+                    </Drawer.Title>
+                    <Drawer.Close
+                      aria-label="Cerrar"
+                      className="rounded-full p-1.5 text-muted-foreground hover:bg-muted"
+                    >
+                      <X className="size-4" />
+                    </Drawer.Close>
+                  </div>
+                  <div className="flex flex-col gap-5 px-5 pb-5">
+                    <TarjetaQr slug={tarjeta.slug} variant="inline" />
+                    <CompartirTarjeta
+                      slug={tarjeta.slug}
+                      titulo={(esEmpresarial ? nombreEmpresa : nombre) || "miTarjeta"}
+                      variant="inline"
+                    />
+                  </div>
+                </Drawer.Popup>
+              </Drawer.Viewport>
+            </Drawer.Portal>
+          </Drawer.Root>
+        )}
+      </div>
 
       <Dialog.Root open={modalOpen} onOpenChange={setModalOpen}>
         <Dialog.Portal>

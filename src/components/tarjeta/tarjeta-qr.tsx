@@ -5,15 +5,50 @@ import { QrCode, X } from "lucide-react"
 import QRCode from "qrcode"
 import * as React from "react"
 
-export function TarjetaQr({ slug }: { slug: string }) {
-  const [open, setOpen] = React.useState(false)
+interface TarjetaQrProps {
+  slug: string
+  /** "flotante" (default): botón fijo que abre su propio Dialog, como hasta ahora.
+   *  "inline": solo el contenido (QR + texto), sin botón ni Dialog propio —
+   *  para embeber dentro de otro contenedor (ej. un Drawer). */
+  variant?: "flotante" | "inline"
+}
+
+function ContenidoQr({ url }: { url: string }) {
   const [dataUrl, setDataUrl] = React.useState("")
-  const url = typeof window !== "undefined" ? `${window.location.origin}/${slug}` : ""
 
   React.useEffect(() => {
-    if (!open || !url) return
+    if (!url) return
     QRCode.toDataURL(url, { width: 400, margin: 1 }).then(setDataUrl)
-  }, [open, url])
+  }, [url])
+
+  return (
+    <div className="flex flex-col items-center text-center">
+      <p className="text-base font-semibold text-foreground">Escaneá para ver la tarjeta</p>
+      <p className="mt-1 text-sm text-muted-foreground">Apuntá la cámara del celular al código.</p>
+      <div className="mt-4 flex items-center justify-center">
+        {dataUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- data URL generada en el cliente
+          <img
+            src={dataUrl}
+            alt="Código QR de la tarjeta"
+            className="size-64 rounded-xl border border-border"
+          />
+        ) : (
+          <div className="flex size-64 items-center justify-center rounded-xl border border-border text-sm text-muted-foreground">
+            Generando...
+          </div>
+        )}
+      </div>
+      <p className="mt-3 truncate text-xs text-muted-foreground">{url}</p>
+    </div>
+  )
+}
+
+export function TarjetaQr({ slug, variant = "flotante" }: TarjetaQrProps) {
+  const [open, setOpen] = React.useState(false)
+  const url = typeof window !== "undefined" ? `${window.location.origin}/${slug}` : ""
+
+  if (variant === "inline") return <ContenidoQr url={url} />
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
@@ -36,29 +71,12 @@ export function TarjetaQr({ slug }: { slug: string }) {
             <X className="size-4" />
           </Dialog.Close>
 
-          <Dialog.Title className="text-base font-semibold text-foreground">
-            Escaneá para ver la tarjeta
-          </Dialog.Title>
-          <Dialog.Description className="mt-1 text-sm text-muted-foreground">
+          <Dialog.Title className="sr-only">Escaneá para ver la tarjeta</Dialog.Title>
+          <Dialog.Description className="sr-only">
             Apuntá la cámara del celular al código.
           </Dialog.Description>
 
-          <div className="mt-4 flex items-center justify-center">
-            {dataUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- data URL generada en el cliente
-              <img
-                src={dataUrl}
-                alt="Código QR de la tarjeta"
-                className="size-64 rounded-xl border border-border"
-              />
-            ) : (
-              <div className="flex size-64 items-center justify-center rounded-xl border border-border text-sm text-muted-foreground">
-                Generando...
-              </div>
-            )}
-          </div>
-
-          <p className="mt-3 truncate text-xs text-muted-foreground">{url}</p>
+          <ContenidoQr url={url} />
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
