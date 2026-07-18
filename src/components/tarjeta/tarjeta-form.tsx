@@ -1,23 +1,16 @@
 "use client"
 
 import { Accordion } from "@base-ui/react/accordion"
-import { Dialog } from "@base-ui/react/dialog"
 import { Drawer } from "@base-ui/react/drawer"
 import {
   AlertTriangle,
   ArrowRight,
-  Building2,
   Check,
   ChevronDown,
-  Clock,
-  Copy,
-  CreditCard,
   FileText,
   Loader2,
-  Lock,
   Moon,
   Plus,
-  ShieldCheck,
   Sun,
   Trash2,
   X,
@@ -26,27 +19,25 @@ import Link from "next/link"
 import * as React from "react"
 
 import { AgendaServicios } from "@/components/tarjeta/agenda-servicios"
-import { AuthMethods } from "@/components/auth/auth-methods"
 import { Button } from "@/components/ui/button"
 import { CompartirTarjeta } from "@/components/tarjeta/compartir-tarjeta"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 import { RecortarAvatar } from "@/components/tarjeta/recortar-avatar"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
-import { DATOS_BANCARIOS } from "@/lib/banco"
 import { BANNER_PRESETS } from "@/lib/banner-presets"
-import { getConfiguracionActiva, validarCupon } from "@/lib/configuracion"
+import { validarCupon } from "@/lib/configuracion"
 import { PLATAFORMAS, obtenerPlataforma } from "@/lib/redes"
-import { guardarTarjetaPendiente, reclamarTarjetaPendiente } from "@/lib/reclamo"
 import { subirImagenCloudinary } from "@/lib/subir-imagen"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import type {
   AvatarForma,
-  Configuracion,
   Cupon,
   DatosContacto,
   EstiloTipografia,
+  PeriodicidadSuscripcion,
+  Plan,
   PlataformaRed,
   Producto,
   RedSocial,
@@ -66,8 +57,6 @@ interface ProductoFormState {
   imagenPreview: string
   imagenUrlExistente: string
 }
-
-const GUEST_ID_KEY = "mitarjeta_guest_id"
 
 const inputClase =
   "w-full rounded-xl border border-border bg-white/70 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none backdrop-blur transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-zinc-900/60"
@@ -136,9 +125,13 @@ function validarPdf(file: File): string | null {
 interface TarjetaFormProps {
   /** Si se pasa, el formulario opera en modo edición (UPDATE en vez de INSERT). */
   tarjeta?: Tarjeta
+  /** Plan elegido en /planes — requerido en modo creación (ver /crear/page.tsx). */
+  plan?: Plan
+  /** Ciclo de facturación elegido en /planes — requerido en modo creación. */
+  periodicidad?: PeriodicidadSuscripcion
 }
 
-export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
+export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFormProps) {
   const esEdicion = Boolean(tarjeta)
   const datosIniciales = tarjeta?.datos_contacto
   const visualInicial = tarjeta?.identidad_visual
@@ -275,13 +268,6 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
     slug: string
     disponible: boolean
   } | null>(null)
-  const [tarjetaCreada, setTarjetaCreada] = React.useState<{
-    id: string
-    slug: string
-  } | null>(null)
-  const [modalOpen, setModalOpen] = React.useState(false)
-  const [copied, setCopied] = React.useState(false)
-  const [claimed, setClaimed] = React.useState(false)
   const [vista, setVista] = React.useState<"editar" | "ver">("editar")
 
   // Tab/drawer móvil (patrón Linktree): id de la sección abierta, o null.
@@ -294,23 +280,15 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
     []
   )
 
-  // Precio, cupón y método de pago (solo al crear)
-  const [configuracion, setConfiguracion] = React.useState<Configuracion | null>(null)
+  // Cupón de descuento para la suscripción (solo al crear) — la validación
+  // real y la combinación con el descuento de tarjeta adicional pasa en
+  // POST /api/suscripciones; acá solo se usa para el preview de precio.
   const [cuponInput, setCuponInput] = React.useState("")
   const [cuponValidado, setCuponValidado] = React.useState<Cupon | null>(null)
   const [cuponError, setCuponError] = React.useState<string | null>(null)
   const [validandoCupon, setValidandoCupon] = React.useState(false)
-  const [metodoPago, setMetodoPago] = React.useState<"mercado_pago" | "transferencia" | null>(
-    null
-  )
-  const [copiadoClabe, setCopiadoClabe] = React.useState(false)
 
   const esEmpresarial = tipo === "empresarial"
-
-  React.useEffect(() => {
-    if (esEdicion) return
-    getConfiguracionActiva().then(setConfiguracion)
-  }, [esEdicion])
 
   // Chequeo de disponibilidad del enlace personalizado, con debounce de 500ms.
   React.useEffect(() => {
@@ -336,17 +314,6 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
   }, [slugPersonalizado, esEdicion])
 
   React.useEffect(() => {
-    if (esEdicion) return
-    if (!localStorage.getItem(GUEST_ID_KEY)) {
-      const id =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : Math.random().toString(36).slice(2)
-      localStorage.setItem(GUEST_ID_KEY, id)
-    }
-  }, [esEdicion])
-
-  React.useEffect(() => {
     return () => {
       if (avatarPreview) URL.revokeObjectURL(avatarPreview)
     }
@@ -357,30 +324,6 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
       if (bannerPreview) URL.revokeObjectURL(bannerPreview)
     }
   }, [bannerPreview])
-
-  React.useEffect(() => {
-    if (esEdicion) return
-
-    async function intentarReclamo(userId: string) {
-      const reclamada = await reclamarTarjetaPendiente(userId)
-      if (reclamada) {
-        setClaimed(true)
-        setModalOpen(false)
-      }
-    }
-
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) intentarReclamo(data.session.user.id)
-    })
-
-    const { data: subscription } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (session) intentarReclamo(session.user.id)
-      }
-    )
-
-    return () => subscription.subscription.unsubscribe()
-  }, [esEdicion])
 
   function agregarRed() {
     setRedes((prev) =>
@@ -831,49 +774,58 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
       return
     }
 
-    const esGratis = descuentoPorcentaje >= 100
-
-    if (!esGratis && !metodoPago) {
-      setSaveError("Elegí un método de pago para continuar.")
+    if (!plan) {
+      setSaveError("Falta el plan seleccionado. Volvé a /planes e intentá de nuevo.")
       setSaving(false)
       return
     }
 
+    // La sesión se pide fresca acá (no un valor capturado al montar el
+    // formulario): puede haber pasado un rato subiendo imágenes, y
+    // /api/suscripciones exige un access_token vigente.
+    const { data: sessionData } = await supabase.auth.getSession()
+    const session = sessionData.session
+    if (!session) {
+      setSaveError("Tu sesión expiró. Recargá la página e iniciá sesión de nuevo.")
+      setSaving(false)
+      return
+    }
+
+    // TS no propaga el narrowing de `plan`/`session` dentro de la función
+    // anidada de abajo; se capturan en consts ya confirmados no-nulos.
+    const planConfirmado = plan
+    const accessToken = session.access_token
+
     async function alGuardarConExito(data: { id: string; slug: string }) {
-      guardarTarjetaPendiente(data)
-      setTarjetaCreada(data)
-
-      if (esGratis || metodoPago === "transferencia") {
-        setGuardadoExito(true)
-        await new Promise((resolve) => window.setTimeout(resolve, 700))
-        setGuardadoExito(false)
-        setModalOpen(true)
-        setSaving(false)
-        return
-      }
-
-      const checkoutRes = await fetch("/api/checkout", {
+      const suscripcionRes = await fetch("/api/suscripciones", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           tarjetaId: data.id,
-          titulo: nombrePrincipal,
-          precio: precioFinal,
+          planId: planConfirmado.id,
+          periodicidad,
+          cuponCodigo: cuponValidado?.codigo,
         }),
       })
-      const checkoutData = (await checkoutRes.json()) as { initPoint?: string }
+      const suscripcionData = (await suscripcionRes.json()) as {
+        initPoint?: string
+        error?: string
+      }
 
-      if (checkoutData.initPoint) {
+      if (suscripcionData.initPoint) {
         // Un instante de confirmación visual antes de salir hacia Mercado
         // Pago; se siente más premium que un redirect abrupto.
         setGuardadoExito(true)
         await new Promise((resolve) => window.setTimeout(resolve, 700))
-        window.location.assign(checkoutData.initPoint)
+        window.location.assign(suscripcionData.initPoint)
         return
       }
 
       setSaveError(
-        "Tu tarjeta se guardó, pero no pudimos iniciar el pago con Mercado Pago. Probá de nuevo o elegí transferencia."
+        "Tu tarjeta se guardó, pero no pudimos iniciar la suscripción con Mercado Pago. Volvé a intentar desde el editor."
       )
       setSaving(false)
     }
@@ -882,11 +834,8 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
       tipo,
       datos_contacto,
       identidad_visual,
-      estado_pago: esGratis ? "aprobado" : "pendiente",
-      metodo_pago: esGratis ? null : metodoPago,
       publicado: true,
-      precio_pagado: precioFinal,
-      cupon_codigo: cuponValidado?.codigo ?? null,
+      user_id: session.user.id,
     }
 
     const slugElegido = slugPersonalizado.trim()
@@ -950,21 +899,6 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
     setSaving(false)
   }
 
-  async function handleCopy() {
-    if (!tarjetaCreada) return
-    await navigator.clipboard.writeText(
-      `${window.location.origin}/${tarjetaCreada.slug}`
-    )
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  async function handleCopiarClabe() {
-    await navigator.clipboard.writeText(DATOS_BANCARIOS.clabe)
-    setCopiadoClabe(true)
-    setTimeout(() => setCopiadoClabe(false), 2000)
-  }
-
   const avatarMostrado = avatarPreview || avatarUrlExistente
   const bannerMostrado = bannerPreview || bannerUrlExistente
   const brochureMostrado = brochureUrlExistente || (brochureFile ? "#" : undefined)
@@ -1019,16 +953,11 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
     estiloTipografia,
   }
 
-  const precioRegular = configuracion?.precio_regular ?? null
-  const hayPromo = Boolean(
-    configuracion?.promocion_activa &&
-      configuracion.precio_lanzamiento < configuracion.precio_regular
-  )
-  const precioBase = configuracion
-    ? hayPromo
-      ? configuracion.precio_lanzamiento
-      : configuracion.precio_regular
-    : null
+  // Precio de vista previa nada más: la combinación real con el descuento de
+  // tarjeta adicional (el mayor de los dos, no se suman — ver CLAUDE.md) se
+  // calcula server-side en POST /api/suscripciones. Este valor nunca queda
+  // por ARRIBA de lo que se cobra de verdad, como mucho el final es menor.
+  const precioBase = plan ? (periodicidad === "anual" ? plan.precio_anual : plan.precio_mensual) : null
   const descuentoPorcentaje = cuponValidado?.porcentaje_descuento ?? 0
   const precioFinal =
     precioBase !== null
@@ -1796,19 +1725,21 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
     </div>
   )
 
-  const contenidoResumenPago = !esEdicion && (
+  const contenidoResumenPago = !esEdicion && plan && (
     <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-foreground">{plan.nombre_display}</span>
+        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+          {periodicidad === "anual" ? "Anual" : "Mensual"}
+        </span>
+      </div>
+
       {precioBase !== null && (
         <div className="flex items-baseline gap-2">
-          {hayPromo && precioRegular !== null && (
-            <span className="text-sm text-muted-foreground line-through">
-              ${precioRegular.toLocaleString("es-MX")}
-            </span>
-          )}
           <span className="text-2xl font-semibold text-foreground">
             ${(precioFinal ?? precioBase).toLocaleString("es-MX")}{" "}
             <span className="text-sm font-normal text-muted-foreground">
-              MXN/año
+              MXN/{periodicidad === "anual" ? "año" : "mes"}
             </span>
           </span>
         </div>
@@ -1844,89 +1775,17 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
 
       {cuponValidado && (
         <p className="text-sm text-emerald-600 dark:text-emerald-400">
-          Código {cuponValidado.codigo} aplicado:{" "}
-          {cuponValidado.porcentaje_descuento}% de descuento
-          {descuentoPorcentaje >= 100 &&
-            " — ¡tu tarjeta se activa de inmediato!"}
+          Código {cuponValidado.codigo} aplicado: {cuponValidado.porcentaje_descuento}% de
+          descuento.
         </p>
       )}
-      {cuponError && (
-        <p className="text-sm text-destructive">{cuponError}</p>
-      )}
+      {cuponError && <p className="text-sm text-destructive">{cuponError}</p>}
 
-      {descuentoPorcentaje < 100 && (
-        <div className="flex flex-col gap-2">
-          <span className={labelClase}>Método de pago</span>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => setMetodoPago("mercado_pago")}
-              className={cn(
-                "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors duration-200 ease-out",
-                metodoPago === "mercado_pago"
-                  ? "border-foreground bg-background"
-                  : "border-border bg-background/50 hover:bg-background"
-              )}
-            >
-              <CreditCard className="size-4 shrink-0 text-muted-foreground" />
-              Mercado Pago
-            </button>
-            <button
-              type="button"
-              onClick={() => setMetodoPago("transferencia")}
-              className={cn(
-                "flex items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-colors duration-200 ease-out",
-                metodoPago === "transferencia"
-                  ? "border-foreground bg-background"
-                  : "border-border bg-background/50 hover:bg-background"
-              )}
-            >
-              <Building2 className="size-4 shrink-0 text-muted-foreground" />
-              Transferencia o depósito
-            </button>
-          </div>
-
-          {metodoPago === "transferencia" && (
-            <div className="mt-1 flex flex-col gap-1.5 rounded-xl border border-border bg-background/50 p-3 text-sm">
-              <p className="flex justify-between gap-2">
-                <span className="text-muted-foreground">Banco</span>
-                <span className="font-medium text-foreground">
-                  {DATOS_BANCARIOS.banco}
-                </span>
-              </p>
-              <p className="flex justify-between gap-2">
-                <span className="text-muted-foreground">Titular</span>
-                <span className="font-medium text-foreground">
-                  {DATOS_BANCARIOS.titular}
-                </span>
-              </p>
-              <p className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">CLABE</span>
-                <span className="flex items-center gap-1.5 font-medium text-foreground">
-                  {DATOS_BANCARIOS.clabe}
-                  <button
-                    type="button"
-                    onClick={handleCopiarClabe}
-                    aria-label="Copiar CLABE"
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    {copiadoClabe ? (
-                      <Check className="size-3.5" />
-                    ) : (
-                      <Copy className="size-3.5" />
-                    )}
-                  </button>
-                </span>
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Después de transferir, confirmá tu tarjeta con el botón
-                de abajo. Quedará pendiente hasta que verifiquemos el
-                depósito.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
+      <p className="text-xs text-muted-foreground">
+        Al crear tu tarjeta vas a ir a Mercado Pago para activar tu suscripción{" "}
+        {periodicidad === "anual" ? "anual" : "mensual"}. El precio final puede ser menor
+        a este si te corresponde algún descuento adicional.
+      </p>
     </div>
   )
 
@@ -1946,7 +1805,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
     </>
   ) : (
     <>
-      Crear mi tarjeta <ArrowRight className="size-4" />
+      Crear e ir a pagar <ArrowRight className="size-4" />
     </>
   )
 
@@ -2006,15 +1865,10 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
         <p className="mt-1 text-sm text-muted-foreground">
           {esEdicion
             ? "Modificá tus datos y guardá los cambios cuando quieras."
-            : "Completá tus datos y mirá la vista previa en tiempo real. Podés publicarla sin registrarte."}
+            : plan
+              ? `Completá tus datos y mirá la vista previa en tiempo real. Plan ${plan.nombre_display} (${periodicidad === "anual" ? "anual" : "mensual"}).`
+              : "Completá tus datos y mirá la vista previa en tiempo real."}
         </p>
-
-        {claimed && (
-          <div className="mt-6 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
-            <ShieldCheck className="size-4 shrink-0" />
-            Tu tarjeta quedó protegida en tu cuenta.
-          </div>
-        )}
 
         {guardadoOk && tarjeta && (
           <div className="mt-6 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
@@ -2157,7 +2011,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
           {!esEdicion && (
             <fieldset className={cn(panelClase, "flex flex-col gap-3 p-5")}>
               <legend className="mb-1 px-1 text-sm font-semibold text-foreground">
-                Resumen y pago
+                Tu plan
               </legend>
               {contenidoResumenPago}
             </fieldset>
@@ -2213,7 +2067,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                 onClick={() => setTabMovilAbierto("pago")}
                 className={tabMovilClase}
               >
-                Pago
+                Tu plan
               </button>
             )}
             {esEdicion && tarjeta && (
@@ -2271,7 +2125,7 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
                   <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border" />
                   <div className="flex items-center justify-between px-5 py-3">
                     <Drawer.Title className="text-sm font-semibold text-foreground">
-                      Resumen y pago
+                      Tu plan
                     </Drawer.Title>
                     <Drawer.Close
                       aria-label="Cerrar"
@@ -2322,73 +2176,6 @@ export function TarjetaForm({ tarjeta }: TarjetaFormProps) {
           </Drawer.Root>
         )}
       </div>
-
-      <Dialog.Root open={modalOpen} onOpenChange={setModalOpen}>
-        <Dialog.Portal>
-          <Dialog.Backdrop className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-200 ease-out data-ending-style:opacity-0 data-starting-style:opacity-0 dark:bg-black/60" />
-          <Dialog.Popup className="fixed top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-border bg-background p-6 shadow-2xl transition-all duration-300 ease-out data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-            <Dialog.Close
-              aria-label="Cerrar"
-              className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted"
-            >
-              <X className="size-4" />
-            </Dialog.Close>
-
-            <div className="flex flex-col items-center gap-1 pt-2 text-center">
-              <span className="flex size-12 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
-                {metodoPago === "transferencia" ? (
-                  <Clock className="size-5" />
-                ) : (
-                  <Lock className="size-5" />
-                )}
-              </span>
-              <Dialog.Title className="mt-2 text-lg font-semibold text-foreground">
-                {metodoPago === "transferencia"
-                  ? "Tu tarjeta está siendo procesada"
-                  : "¡Tu tarjeta ya está en línea!"}
-              </Dialog.Title>
-              <Dialog.Description className="text-sm text-muted-foreground">
-                {metodoPago === "transferencia"
-                  ? "En breve el administrador aprobará tu acceso al confirmar la transferencia."
-                  : "Reclamala ahora: si cerrás esta ventana sin registrarte, nadie —ni siquiera vos— va a poder editarla después."}
-              </Dialog.Description>
-            </div>
-
-            {tarjetaCreada && (
-              <div className="mt-4 flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm">
-                <span className="truncate text-muted-foreground">
-                  {typeof window !== "undefined" ? window.location.host : ""}/
-                  {tarjetaCreada.slug}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="ml-auto shrink-0 text-foreground"
-                  aria-label="Copiar enlace"
-                >
-                  {copied ? (
-                    <Check className="size-4" />
-                  ) : (
-                    <Copy className="size-4" />
-                  )}
-                </button>
-              </div>
-            )}
-
-            <div className="mt-5 flex flex-col gap-2.5">
-              <AuthMethods redirectTo="/crear" />
-
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="mt-1 text-center text-xs text-muted-foreground underline-offset-2 hover:underline"
-              >
-                Seguir sin registrarme (podría perder el acceso para editar)
-              </button>
-            </div>
-          </Dialog.Popup>
-        </Dialog.Portal>
-      </Dialog.Root>
 
       <RecortarAvatar
         archivo={avatarPendiente}

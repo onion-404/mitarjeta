@@ -25,18 +25,26 @@ export default async function PagoPendientePage({
       ? aprobado
         ? "¡Tu cita quedó confirmada!"
         : "Tu pago está en revisión"
-      : aprobado
-        ? "¡Tu pago fue aprobado!"
-        : "Tu pago está en revisión"
+      : tipo === "cobro_manual"
+        ? aprobado
+          ? "¡Tu pago fue aprobado!"
+          : "Tu pago está en revisión"
+        : aprobado
+          ? "¡Tu pago fue aprobado!"
+          : "Tu pago está en revisión"
 
   const descripcion =
     tipo === "cita"
       ? aprobado && cita
         ? `Tu cita de ${cita.servicioNombre} quedó agendada para el ${formatearFechaHoraLocal(cita.fechaHoraInicio, cita.zonaHoraria)}.`
         : `Tu pago está siendo procesado. Te confirmaremos la cita por ${cita?.clienteContacto ?? "el contacto que dejaste"} en cuanto se apruebe.`
-      : aprobado
-        ? "Tu tarjeta ya está activa y lista para compartir."
-        : "Algunos medios de pago tardan un poco más en confirmarse. Te avisaremos apenas se apruebe."
+      : tipo === "cobro_manual"
+        ? aprobado
+          ? "Gracias por tu pago."
+          : "Algunos medios de pago tardan un poco más en confirmarse. Te avisaremos apenas se apruebe."
+        : aprobado
+          ? "Tu tarjeta ya está activa y lista para compartir."
+          : "Algunos medios de pago tardan un poco más en confirmarse. Te avisaremos apenas se apruebe."
 
   return (
     <div className="relative flex w-full flex-1 flex-col items-center justify-center gap-6 overflow-hidden bg-zinc-50 px-4 py-16 text-center dark:bg-black">
@@ -65,7 +73,7 @@ export default async function PagoPendientePage({
           </Link>
         )}
 
-        {tipo !== "cita" && (
+        {tipo === "tarjeta" && (
           <>
             {slug && (
               <Link href={`/${slug}`} className={buttonVariants({ size: "lg", className: "mt-2" })}>

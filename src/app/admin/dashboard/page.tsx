@@ -237,12 +237,17 @@ export default function AdminDashboardPage() {
         <ArrowLeft className="size-4" /> Volver al inicio
       </Link>
 
-      <h1 className="mt-4 text-2xl font-semibold text-foreground">
-        Panel de administración
-      </h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Resumen de ventas y estado de las tarjetas digitales.
-      </p>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Panel de administración</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Resumen de ventas y estado de las tarjetas digitales.
+          </p>
+        </div>
+        <Link href="/admin/cobro-manual" className={buttonVariants({ variant: "outline", size: "sm" })}>
+          <CreditCard className="size-3.5" /> Cobro manual
+        </Link>
+      </div>
 
       <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {stats.map((stat) => (

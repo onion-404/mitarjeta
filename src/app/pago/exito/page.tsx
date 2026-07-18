@@ -23,18 +23,26 @@ export default async function PagoExitoPage({ searchParams }: PagoExitoPageProps
       ? aprobado
         ? "¡Tu cita quedó confirmada!"
         : "Estamos confirmando tu pago"
-      : aprobado
-        ? "¡Tu pago fue aprobado!"
-        : "Estamos confirmando tu pago"
+      : tipo === "cobro_manual"
+        ? aprobado
+          ? "¡Tu pago fue aprobado!"
+          : "Estamos confirmando tu pago"
+        : aprobado
+          ? "¡Tu pago fue aprobado!"
+          : "Estamos confirmando tu pago"
 
   const descripcion =
     tipo === "cita"
       ? aprobado && cita
         ? `Tu cita de ${cita.servicioNombre} quedó agendada para el ${formatearFechaHoraLocal(cita.fechaHoraInicio, cita.zonaHoraria)}.`
         : "En cuanto Mercado Pago confirme tu pago, tu cita quedará agendada automáticamente."
-      : aprobado
-        ? "Tu tarjeta ya está activa y lista para compartir."
-        : "En cuanto Mercado Pago confirme tu pago, tu tarjeta se activará automáticamente."
+      : tipo === "cobro_manual"
+        ? aprobado
+          ? "Gracias por tu pago."
+          : "En cuanto Mercado Pago confirme tu pago te lo haremos saber."
+        : aprobado
+          ? "Tu tarjeta ya está activa y lista para compartir."
+          : "En cuanto Mercado Pago confirme tu pago, tu tarjeta se activará automáticamente."
 
   return (
     <div className="relative flex w-full flex-1 flex-col items-center justify-center gap-6 overflow-hidden bg-zinc-50 px-4 py-16 text-center dark:bg-black">
@@ -63,7 +71,7 @@ export default async function PagoExitoPage({ searchParams }: PagoExitoPageProps
           </Link>
         )}
 
-        {tipo !== "cita" && (
+        {tipo === "tarjeta" && (
           <>
             {slug && (
               <Link href={`/${slug}`} className={buttonVariants({ size: "lg", className: "mt-2" })}>

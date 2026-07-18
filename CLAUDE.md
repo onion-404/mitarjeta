@@ -23,6 +23,17 @@
   real. La función `plan_id_por_defecto()` sigue existiendo (sin uso como default de
   columna) por si hiciera falta reutilizarla. Migración:
   `20260717230000_drop_default_plan_id_tarjetas.sql`.
+- **Ya NO existe el flujo de creación como invitado (sin cuenta)**. Con los 3 planes
+  de pago, no tiene sentido crear una tarjeta sin saber quién va a pagar la
+  suscripción. `/crear` exige sesión autenticada ANTES de mostrar `TarjetaForm` (ver
+  sección "Flujo de compra" abajo). `reclamo.ts` (guardar/reclamar tarjeta de
+  invitado por `localStorage`) NO se borró — sigue siendo la única forma de que
+  tarjetas YA EXISTENTES en producción con `user_id null` (creadas antes de este
+  cambio, nunca reclamadas) puedan asociarse a una cuenta algún día — pero ya no
+  está conectado al flujo de creación nuevo (el modal post-creación que ofrecía
+  "reclamar" se eliminó de `TarjetaForm`, porque una tarjeta nueva ya nace con
+  `user_id` real). `<ReclamarTarjeta>` sigue en `/pago/exito`/`/pago/pendiente` por
+  la misma razón legacy.
 
 ## Pagos — IMPORTANTE, dos flujos separados que coexisten
 - Checkout Pro (preferencias, ya integrado en `lib/mercadopago.ts`): pagos ÚNICOS. Se
@@ -32,6 +43,24 @@
   (funciones + endpoint + webhook), ver sección propia abajo.
 - Nunca confundir ni mezclar ambos flujos — son archivos, tablas y webhooks
   separados a propósito.
+- **Cobro manual** (`/admin/cobro-manual`, gate por `ADMIN_EMAIL`): genera un
+  link de Checkout Pro puntual (monto + descripción libre + email opcional
+  del pagador) para cobros que no encajan en tarjeta/cita — ej. compartir por
+  WhatsApp. Reutiliza `crearPreferenciaPago()` con
+  `tipo: "cobro_manual"` (agregado a `TipoReferenciaPago`) y un
+  `referenciaId` generado al vuelo (`crypto.randomUUID()`), sin insertar
+  ninguna fila en DB — es solo un generador de link, no algo persistido.
+  `parseReferenciaExterna()`/`actualizarEstadoPagoTarjeta()` en
+  `confirmar-pago.ts` reconocen el prefijo `"cobro_manual:"` y NO actualizan
+  ninguna tabla para ese tipo (si cayera en el branch de "tarjeta" por
+  default, el `UPDATE ... WHERE id = 'cobro_manual:<uuid>'` fallaría siempre
+  y Mercado Pago reintentaría el webhook indefinidamente). Las páginas
+  `/pago/exito`, `/pago/pendiente` y `/pago/error` tienen su propio texto
+  genérico para este `tipo` (nada de "ver mi tarjeta" ni `<ReclamarTarjeta>`).
+  Cuotas de Checkout Pro: no requieren ningún parámetro extra, Mercado Pago
+  ya las ofrece automáticamente según el banco/tarjeta del pagador (incluidas
+  las "sin intereses" si la cuenta tiene esa promoción — eso se configura del
+  lado de Mercado Pago, no en la preferencia).
 
 ## Suscripciones (cobro recurrente del plan) — estado del backend
 - Modalidad elegida: preapproval **"sin plan asociado"** (términos inline en cada
@@ -74,10 +103,97 @@
   de forma fail-closed (sin plan confirmado = sin acceso, no "sin límite"). Riesgo
   residual aceptado: esto depende de que el webhook llegue, mismo modelo que ya
   acepta el resto del código de pagos (no hay job de reconciliación).
-- Pendiente (no construido en esta tarea, fuera de alcance): el botón/UI en el
-  editor que dispare `POST /api/suscripciones` (el "upgrade de plan"), y una
-  página de confirmación dedicada — `back_url` hoy vuelve a `/editar/[tarjetaId]`
-  sin más, no hay pantalla de éxito tipo `/pago/exito` para suscripciones.
+- **La UI que llama a `POST /api/suscripciones` ya está construida** (ver "Flujo de
+  compra" abajo) — el botón final de `TarjetaForm` en modo creación es quien la
+  dispara. Sigue pendiente: una página de confirmación dedicada — `back_url` hoy
+  vuelve a `/editar/[tarjetaId]` sin más, no hay pantalla de éxito tipo
+  `/pago/exito` para suscripciones.
+- ✅ **Bloqueante anterior RESUELTO (2026-07-18)**: la cuenta "mitarjeta" (Checkout
+  Pro) no podía crear preapprovals "sin plan asociado" (401/500 según la prueba).
+  Causa real: Mercado Pago exige una **aplicación separada** para Suscripciones —
+  se creó "mitarjeta-suscripciones" con su propio token
+  (`MERCADO_PAGO_ACCESS_TOKEN_SUSCRIPCIONES`, ver comentario en
+  `mercadopago-suscripciones.ts`). Las dos apps/tokens NO se comparten con
+  `lib/mercadopago.ts` (Checkout Pro), que sigue usando `MERCADO_PAGO_ACCESS_TOKEN`
+  sin cambios.
+- ✅ **Dos bugs reales adicionales encontrados y corregidos en la misma verificación
+  en vivo (2026-07-18)**, ambos confirmados contra la API real de Mercado Pago
+  antes de tocar código (no se asumió nada):
+  1. `back_url` se armaba con `NEXT_PUBLIC_SITE_URL`, que no estaba definida en
+     `.env.local` → caía a `http://localhost:3000`, que Mercado Pago rechaza
+     (`400 Invalid value for back_url, must be a valid URL`). **Corregido
+     (2026-07-18)**: `NEXT_PUBLIC_SITE_URL=https://mitarjeta-delta.vercel.app`
+     en `.env.local` — dominio real de Vercel, confirmado explícitamente por el
+     cliente (un valor anterior, `mitarjeta.app`, había sido solo una
+     inferencia mía a partir de un placeholder de UI y quedó descartado).
+     `NEXT_PUBLIC_SITE_URL` **no es una variable nueva de hoy**: ya la usaba
+     `lib/mercadopago.ts` (Checkout Pro) desde antes de esta sesión (commit
+     `dfd9abc`, antes de agenda/citas/suscripciones) para el mismo propósito —
+     nunca hubo dos variables distintas con nombres distintos. Lo que sí
+     estaba duplicado era la línea `const APP_URL = process.env.NEXT_PUBLIC_SITE_URL
+     || "http://localhost:3000"`, copiada igual en `mercadopago.ts` y en
+     `mercadopago-suscripciones.ts`; se unificó en `lib/site-url.ts` (exporta
+     `APP_URL`), que ambos archivos importan ahora, para que no puedan
+     desincronizarse el día que se cambie de dominio. **Importante**: esto
+     solo corrige `.env.local` (desarrollo local) — el valor real que usa el
+     despliegue de Vercel en producción se configura aparte, en las variables
+     de entorno del proyecto en el dashboard de Vercel, y no se pudo verificar
+     desde acá si ya coincide con `https://mitarjeta-delta.vercel.app`.
+  2. `payer_email` con "+tag" (ej. `usuario+algo@gmail.com`, común en emails
+     reales de usuarios) hace que la API de preapproval de Mercado Pago devuelva
+     `500 Internal server error` genérico — confirmado en pruebas controladas
+     (mismo correo sin "+tag": `201`; con "+tag": `500`, dos veces). Se normaliza
+     en `normalizarPayerEmail()` (`mercadopago-suscripciones.ts`), que le quita el
+     "+tag" al correo justo antes de mandarlo a Mercado Pago.
+  Con ambos fixes, `POST /api/suscripciones` fue verificado de punta a punta con
+  datos reales: `200` y un `initPoint` real de Mercado Pago, cero errores de
+  consola. El preapproval real creado en esa verificación se canceló
+  (`PUT /preapproval/{id}` `status:"cancelled"`) y todos los datos de prueba
+  (tarjeta, suscripción, usuario) se borraron.
+- **Pendiente, sin resolver todavía**: no se probó el flujo hasta el webhook real
+  (`subscription_preapproval`) porque requiere una de estas dos cosas, ninguna
+  disponible hoy en este entorno: (a) una URL pública HTTPS donde Mercado Pago
+  pueda entregar la notificación (hoy el dev server solo es accesible en
+  `localhost`), y (b) autorizar de verdad el preapproval con una tarjeta — con las
+  credenciales de Producción configuradas hoy, eso implica un cobro real (aunque
+  reembolsable/cancelable), o alternativamente conseguir el token de
+  **Credenciales de prueba** (sandbox) de la app "mitarjeta-suscripciones" desde
+  el dashboard de Mercado Pago para usar sus usuarios y tarjetas de prueba sin
+  dinero real — swap de token pendiente de que el usuario decida hacerlo.
+
+## Flujo de compra: /planes → /crear → Mercado Pago
+- **`/planes`** (`src/app/planes/page.tsx` + `src/components/planes/comparativa-planes.tsx`):
+  comparativa de los 3 planes, consume la tabla `planes` real vía `src/lib/planes.ts`
+  (`getPlanesActivos`) — precios y features SIEMPRE de la DB, nada hardcodeado por
+  plan (las etiquetas de cada feature sí viven en código, son nombres de columnas
+  del schema, no datos). Toggle mensual/anual recalcula precio + "ahorrás X%". El
+  plan "Recomendado" es el de `orden` intermedio (no un slug hardcodeado). Botón
+  "Continuar" → `router.push('/crear?plan=<slug>&ciclo=<mensual|anual>')`.
+- **`/crear`** (`src/app/crear/page.tsx`, client component, `use(searchParams)` —
+  mismo patrón que `use(params)` en `/editar/[id]`): resuelve el plan por slug
+  (`getPlanPorSlug`); sin `?plan=` válido, redirige a `/planes` (no asume un
+  default). Chequea sesión client-side (mismo patrón que `/editar`); **sin sesión,
+  muestra `<AuthMethods>` inline con `redirectTo` = el path + query COMPLETO**
+  (`/crear?plan=...&ciclo=...`), no un redirect a `/login` (esa página está
+  hardcodeada para el acceso admin, no sirve como gate genérico). Con sesión,
+  renderiza `<TarjetaForm plan={plan} periodicidad={periodicidad} />`.
+- **Botón final de `TarjetaForm`** (modo creación): ya NO usa `/api/checkout` ni el
+  modelo viejo de pago único (`configuracion`, método de pago, transferencia,
+  cupón de tarjeta). Inserta la tarjeta con `user_id` real (de la sesión, no
+  invitado) y `publicado: true` de entrada (se comparte al toque, el gating real
+  es por `plan_id`, que arranca `null`), sin escribir `estado_pago`/`metodo_pago`/
+  `precio_pagado`/`cupon_codigo` (quedan en su default, son campos del modelo
+  viejo). Después llama a `POST /api/suscripciones` con
+  `{tarjetaId, planId, periodicidad, cuponCodigo}` (con `Authorization: Bearer` de
+  la sesión) y redirige a `initPoint`. La sección "Tu plan" (antes "Resumen y
+  pago") muestra el plan/precio real elegido + el input de cupón (preview de
+  precio nada más — la combinación real de descuentos pasa server-side).
+- **`/api/checkout` queda sin ningún caller** (confirmado: era el único usado por
+  el botón de arriba). NO se borró — la función que envuelve
+  (`crearPreferenciaPago` en `lib/mercadopago.ts`, Checkout Pro) sigue viva y en
+  uso real por `/api/citas`. Si en el futuro no hace falta para nada más, borrar
+  la ruta es un cambio de una línea, reversible y de bajo riesgo — se dejó
+  explícitamente sin tocar hasta confirmarlo.
 
 ## Agenda de servicios
 - Pago OPCIONAL por servicio, default = contra entrega (`requiere_pago_inmediato: false`).
@@ -154,9 +270,9 @@
   `tarjetas.plan_id` a "presencia" + backfill de tarjetas existentes,
   `tarjetas.zona_horaria`): APLICADA.
 - Migración `20260717210000_add_suscripciones_cupon_codigo.sql`
-  (`suscripciones.cupon_codigo`): DISEÑADA, AÚN NO aplicada contra la base de datos.
+  (`suscripciones.cupon_codigo`): APLICADA.
 - Migración `20260717230000_drop_default_plan_id_tarjetas.sql` (quita el DEFAULT de
-  `tarjetas.plan_id`): DISEÑADA, AÚN NO aplicada contra la base de datos.
+  `tarjetas.plan_id`): APLICADA.
 
 ## Pendiente técnico sin resolver
 - `eventos_metricas` no permite insert desde authenticated/anon a propósito (por

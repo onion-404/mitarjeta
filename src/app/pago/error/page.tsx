@@ -20,7 +20,9 @@ export default async function PagoErrorPage({ searchParams }: PagoErrorPageProps
   const descripcion =
     tipo === "cita"
       ? "El horario quedó liberado. Podés volver a agendar cuando quieras."
-      : "Tu tarjeta quedó guardada, pero sin activar. Podés intentar de nuevo con otro medio de pago desde el editor."
+      : tipo === "cobro_manual"
+        ? "Podés pedir que te compartan el link de pago de nuevo."
+        : "Tu tarjeta quedó guardada, pero sin activar. Podés intentar de nuevo con otro medio de pago desde el editor."
 
   return (
     <div className="relative flex w-full flex-1 flex-col items-center justify-center gap-6 overflow-hidden bg-zinc-50 px-4 py-16 text-center dark:bg-black">
@@ -40,7 +42,7 @@ export default async function PagoErrorPage({ searchParams }: PagoErrorPageProps
         <h1 className="text-xl font-semibold text-foreground">{titulo}</h1>
         <p className="text-sm text-muted-foreground">{descripcion}</p>
 
-        {tipo === "cita" ? (
+        {tipo === "cita" &&
           cita?.tarjetaSlug && (
             <Link
               href={`/${cita.tarjetaSlug}`}
@@ -48,8 +50,9 @@ export default async function PagoErrorPage({ searchParams }: PagoErrorPageProps
             >
               Volver a agendar
             </Link>
-          )
-        ) : (
+          )}
+
+        {tipo === "tarjeta" && (
           <Link href="/crear" className={buttonVariants({ size: "lg", className: "mt-2" })}>
             Volver a intentar
           </Link>

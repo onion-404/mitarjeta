@@ -10,7 +10,7 @@ interface ResultadoConfirmacion {
   /** Slug de la tarjeta afectada, si se pudo identificar y actualizar (solo tipo "tarjeta"). */
   slug: string | null
   /** A qué correspondía external_reference, para que la página de retorno sepa qué texto mostrar. */
-  tipo: "tarjeta" | "cita" | null
+  tipo: "tarjeta" | "cita" | "cobro_manual" | null
   /** Id de la cita afectada (solo tipo "cita"); la página la usa para traer datos de despliegue. */
   citaId: string | null
 }
@@ -56,12 +56,13 @@ function mapearEstadoCita(estadoMp: string | undefined): "pagada" | "cancelada" 
 type PagoVerificado = NonNullable<Awaited<ReturnType<typeof verificarPago>>>
 
 /**
- * `external_reference` viene como `"tarjeta:<id>"` o `"cita:<id>"` (ver
- * lib/mercadopago.ts). Sin prefijo se asume `tarjeta` por compatibilidad
- * con preferencias creadas antes de introducir el prefijo.
+ * `external_reference` viene como `"tarjeta:<id>"`, `"cita:<id>"` o
+ * `"cobro_manual:<id>"` (ver lib/mercadopago.ts). Sin prefijo se asume
+ * `tarjeta` por compatibilidad con preferencias creadas antes de introducir
+ * el prefijo.
  */
 function parseReferenciaExterna(externalReference: string): {
-  tipo: "tarjeta" | "cita"
+  tipo: "tarjeta" | "cita" | "cobro_manual"
   id: string
 } {
   const separador = externalReference.indexOf(":")
@@ -70,6 +71,7 @@ function parseReferenciaExterna(externalReference: string): {
   const prefijo = externalReference.slice(0, separador)
   const id = externalReference.slice(separador + 1)
   if (prefijo === "cita") return { tipo: "cita", id }
+  if (prefijo === "cobro_manual") return { tipo: "cobro_manual", id }
   if (prefijo === "tarjeta") return { tipo: "tarjeta", id }
   return { tipo: "tarjeta", id: externalReference }
 }
@@ -204,6 +206,17 @@ export async function actualizarEstadoPagoTarjeta(
   if (referencia.tipo === "cita") {
     await confirmarPagoCita(referencia.id, pago)
     return { estadoPago: pago.status ?? null, slug: null, tipo: "cita", citaId: referencia.id }
+  }
+
+  // Cobro manual: no existe fila en DB que referenciar (ver
+  // /api/admin/cobro-manual), así que no hay nada que actualizar — solo se
+  // informa el estado real para que la página de retorno muestre el texto
+  // correcto. Sin este corte, "cobro_manual:<uuid>" caería al branch de
+  // "tarjeta" de abajo e intentaría un UPDATE contra un id que no existe en
+  // `tarjetas`, fallando con "single()" y haciendo que Mercado Pago reintente
+  // el webhook para siempre.
+  if (referencia.tipo === "cobro_manual") {
+    return { estadoPago: pago.status ?? null, slug: null, tipo: "cobro_manual", citaId: null }
   }
 
   const nuevoEstado = mapearEstado(pago.status)
