@@ -266,6 +266,7 @@ export async function obtenerSlotsDisponibles({
 
   const slots: SlotDisponible[] = []
   const duracion = servicio.duracion_minutos
+  const ahora = Date.now()
 
   for (let fecha = desde; fecha <= hasta; fecha = sumarDias(fecha, 1)) {
     const diaSemana = diaSemanaDeFecha(fecha)
@@ -277,6 +278,12 @@ export async function obtenerSlotsDisponibles({
     for (const v of ventanas) {
       for (let inicio = v.inicio; inicio + duracion <= v.fin; inicio += PASO_MINUTOS) {
         const inicioDate = horaLocalAUtc(fecha, inicio, zonaHoraria)
+        // Un slot que ya pasó (relevante sobre todo para "hoy") no es un
+        // horario real disponible: /api/citas lo rechazaría igual, pero con
+        // un error genérico de "fecha inválida" que no le dice al visitante
+        // por qué. Se descarta acá para que la lista que ve nunca incluya
+        // horarios que ya no puede tomar.
+        if (inicioDate.getTime() <= ahora) continue
         const finDate = horaLocalAUtc(fecha, inicio + duracion, zonaHoraria)
         const ocupado = ocupadas.some((o) => inicioDate < o.fin && finDate > o.inicio)
         if (!ocupado) {

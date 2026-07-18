@@ -7,7 +7,7 @@ import { CompartirTarjeta } from "@/components/tarjeta/compartir-tarjeta"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
 import { buttonVariants } from "@/components/ui/button"
-import { getTarjetaPublicada } from "@/lib/tarjetas"
+import { getServiciosAgendablesActivos, getTarjetaPublicada } from "@/lib/tarjetas"
 
 interface TarjetaPageProps {
   params: Promise<{ slug: string }>
@@ -77,6 +77,7 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
   const nombrePrincipal = esEmpresarial
     ? tarjeta.datos_contacto.nombreEmpresa
     : tarjeta.datos_contacto.nombre
+  const agendaServicios = await getServiciosAgendablesActivos(tarjeta.id)
 
   return (
     <div className="relative flex w-full flex-1 flex-col overflow-hidden bg-zinc-50 dark:bg-black">
@@ -96,6 +97,10 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
           tipo={tarjeta.tipo}
           datosContacto={tarjeta.datos_contacto}
           identidadVisual={tarjeta.identidad_visual}
+          agendaServicios={agendaServicios}
+          permitirAgendar
+          tarjetaId={tarjeta.id}
+          zonaHoraria={tarjeta.zona_horaria}
           mostrarAcciones
           className="relative"
         />

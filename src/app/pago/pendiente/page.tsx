@@ -3,8 +3,9 @@ import Link from "next/link"
 
 import { ReclamarTarjeta } from "@/components/pago/reclamar-tarjeta"
 import { buttonVariants } from "@/components/ui/button"
-import { formatearFechaHoraLocal, getCitaParaConfirmacion } from "@/lib/citas"
+import { getCitaParaConfirmacion } from "@/lib/citas"
 import { confirmarPagoDesdeRedirect } from "@/lib/confirmar-pago"
+import { formatearFechaHoraLocal } from "@/lib/fecha"
 
 interface PagoPendientePageProps {
   searchParams: Promise<{ payment_id?: string; collection_id?: string }>

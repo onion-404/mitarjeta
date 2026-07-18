@@ -47,12 +47,3 @@ export async function getCitaParaConfirmacion(
     tarjetaSlug: fila.tarjetas?.slug ?? null,
   }
 }
-
-/** Formatea un timestamp UTC en la hora local de la tarjeta, para mostrarle la fecha de su cita al cliente. */
-export function formatearFechaHoraLocal(fechaHoraInicio: string, zonaHoraria: string): string {
-  return new Intl.DateTimeFormat("es-MX", {
-    dateStyle: "full",
-    timeStyle: "short",
-    timeZone: zonaHoraria,
-  }).format(new Date(fechaHoraInicio))
-}

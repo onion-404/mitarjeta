@@ -225,6 +225,45 @@
   pausó/canceló), la sección de Agenda se bloquea ENTERA con un mensaje de
   "necesitás un plan activo" — no solo el límite de servicios — y ni siquiera
   consulta Supabase.
+- **Vista pública de agenda (lado visitante) implementada**: `TarjetaCard`
+  (`tarjeta-card.tsx`) tiene props opcionales `permitirAgendar?`, `tarjetaId?`,
+  `zonaHoraria?` (default sin uso → cero cambio de comportamiento en el
+  preview del editor ni en el demo del home, que no las pasan). Cuando
+  `permitirAgendar` está activo (solo `/[slug]/page.tsx` lo hace), cada fila
+  de la sección "Agendar" se vuelve un trigger de `reservar-servicio.tsx`
+  (nuevo, un `Dialog` de `@base-ui/react/dialog` por servicio, mismo patrón
+  que `tarjeta-qr.tsx`): fecha → horarios vía `GET /api/citas/disponibilidad`
+  → datos del cliente (nombre + contacto, sin cuenta) → `POST /api/citas`.
+  Si no requiere pago, confirmación directa en el propio modal; si requiere
+  pago, `window.location.href = initPoint` (redirect a Checkout Pro, mismo
+  patrón que el resto del flujo de pagos). El 409 (alguien más tomó el
+  horario) muestra un mensaje claro y vuelve a la selección de horario, sin
+  perder los datos ya escritos por el visitante.
+- **Bug real encontrado y corregido durante la verificación en vivo de lo de
+  arriba**: `obtenerSlotsDisponibles()` (`lib/agenda.ts`) no filtraba los
+  horarios de HOY que ya pasaron — los ofrecía como "disponibles" en
+  `/api/citas/disponibilidad`, y recién `/api/citas` los rechazaba con un
+  error genérico de "fecha inválida" que no le explicaba nada al visitante.
+  Corregido: se descarta cualquier slot cuyo inicio ya sea pasado (`Date.now()`)
+  antes de devolverlo, para que la lista que ve el visitante nunca incluya un
+  horario que ya no puede tomar.
+- `formatearFechaHoraLocal` se movió de `lib/citas.ts` a un nuevo `lib/fecha.ts`
+  (sin `"server-only"`, a diferencia de `citas.ts`): la necesita tanto
+  `/pago/exito`/`/pago/pendiente` (servidor) como `reservar-servicio.tsx`
+  (cliente, para mostrar horarios en la zona horaria de la tarjeta, no la del
+  navegador del visitante). Se agregó `formatearHoraLocal` (solo hora, para
+  los botones de horario) al mismo archivo.
+- **Gating por plan aplicado también a la vista pública (no solo al editor
+  del dueño)**: `getServiciosAgendablesActivos()` (`lib/tarjetas.ts`) filtra
+  explícitamente `tarjetas.plan_id IS NOT NULL` (join `!inner` +
+  `.not("tarjetas.plan_id", "is", null)`) — una tarjeta sin suscripción
+  autorizada (nunca pagó, o se le pausó/canceló) no debe seguir mostrando ni
+  permitiendo agendar servicios ya creados. **Esto es un filtro de
+  aplicación, no de RLS**: `servicios_agendables_select_publica` (la policy)
+  todavía no exige `plan_id IS NOT NULL` por su cuenta — sigue pendiente como
+  endurecimiento futuro (ver "Pendiente técnico sin resolver") migrar ese
+  requisito a la policy misma, para no depender exclusivamente de que esta
+  función sea el único punto de acceso.
 
 ## Patrón de UI del editor principal (TarjetaForm)
 - Reescrito para seguir el patrón Linktree: en **desktop**, sin cambios (grid de 2
@@ -287,6 +326,12 @@
   dos personas agendan la misma franja al mismo instante). Hardening futuro: EXCLUDE
   constraint con extensión btree_gist. Aceptado como riesgo bajo para el volumen
   inicial, revisar si el doble booking se vuelve un problema real.
+- El gating por plan de `servicios_agendables` en la vista pública (ver "Agenda
+  de servicios" arriba) hoy vive SOLO en `getServiciosAgendablesActivos()`
+  (filtro de aplicación), no en la policy `servicios_agendables_select_publica`.
+  Hardening futuro: mover el requisito `plan_id IS NOT NULL` a la propia RLS
+  (join contra `tarjetas` en la policy, como ya hace con `publicado`), para no
+  depender de que esta función sea el único camino de lectura pública.
 
 ## Notas de proceso
 - Proyecto de Supabase: producción única, sin staging. Antes de cualquier migración:

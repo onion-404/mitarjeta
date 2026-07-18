@@ -23,6 +23,7 @@ import { obtenerPlataforma } from "@/lib/redes"
 import { cn } from "@/lib/utils"
 import { obtenerYoutubeEmbedUrl } from "@/lib/youtube"
 import type { DatosContacto, IdentidadVisual, ServicioAgendable, TarjetaTipo } from "@/lib/types"
+import { ReservarServicio } from "@/components/tarjeta/reservar-servicio"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 
 interface TarjetaCardProps {
@@ -33,9 +34,15 @@ interface TarjetaCardProps {
   mostrarAcciones?: boolean
   /** Servicios agendables activos, para la sección "Agendar" (no viene de datosContacto: son filas propias, no JSONB). */
   agendaServicios?: ServicioAgendable[]
+  /** Habilita la reserva interactiva por servicio (solo la tarjeta pública real la pasa;
+   *  el preview del editor y el demo del home quedan igual que siempre, solo informativos). */
+  permitirAgendar?: boolean
+  /** Requeridos junto con permitirAgendar para llamar a /api/citas*. */
+  tarjetaId?: string
+  zonaHoraria?: string
 }
 
-function formatDuracion(minutos: number) {
+export function formatDuracion(minutos: number) {
   if (minutos < 60) return `${minutos} min`
   const horas = Math.floor(minutos / 60)
   const resto = minutos % 60
@@ -104,7 +111,11 @@ export function TarjetaCard({
   className,
   mostrarAcciones = false,
   agendaServicios,
+  permitirAgendar = false,
+  tarjetaId,
+  zonaHoraria,
 }: TarjetaCardProps) {
+  const agendaInteractiva = permitirAgendar && Boolean(tarjetaId) && Boolean(zonaHoraria)
   const cardRef = React.useRef<HTMLElement>(null)
   const [descargandoPdf, setDescargandoPdf] = React.useState(false)
 
@@ -490,26 +501,35 @@ export function TarjetaCard({
                 Agendar
               </h2>
               <div className="mt-3 flex flex-col gap-2">
-                {agendaServicios?.map((servicio) => (
-                  <div
-                    key={servicio.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-[rgba(0,0,0,0.05)] p-3 dark:border-[rgba(255,255,255,0.08)]"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
-                        {servicio.nombre}
-                      </p>
-                      <p className="mt-0.5 flex items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]">
-                        <Clock className="size-3" /> {formatDuracion(servicio.duracion_minutos)}
-                        {" · "}
-                        {servicio.requiere_pago_inmediato ? "Pago al agendar" : "Pago contra entrega"}
-                      </p>
+                {agendaServicios?.map((servicio) =>
+                  agendaInteractiva ? (
+                    <ReservarServicio
+                      key={servicio.id}
+                      tarjetaId={tarjetaId!}
+                      zonaHoraria={zonaHoraria!}
+                      servicio={servicio}
+                    />
+                  ) : (
+                    <div
+                      key={servicio.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-[rgba(0,0,0,0.05)] p-3 dark:border-[rgba(255,255,255,0.08)]"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
+                          {servicio.nombre}
+                        </p>
+                        <p className="mt-0.5 flex items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]">
+                          <Clock className="size-3" /> {formatDuracion(servicio.duracion_minutos)}
+                          {" · "}
+                          {servicio.requiere_pago_inmediato ? "Pago al agendar" : "Pago contra entrega"}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-sm font-semibold text-[#18181b] dark:text-[#fafafa]">
+                        ${servicio.precio}
+                      </span>
                     </div>
-                    <span className="shrink-0 text-sm font-semibold text-[#18181b] dark:text-[#fafafa]">
-                      ${servicio.precio}
-                    </span>
-                  </div>
-                ))}
+                  )
+                )}
               </div>
             </div>
           )}
