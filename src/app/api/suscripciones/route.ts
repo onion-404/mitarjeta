@@ -50,13 +50,29 @@ export async function POST(request: Request) {
     return Response.json({ error: "El servicio no está disponible." }, { status: 500 })
   }
 
-  const { data: tarjeta } = await admin
+  const { data: tarjeta, error: tarjetaError } = await admin
     .from("tarjetas")
     .select("id, user_id, created_at")
     .eq("id", tarjetaId)
     .maybeSingle()
 
   if (!tarjeta || tarjeta.user_id !== userId) {
+    // Antes esto era silencioso: si la consulta fallaba (ej. credenciales de
+    // service role mal configuradas), caía acá igual que un "no encontrado"
+    // legítimo, indistinguible en los logs. Dejamos explícito cuál de los
+    // tres casos fue, sin cambiar la respuesta 403 en sí.
+    if (tarjetaError) {
+      console.error(
+        `[/api/suscripciones] error consultando tarjeta (tarjetaId=${tarjetaId}):`,
+        tarjetaError
+      )
+    } else if (!tarjeta) {
+      console.error(`[/api/suscripciones] tarjeta no encontrada: tarjetaId=${tarjetaId}`)
+    } else {
+      console.error(
+        `[/api/suscripciones] user_id no coincide: tarjeta.user_id=${tarjeta.user_id} userId=${userId} tarjetaId=${tarjetaId}`
+      )
+    }
     return Response.json(
       { error: "No encontramos esa tarjeta o no tenés permiso para suscribirla." },
       { status: 403 }
