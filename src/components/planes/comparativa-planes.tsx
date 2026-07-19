@@ -36,7 +36,7 @@ const FEATURES: { clave: string; etiqueta: string; render: (valor: unknown) => R
   { clave: "metricas_rango_custom", etiqueta: "Métricas por rango de fechas", render: renderBooleano },
   { clave: "metricas_exportacion", etiqueta: "Exportar métricas", render: renderBooleano },
   { clave: "recordatorios_automaticos", etiqueta: "Recordatorios automáticos", render: renderBooleano },
-  { clave: "marca_plataforma_oculta", etiqueta: "Sin marca de miTarjeta", render: renderBooleano },
+  { clave: "marca_plataforma_oculta", etiqueta: "Sin marca de Linkard", render: renderBooleano },
   {
     clave: "comision_venta_pct",
     etiqueta: "Comisión por venta",

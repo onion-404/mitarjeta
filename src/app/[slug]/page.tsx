@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
+import { Logo } from "@/components/logo"
 import { CompartirTarjeta } from "@/components/tarjeta/compartir-tarjeta"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
@@ -27,7 +28,7 @@ export async function generateMetadata({
     : tarjeta?.datos_contacto.puesto
 
   return {
-    title: nombre ? `${nombre} · miTarjeta` : "Tarjeta no encontrada",
+    title: nombre ? `${nombre} · Linkard` : "Tarjeta no encontrada",
     description: subtitulo,
   }
 }
@@ -105,17 +106,18 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
           className="relative"
         />
         <TarjetaQr slug={slug} />
-        <CompartirTarjeta slug={slug} titulo={nombrePrincipal || "miTarjeta"} />
+        <CompartirTarjeta slug={slug} titulo={nombrePrincipal || "Linkard"} />
       </div>
 
-      <footer className="relative border-t border-border/60 px-4 py-5 text-center text-xs text-muted-foreground">
+      <footer className="relative flex flex-col items-center gap-2 border-t border-border/60 px-4 py-5 text-center text-xs text-muted-foreground">
+        <Logo size="sm" />
         <p>
-          © {new Date().getFullYear()} Mi Tarjeta ·{" "}
+          © {new Date().getFullYear()} ·{" "}
           <Link
             href="/crear"
             className="underline underline-offset-2 hover:text-foreground"
           >
-            Creá tu propia tarjeta digital con Mi Tarjeta
+            Creá tu propia tarjeta digital con Linkard
           </Link>
         </p>
       </footer>

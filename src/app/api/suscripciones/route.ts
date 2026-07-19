@@ -146,7 +146,7 @@ export async function POST(request: Request) {
     suscripcionId: suscripcion.id,
     tarjetaId,
     payerEmail,
-    reason: `Plan ${plan.nombre_display} (${periodicidad}) - miTarjeta`,
+    reason: `Plan ${plan.nombre_display} (${periodicidad}) - Linkard`,
     precio: precioFinal,
     periodicidad,
   })

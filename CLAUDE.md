@@ -2,9 +2,82 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-07-17. Este documento es la fuente de verdad para que
+> Última actualización: 2026-07-18. Este documento es la fuente de verdad para que
 > cualquier sesión nueva entienda el estado real del proyecto sin releer el historial
 > de chat. Actualizarlo cuando cambie algo de lo que describe.
+
+## ⚠️ Nombre del producto: "Linkard" (linkard.mx)
+- El producto se llama oficialmente **"Linkard"** de cara al usuario, dominio real
+  **linkard.mx** (ya conectado en Vercel). "mitarjeta"/"Mi Tarjeta" fue el nombre
+  interno original y **ya no es la marca visible** — no queda ningún texto de UI,
+  metadata ni copy dirigido al usuario con ese nombre (rebrandeado 2026-07-18).
+- **La carpeta del repo, el nombre técnico del proyecto y todo identificador
+  interno siguen siendo "mitarjeta" A PROPÓSITO** — decisión explícita del cliente,
+  no un descuido. **No lo "corrijas"** ni intentes renombrar la carpeta/repo en una
+  sesión futura. Esto incluye (deliberadamente sin cambiar):
+  - Nombres de tablas/columnas en Supabase.
+  - Variables de entorno (`NEXT_PUBLIC_SUPABASE_URL`, etc. — ninguna lleva
+    "mitarjeta" en el nombre, pero si alguna nueva lo llevara, tampoco se toca).
+  - Carpetas de Cloudinary (`mitarjeta/avatars`, `mitarjeta/banners`,
+    `mitarjeta/productos`, `mitarjeta/brochures` en `cloudinary-sign/route.ts` y
+    `tarjeta-form.tsx`) — cambiar el prefijo fragmentaría dónde viven los assets
+    ya subidos vs. los nuevos.
+  - Los nombres reales de las dos apps registradas en el dashboard de Mercado
+    Pago, "mitarjeta" y "mitarjeta-suscripciones" (comentario en
+    `mercadopago-suscripciones.ts`) — son identificadores externos, no se
+    renombran solos con un find-and-replace en el código.
+  - `PENDIENTE_KEY = "mitarjeta_pendiente"` en `reclamo.ts` (clave de
+    `localStorage`, cambiarla invalidaría reclamos ya pendientes en navegadores
+    de usuarios reales).
+  - `package.json` → `"name": "linkard"` sí se cambió (metadata interna de
+    build, no público, sin referencias en código — no rompe nada).
+- **Logo implementado (2026-07-18)**: `src/components/logo.tsx` (`<Logo />`) es
+  el componente reutilizable — triángulo `▲` (carácter Unicode, no SVG dibujado)
+  en `text-primary` + "Linkard." en Sora bold 700. Reemplaza cualquier mención
+  de "Linkard" como texto plano en header público (`page.tsx`), footer de
+  tarjeta pública (`[slug]/page.tsx`), login (`login/page.tsx`) y admin
+  dashboard (`admin/dashboard/page.tsx`). La fuente Sora se carga con
+  `next/font/google` **en `layout.tsx`** (mismo mecanismo que Geist/Playfair/
+  Baloo ya existentes), expuesta como CSS var `--font-logo` en `<html>` —
+  `logo.tsx` la consume vía `font-[family-name:var(--font-logo)]`, no crea su
+  propia instancia de fuente.
+- **Favicon (2026-07-18, RESUELTO)**: se borró el `favicon.ico` genérico de
+  `create-next-app` y se reemplazó por `src/app/icon.tsx` + `apple-icon.tsx`
+  (mecanismo nativo de Next.js con `ImageResponse` de `next/og` — **sin
+  agregar ninguna dependencia nueva** para conversión SVG→ICO, se evitó
+  a propósito). Ambos son el triángulo solo (sin texto, no se leería a ese
+  tamaño) sobre fondo `#171717` (mismo valor que `--primary` en light mode).
+  `public/` todavía conserva los SVGs default de Next.js (`next.svg`,
+  `vercel.svg`, `globe.svg`, etc.) — no se tocaron, no son visibles al usuario
+  (no están referenciados en ninguna página).
+- **Open Graph / Twitter Card (2026-07-18)**: `src/app/opengraph-image.tsx`
+  genera la imagen general del sitio (1200×630, `ImageResponse`, fondo
+  `#171717`, logo completo + tagline "Tu tarjeta digital en segundos"), carga
+  Sora bold vía fetch a la API de Google Fonts (patrón estándar para
+  `next/og`, que no puede usar `next/font/google` directamente). `layout.tsx`
+  agrega `metadataBase` (usa `NEXT_PUBLIC_SITE_URL`, antes no estaba seteado —
+  sin esto las URLs de OG image resuelven mal al compartir) + bloques
+  `openGraph`/`twitter` explícitos (`card: "summary_large_image"`).
+
+### 🔴 PENDIENTE PRIORITARIO: imagen OG dinámica por tarjeta individual
+- Lo de arriba es solo la imagen OG **general del sitio** (home, metadata por
+  default). Las tarjetas individuales (`/[slug]`) siguen sin su propio
+  `opengraph-image` — cuando alguien comparte el link de SU tarjeta (WhatsApp,
+  redes), el preview muestra la imagen genérica de Linkard, no algo con el
+  nombre/foto/colores de esa tarjeta puntual.
+- **Es el siguiente paso natural y de alto impacto**: compartir el link de la
+  tarjeta (WhatsApp, redes, bio de Instagram) es la principal vía de
+  interacción y crecimiento del producto — cada preview genérico en vez de
+  personalizado es una oportunidad de conversión perdida.
+- Implementación sugerida (no hecha todavía): `src/app/[slug]/opengraph-image.tsx`
+  dinámico (recibe `params.slug`, lee la tarjeta con `getTarjetaPublicada`,
+  usa `nombrePrincipal`, `identidad_visual.colorPrimario/colorSecundario` y
+  posiblemente el avatar/logo de la tarjeta si tiene uno subido a Cloudinary).
+- **Pendiente de que el usuario lo haga manualmente (NO lo hace Claude)**:
+  actualizar `NEXT_PUBLIC_SITE_URL` a `https://linkard.mx` en las Environment
+  Variables del proyecto en el dashboard de Vercel (ya está actualizada en
+  `.env.local` para desarrollo local, pero Vercel usa su propia configuración
+  independiente) y disparar un redeploy para que tome efecto en producción.
 
 ## Modelo de negocio
 - Plataforma tipo link-in-bio + agenda de servicios + venta de productos.

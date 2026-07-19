@@ -1139,7 +1139,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
           <span className={labelClase}>Enlace personalizado (opcional)</span>
           <div className="flex items-stretch overflow-hidden rounded-xl border border-border bg-white/70 backdrop-blur transition-colors duration-200 ease-out focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-zinc-900/60">
             <span className="flex shrink-0 items-center border-r border-border bg-muted/60 px-3 text-sm text-muted-foreground">
-              mitarjeta.app/
+              linkard.mx/
             </span>
             <input
               value={slugPersonalizado}
@@ -1926,7 +1926,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
           <CompartirTarjeta
             slug={tarjeta.slug}
             titulo={
-              (esEmpresarial ? nombreEmpresa : nombre) || "miTarjeta"
+              (esEmpresarial ? nombreEmpresa : nombre) || "Linkard"
             }
           />
         </div>
@@ -2166,7 +2166,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
                     <TarjetaQr slug={tarjeta.slug} variant="inline" />
                     <CompartirTarjeta
                       slug={tarjeta.slug}
-                      titulo={(esEmpresarial ? nombreEmpresa : nombre) || "miTarjeta"}
+                      titulo={(esEmpresarial ? nombreEmpresa : nombre) || "Linkard"}
                       variant="inline"
                     />
                   </div>

@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
-import { Baloo_2, Geist, Geist_Mono, Playfair_Display } from "next/font/google";
+import { Baloo_2, Geist, Geist_Mono, Playfair_Display, Sora } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+});
+
+const sora = Sora({
+  variable: "--font-logo",
+  subsets: ["latin"],
+  weight: ["700"],
 });
 
 const geistMono = Geist_Mono({
@@ -24,9 +30,24 @@ const baloo2 = Baloo_2({
 });
 
 export const metadata: Metadata = {
-  title: "miTarjeta · Tarjeta digital en segundos",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://linkard.mx"),
+  title: "Linkard · Tarjeta digital en segundos",
   description:
-    "Creá tu tarjeta de presentación o de negocio digital, compartila con un enlace y un QR.",
+    "Creá tu tarjeta de presentación o de negocio digital, compartila con un enlace y un QR. Sin apps, sin imprimir: tu contacto siempre a un toque de distancia.",
+  openGraph: {
+    title: "Linkard · Tarjeta digital en segundos",
+    description:
+      "Creá tu tarjeta de presentación o de negocio digital, compartila con un enlace y un QR.",
+    siteName: "Linkard",
+    locale: "es_MX",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Linkard · Tarjeta digital en segundos",
+    description:
+      "Creá tu tarjeta de presentación o de negocio digital, compartila con un enlace y un QR.",
+  },
 };
 
 export default function RootLayout({
@@ -37,7 +58,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} ${baloo2.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} ${baloo2.variable} ${sora.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

@@ -14,6 +14,7 @@ import Link from "next/link"
 import { AdminShortcut } from "@/components/admin/admin-shortcut"
 import { PromoCountdown } from "@/components/landing/promo-countdown"
 import { buttonVariants } from "@/components/ui/button"
+import { Logo } from "@/components/logo"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { getConfiguracionActiva } from "@/lib/configuracion"
 
@@ -97,6 +98,10 @@ export default async function Home() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-black">
       <AdminShortcut />
+
+      <header className="relative mx-auto w-full max-w-6xl px-6 pt-6">
+        <Logo />
+      </header>
 
       {/* Hero */}
       <section className="relative overflow-hidden">
@@ -207,7 +212,7 @@ export default async function Home() {
             ))}
           </div>
           <p className="mt-10 text-lg font-semibold text-balance">
-            Con Mi Tarjeta, tu contacto vive en el celular de tu cliente para
+            Con Linkard, tu contacto vive en el celular de tu cliente para
             siempre.
           </p>
         </div>

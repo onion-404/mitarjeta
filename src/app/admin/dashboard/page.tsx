@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation"
 import * as React from "react"
 
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Logo } from "@/components/logo"
 import { ADMIN_EMAIL } from "@/lib/admin"
 import {
   actualizarConfiguracion,
@@ -230,12 +231,15 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 sm:px-6 lg:px-10">
-      <Link
-        href="/"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" /> Volver al inicio
-      </Link>
+      <div className="flex items-center justify-between gap-3">
+        <Logo size="sm" />
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" /> Volver al inicio
+        </Link>
+      </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div>
