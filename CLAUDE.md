@@ -223,6 +223,28 @@
   consola. El preapproval real creado en esa verificación se canceló
   (`PUT /preapproval/{id}` `status:"cancelled"`) y todos los datos de prueba
   (tarjeta, suscripción, usuario) se borraron.
+- **Email de pago confirmable por el usuario (agregado 2026-07-20)**: antes
+  `payerEmail` se tomaba ciegamente de `userData.user.email` (el email de la
+  sesión de Supabase/Google) — bug real encontrado en pruebas en vivo:
+  Mercado Pago rechaza el pago con "Tu e-mail no coincide con el de la
+  suscripción" si la persona autoriza con una cuenta de MP distinta a la de
+  su login de Google. Ahora la sección "Tu plan" de `TarjetaForm` (modo
+  creación) tiene un input de email editable, pre-llenado con el de la
+  sesión vía un `useEffect` (`supabase.auth.getSession()` al montar), con el
+  texto "Usaremos este correo para tu suscripción en Mercado Pago — confirmá
+  que sea el mismo con el que vas a pagar". `POST /api/suscripciones` ahora
+  **recibe `payerEmail` en el body** (ya no lo deriva de la sesión) y lo
+  valida con regex antes de mandarlo a Mercado Pago — `userData.user.email`
+  solo se sigue usando para el chequeo de sesión válida, no como fuente del
+  email de pago.
+  - **Limitación conocida, documentada en `mercadopago-suscripciones.ts`**:
+    si igual hay mismatch (la persona edita el campo pero de todos modos
+    autoriza con otra cuenta de MP), no hay forma de detectarlo desde
+    nuestro lado — ese rechazo pasa enteramente dentro del checkout hosteado
+    por MP, el preapproval nunca cambia de estado (se queda `pending`), así
+    que no dispara webhook, y `back_url` no trae ningún query param de error
+    para leer. Evaluado y descartado inventar una detección — no existe la
+    señal, solo mitigación preventiva (este campo).
 - **Pendiente, sin resolver todavía**: no se probó el flujo hasta el webhook real
   (`subscription_preapproval`) porque requiere una de estas dos cosas, ninguna
   disponible hoy en este entorno: (a) una URL pública HTTPS donde Mercado Pago

@@ -288,6 +288,13 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
   const [cuponError, setCuponError] = React.useState<string | null>(null)
   const [validandoCupon, setValidandoCupon] = React.useState(false)
 
+  // Email de pago para la suscripción (solo al crear): pre-llenado con el
+  // email de la sesión (Google), pero editable — no podemos asumir que sea
+  // el mismo con el que la persona paga en Mercado Pago (bug real: rechazo
+  // "Tu e-mail no coincide con el de la suscripción" cuando difieren).
+  const [payerEmail, setPayerEmail] = React.useState("")
+  const [payerEmailError, setPayerEmailError] = React.useState<string | null>(null)
+
   const esEmpresarial = tipo === "empresarial"
 
   // Chequeo de disponibilidad del enlace personalizado, con debounce de 500ms.
@@ -312,6 +319,16 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
 
     return () => window.clearTimeout(timeoutId)
   }, [slugPersonalizado, esEdicion])
+
+  // Pre-llenado del email de pago con el de la sesión actual — solo aplica
+  // en modo creación (en edición no hay sección "Tu plan").
+  React.useEffect(() => {
+    if (esEdicion) return
+    supabase.auth.getSession().then(({ data }) => {
+      const emailSesion = data.session?.user.email
+      if (emailSesion) setPayerEmail(emailSesion)
+    })
+  }, [esEdicion])
 
   React.useEffect(() => {
     return () => {
@@ -780,6 +797,13 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
       return
     }
 
+    const payerEmailTrim = payerEmail.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmailTrim)) {
+      setPayerEmailError("Ingresá un correo válido para tu suscripción.")
+      setSaving(false)
+      return
+    }
+
     // La sesión se pide fresca acá (no un valor capturado al montar el
     // formulario): puede haber pasado un rato subiendo imágenes, y
     // /api/suscripciones exige un access_token vigente.
@@ -808,6 +832,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
           planId: planConfirmado.id,
           periodicidad,
           cuponCodigo: cuponValidado?.codigo,
+          payerEmail: payerEmailTrim,
         }),
       })
       const suscripcionData = (await suscripcionRes.json()) as {
@@ -1744,6 +1769,28 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
           </span>
         </div>
       )}
+
+      <label className="flex flex-col gap-1.5">
+        <span className={labelClase}>Correo para tu suscripción</span>
+        <input
+          type="email"
+          value={payerEmail}
+          onChange={(e) => {
+            setPayerEmail(e.target.value)
+            setPayerEmailError(null)
+          }}
+          placeholder="tu@correo.com"
+          className={inputClase}
+        />
+        {payerEmailError ? (
+          <p className="text-xs text-destructive">{payerEmailError}</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Usaremos este correo para tu suscripción en Mercado Pago — confirmá que
+            sea el mismo con el que vas a pagar.
+          </p>
+        )}
+      </label>
 
       <div className="flex gap-2">
         <input

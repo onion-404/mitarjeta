@@ -36,6 +36,21 @@ function normalizarPayerEmail(email: string) {
   return email.replace(/\+[^@]*@/, "@")
 }
 
+// LIMITACIÓN CONOCIDA: si la persona intenta autorizar el preapproval en
+// Mercado Pago logueada con una cuenta de MP cuyo email no coincide con
+// `payer_email`, MP rechaza el intento con "Tu e-mail no coincide con el de
+// la suscripción" — pero ese rechazo ocurre enteramente dentro del checkout
+// hosteado por MP, ANTES de que el preapproval cambie de estado. No hay
+// transición de estado (se queda en "pending"), así que no dispara el
+// webhook `subscription_preapproval` (confirmar-suscripcion.ts solo mapea
+// authorized/paused/cancelled/pending — no existe un estado "rejected" para
+// esto), y `back_url` tampoco recibe un query param de error que podamos
+// leer: MP simplemente no redirige de vuelta si la persona ni siquiera pudo
+// completar la autorización. No tenemos ninguna señal server-side de este
+// caso puntual — solo se puede mitigar del lado del formulario (pedirle a
+// la persona que confirme el email antes de crear la suscripción, ver
+// TarjetaForm), no detectar ni notificar después de que ya ocurrió.
+
 function getConfig() {
   if (!accessToken) return null
   return new MercadoPagoConfig({ accessToken })

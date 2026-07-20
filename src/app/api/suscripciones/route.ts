@@ -11,7 +11,10 @@ interface BodyCrearSuscripcion {
   planId?: string
   periodicidad?: PeriodicidadSuscripcion
   cuponCodigo?: string
+  payerEmail?: string
 }
+
+const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // Suscripciones (preapproval) es exclusivo del cobro recurrente del plan de
 // una tarjeta — NO confundir con /api/checkout (Checkout Pro, pagos únicos).
@@ -36,13 +39,24 @@ export async function POST(request: Request) {
     return Response.json({ error: "Sesión inválida o vencida." }, { status: 401 })
   }
   const userId = userData.user.id
-  const payerEmail = userData.user.email
 
   const body = (await request.json().catch(() => null)) as BodyCrearSuscripcion | null
-  const { tarjetaId, planId, periodicidad, cuponCodigo } = body ?? {}
+  const { tarjetaId, planId, periodicidad, cuponCodigo, payerEmail } = body ?? {}
 
   if (!tarjetaId || !planId || (periodicidad !== "mensual" && periodicidad !== "anual")) {
     return Response.json({ error: "Datos de suscripción inválidos." }, { status: 400 })
+  }
+
+  // El email de pago ya NO se toma ciegamente de la sesión de Supabase: el
+  // usuario lo confirma/edita en el formulario, porque no hay garantía de
+  // que su email de Google (con el que se registra en Linkard) sea el mismo
+  // con el que paga en Mercado Pago (bug real: MP rechaza el pago con "Tu
+  // e-mail no coincide con el de la suscripción" cuando difieren).
+  if (!payerEmail || !REGEX_EMAIL.test(payerEmail)) {
+    return Response.json(
+      { error: "Ingresá un correo válido para tu suscripción." },
+      { status: 400 }
+    )
   }
 
   const admin = getSupabaseAdmin()
