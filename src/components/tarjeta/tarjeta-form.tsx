@@ -243,11 +243,12 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
   /** Breve estado visual (check verde) que se muestra en el botón justo
    * después de guardar con éxito, antes de redirigir o abrir el modal. */
   const [guardadoExito, setGuardadoExito] = React.useState(false)
-  const [toast, setToast] = React.useState<{ tipo: "advertencia" | "error"; mensaje: string } | null>(
-    null
-  )
+  const [toast, setToast] = React.useState<{
+    tipo: "advertencia" | "error" | "exito"
+    mensaje: string
+  } | null>(null)
 
-  function mostrarToast(tipo: "advertencia" | "error", mensaje: string) {
+  function mostrarToast(tipo: "advertencia" | "error" | "exito", mensaje: string) {
     setToast({ tipo, mensaje })
     window.setTimeout(() => {
       setToast((actual) => (actual?.mensaje === mensaje ? null : actual))
@@ -328,6 +329,34 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
       const emailSesion = data.session?.user.email
       if (emailSesion) setPayerEmail(emailSesion)
     })
+  }, [esEdicion])
+
+  // Vuelta desde el Checkout hosteado de Stripe (success_url/cancel_url):
+  // `back_url` de Mercado Pago no distinguía éxito de cancelación, esto sí
+  // — un toast simple alcanza, la confirmación real de estado la hace el
+  // webhook. Se limpia el query param para que no vuelva a disparar en un
+  // refresh.
+  React.useEffect(() => {
+    if (!esEdicion) return
+    const params = new URLSearchParams(window.location.search)
+    const resultado = params.get("stripe")
+    if (!resultado) return
+
+    window.history.replaceState(null, "", window.location.pathname)
+
+    // Diferido: llamar setState de forma síncrona dentro de un efecto
+    // dispara renders en cascada (regla react-hooks/set-state-in-effect) —
+    // mismo mecanismo (setTimeout) que ya usa mostrarToast para el auto-dismiss.
+    window.setTimeout(() => {
+      if (resultado === "exito") {
+        mostrarToast(
+          "exito",
+          "¡Listo! Estamos confirmando tu suscripción — puede tardar unos segundos en reflejarse."
+        )
+      } else if (resultado === "cancelado") {
+        mostrarToast("advertencia", "Cancelaste el pago. Podés intentarlo de nuevo cuando quieras.")
+      }
+    }, 0)
   }, [esEdicion])
 
   React.useEffect(() => {
@@ -821,7 +850,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
     const accessToken = session.access_token
 
     async function alGuardarConExito(data: { id: string; slug: string }) {
-      const suscripcionRes = await fetch("/api/suscripciones", {
+      const suscripcionRes = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -836,21 +865,21 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
         }),
       })
       const suscripcionData = (await suscripcionRes.json()) as {
-        initPoint?: string
+        checkoutUrl?: string
         error?: string
       }
 
-      if (suscripcionData.initPoint) {
-        // Un instante de confirmación visual antes de salir hacia Mercado
-        // Pago; se siente más premium que un redirect abrupto.
+      if (suscripcionData.checkoutUrl) {
+        // Un instante de confirmación visual antes de salir hacia Stripe;
+        // se siente más premium que un redirect abrupto.
         setGuardadoExito(true)
         await new Promise((resolve) => window.setTimeout(resolve, 700))
-        window.location.assign(suscripcionData.initPoint)
+        window.location.assign(suscripcionData.checkoutUrl)
         return
       }
 
       setSaveError(
-        "Tu tarjeta se guardó, pero no pudimos iniciar la suscripción con Mercado Pago. Volvé a intentar desde el editor."
+        "Tu tarjeta se guardó, pero no pudimos iniciar la suscripción con Stripe. Volvé a intentar desde el editor."
       )
       setSaving(false)
     }
@@ -1894,10 +1923,16 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
             "fixed inset-x-0 top-4 z-50 mx-auto flex w-fit max-w-[90vw] animate-in items-center gap-2 rounded-full border px-4 py-2.5 text-center text-sm font-medium shadow-lg backdrop-blur fade-in slide-in-from-top-2 duration-300",
             toast.tipo === "advertencia"
               ? "border-amber-200 bg-amber-50/95 text-amber-700 dark:border-amber-900 dark:bg-amber-950/95 dark:text-amber-300"
-              : "border-red-200 bg-red-50/95 text-red-700 dark:border-red-900 dark:bg-red-950/95 dark:text-red-300"
+              : toast.tipo === "exito"
+                ? "border-emerald-200 bg-emerald-50/95 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/95 dark:text-emerald-300"
+                : "border-red-200 bg-red-50/95 text-red-700 dark:border-red-900 dark:bg-red-950/95 dark:text-red-300"
           )}
         >
-          <AlertTriangle className="size-4 shrink-0" />
+          {toast.tipo === "exito" ? (
+            <Check className="size-4 shrink-0" />
+          ) : (
+            <AlertTriangle className="size-4 shrink-0" />
+          )}
           {toast.mensaje}
         </div>
       )}

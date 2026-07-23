@@ -157,13 +157,18 @@ export interface Plan {
 
 export type PeriodicidadSuscripcion = "mensual" | "anual"
 export type EstadoSuscripcion = "pendiente" | "autorizada" | "pausada" | "cancelada" | "vencida"
+export type ProveedorSuscripcion = "mercadopago" | "stripe"
 
 export interface Suscripcion {
   id: string
   tarjeta_id: string
   plan_id: string
+  proveedor: ProveedorSuscripcion
   preapproval_id: string | null
   preapproval_plan_id: string | null
+  stripe_customer_id: string | null
+  stripe_subscription_id: string | null
+  stripe_checkout_session_id: string | null
   periodicidad: PeriodicidadSuscripcion
   estado: EstadoSuscripcion
   es_adicional: boolean

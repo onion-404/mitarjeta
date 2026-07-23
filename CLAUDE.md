@@ -135,7 +135,120 @@
   las "sin intereses" si la cuenta tiene esa promoción — eso se configura del
   lado de Mercado Pago, no en la preferencia).
 
-## Suscripciones (cobro recurrente del plan) — estado del backend
+## Suscripciones (cobro recurrente del plan) — MIGRADO a Stripe (2026-07-21)
+- **El proveedor activo hoy es Stripe, no Mercado Pago.** La sección "Suscripciones
+  (Mercado Pago)" de abajo queda como referencia histórica — Mercado Pago Checkout
+  Pro (citas, `/admin/cobro-manual`, `lib/mercadopago.ts`) sigue funcionando sin
+  ningún cambio, es un producto separado que no se tocó.
+- **Por qué**: Suscripciones de Mercado Pago exigía que el pagador tuviera/iniciara
+  sesión en su propia cuenta de MP — fricción de conversión real. Stripe Checkout
+  con tokenización de tarjeta directa (Bricks-equivalente de Stripe, corre en su
+  iframe) elimina ese requisito. Restricción no negociable respetada: el número de
+  tarjeta nunca pasa por nuestro código — Stripe Checkout es 100% hosteado por
+  Stripe, redirect por URL, cero input de tarjeta propio.
+- **Archivos nuevos** (separados a propósito de los de Mercado Pago, mismo
+  criterio de cero acoplamiento entre proveedores que ya usa el proyecto):
+  `lib/stripe.ts` (cliente), `lib/stripe-suscripciones.ts` (`crearCheckoutSession`),
+  `lib/confirmar-suscripcion-stripe.ts` (mapeo de estados + sync de
+  `tarjetas.plan_id`, misma lógica de idempotencia/terminal que la versión MP),
+  `app/api/stripe/checkout/route.ts` (reemplaza la llamada que antes hacía
+  `TarjetaForm` a `/api/suscripciones`), `app/api/stripe/webhook/route.ts`.
+  El cálculo de descuento (tarjeta adicional + cupón) está **duplicado a
+  propósito** en la ruta de Stripe en vez de extraído a un helper compartido con
+  `/api/suscripciones` — mismo criterio de no acoplar proveedores, y para no
+  tocar el flujo de Mercado Pago ya probado.
+- **`/api/suscripciones` y `mercadopago-suscripciones.ts` (Mercado Pago) NO se
+  borraron** — quedan como código muerto sin caller, mismo criterio que ya se usó
+  con `/api/checkout`. `TarjetaForm` ahora llama a `/api/stripe/checkout`.
+- **Sin Price IDs pre-creados en Stripe** — se usa `price_data` inline (recurring)
+  calculado con `planes.precio_mensual/anual` + el descuento ya resuelto
+  server-side, no Coupons/Promotion Codes de Stripe. Razón: los precios en
+  `planes` todavía son "placeholder" (ver más abajo) — con Price IDs fijos, cada
+  cambio de precio exigiría archivar/crear Prices en Stripe y sincronizar el ID;
+  con `price_data` inline, cambiar `planes` alcanza. El Price que resulta queda
+  fijo para todas las renovaciones de ESA suscripción puntual — coincide con la
+  regla de negocio ya vigente (el descuento aplica para siempre a esa
+  suscripción, no se recalcula por ciclo).
+- **Customer de Stripe nuevo por checkout**, no reusado entre tarjetas del mismo
+  usuario (el plan vive en la tarjeta, no en el usuario — no hay tabla de
+  "usuario" donde persistir un customer_id compartido). Se crea con el
+  `payerEmail` ya confirmado en el formulario (mismo campo que ya existía para
+  Mercado Pago) — Stripe lo pre-llena y lo deja NO editable en su checkout,
+  verificado contra la API real. Efecto colateral bueno: el bug de mismatch de
+  email que tenía Mercado Pago (pagar con una cuenta de MP distinta a la
+  logueada) **no puede pasar** con tokenización directa, no hay cuenta externa
+  con la que pueda no coincidir.
+- **`suscripciones.proveedor`** (`'mercadopago' | 'stripe'`, default
+  `'mercadopago'` para no romper filas existentes) + columnas nuevas
+  `stripe_customer_id`, `stripe_subscription_id` (unique),
+  `stripe_checkout_session_id` — todas nullable, aditivas. Migración
+  `20260721000000_add_stripe_suscripciones.sql`, **APLICADA** (confirmado con una
+  consulta real a producción, no asumido — ver "Estado de la base de datos"
+  abajo). El índice único existente
+  `suscripciones_una_activa_por_tarjeta` (una suscripción viva por tarjeta) sigue
+  funcionando sin cambios — es agnóstico de proveedor.
+- Mapeo de estados de Stripe (`Subscription.status`) → `EstadoSuscripcion`:
+  `active`/`trialing` → `autorizada`; `past_due`/`paused` → `pausada`;
+  `canceled` → `cancelada`; `unpaid`/`incomplete_expired` → `vencida`;
+  `incomplete` → `pendiente`. Mismo enum que ya existía, no se agregó ningún
+  estado nuevo.
+- Webhook (`app/api/stripe/webhook/route.ts`): `checkout.session.completed`
+  (vincula `stripe_subscription_id`/`stripe_customer_id` a la fila insertada en
+  'pendiente' al crear la Checkout Session, vía `client_reference_id`),
+  `customer.subscription.created/updated/deleted` e `invoice.payment_failed`
+  (re-chequeo defensivo) — los últimos cuatro re-consultan el `Subscription`
+  completo contra la API de Stripe (nunca confían ciegamente en el payload del
+  evento), mismo patrón que `obtenerPreapproval` en la versión de Mercado Pago.
+  Si `checkout.session.completed` no llegó todavía cuando llega un evento de
+  subscription (los webhooks no garantizan orden), la búsqueda cae al
+  `suscripcion_id` que ya viaja en los metadata del Subscription desde la
+  creación de la Checkout Session, y lo vincula ahí mismo.
+- **Notas de campos de la API de Stripe que cambiaron de lugar en versiones
+  recientes** (confirmado contra los tipos reales de `stripe` v22.3.2, no
+  supuesto): `Subscription.current_period_end` ya no existe en el objeto
+  Subscription — vive en `subscription.items.data[0].current_period_end`.
+  `Invoice.subscription` tampoco existe más — es
+  `invoice.parent.subscription_details.subscription`.
+- **Webhook registrado en el dashboard de Stripe** apuntando a
+  `https://linkard.mx/api/stripe/webhook`, `STRIPE_WEBHOOK_SECRET` ya en
+  `.env.local`. **Pendiente de que el usuario lo haga manualmente**: agregar
+  las 3 keys de Stripe (`STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`,
+  `STRIPE_WEBHOOK_SECRET`) a las Environment Variables de Vercel — hoy solo
+  están en `.env.local` (desarrollo local), mismo problema recurrente que ya
+  tuvimos con `NEXT_PUBLIC_SITE_URL`. **Importante**: las keys actuales son de
+  modo TEST (`sk_test_`/`pk_test_`) — deployar así rompe el pago real para
+  clientes reales (Stripe test-mode no acepta tarjetas reales) hasta que se
+  reemplacen por las keys live.
+- ✅ **Verificado end-to-end de punta a punta (2026-07-21), con Stripe CLI**
+  (`stripe listen --forward-to localhost:3000/api/stripe/webhook`, autenticado
+  vía `--api-key` con la key de test, sin pasar por `stripe login` interactivo)
+  — no solo aislado, el flujo real completo vía Playwright: `/planes` (toggle
+  mensual + elegir plan) → `/crear` (nombre + email de pago pre-llenado) →
+  submit real (sin mockear nada) → Checkout real de Stripe (tarjeta de prueba
+  `4242 4242 4242 4242`) → pago → webhook real recibido y verificado. Confirmado
+  con 3 fuentes independientes, no una sola: (1) log de `stripe listen` con
+  `checkout.session.completed` y `customer.subscription.created` en `200`, sin
+  ningún 400/500; (2) query directa a Supabase después: `suscripciones.estado
+  = 'autorizada'`, `stripe_subscription_id`/`stripe_customer_id` poblados,
+  `tarjetas.plan_id` sincronizado; (3) capturas de pantalla del Checkout real de
+  Stripe. Dato interesante: el "Card information" de Stripe Checkout **no está
+  en un iframe con nombre/título propio** como se esperaba — vive directo en el
+  documento de `checkout.stripe.com`, porque la página entera ya es un origen
+  100% de Stripe (no hace falta sandboxing adicional dentro de una página que
+  ya es enteramente de ellos). También se confirmó `customer.subscription.deleted`
+  (cancelé la suscripción de prueba al limpiar): 200, no-op correcto porque la
+  fila ya no existía en Supabase (se había borrado antes de que llegara la
+  notificación) — no crashea. Todos los datos de prueba (tarjeta, suscripción,
+  Customer) se cancelaron/borraron después.
+- **Detalle de entorno encontrado en el camino**: `.env.local` tiene
+  terminadores de línea CRLF (no LF) — no afecta a Next.js (su loader de env
+  vars lo maneja bien), pero rompe cualquier parseo manual ingenuo tipo
+  `split("\n")` sin `.trim()` en scripts de una sola línea (mandaba un `\r`
+  final que Stripe rechazaba con un error de conexión genérico y confuso). Si
+  se escribe un script rápido contra `.env.local` en el futuro, usar `.trim()`
+  en el valor.
+
+## Suscripciones (Mercado Pago) — histórico, ya no es el proveedor activo
 - Modalidad elegida: preapproval **"sin plan asociado"** (términos inline en cada
   suscripción), NO "con plan asociado". La razón: Mercado Pago exige que una
   suscripción "con plan asociado" se cree ya con `card_token_id` (tarjeta
@@ -278,11 +391,14 @@
   invitado) y `publicado: true` de entrada (se comparte al toque, el gating real
   es por `plan_id`, que arranca `null`), sin escribir `estado_pago`/`metodo_pago`/
   `precio_pagado`/`cupon_codigo` (quedan en su default, son campos del modelo
-  viejo). Después llama a `POST /api/suscripciones` con
-  `{tarjetaId, planId, periodicidad, cuponCodigo}` (con `Authorization: Bearer` de
-  la sesión) y redirige a `initPoint`. La sección "Tu plan" (antes "Resumen y
+  viejo). Después llama a `POST /api/stripe/checkout` (**ya no `/api/suscripciones`
+  de Mercado Pago**, ver sección "Suscripciones — MIGRADO a Stripe") con
+  `{tarjetaId, planId, periodicidad, cuponCodigo, payerEmail}` (con
+  `Authorization: Bearer` de la sesión) y redirige a la Checkout Session
+  hosteada de Stripe (`checkoutUrl`). La sección "Tu plan" (antes "Resumen y
   pago") muestra el plan/precio real elegido + el input de cupón (preview de
-  precio nada más — la combinación real de descuentos pasa server-side).
+  precio nada más — la combinación real de descuentos pasa server-side) + el
+  campo de correo de pago (pre-llenado con el de la sesión, editable).
 - **`/api/checkout` queda sin ningún caller** (confirmado: era el único usado por
   el botón de arriba). NO se borró — la función que envuelve
   (`crearPreferenciaPago` en `lib/mercadopago.ts`, Checkout Pro) sigue viva y en
@@ -407,6 +523,10 @@
   (`suscripciones.cupon_codigo`): APLICADA.
 - Migración `20260717230000_drop_default_plan_id_tarjetas.sql` (quita el DEFAULT de
   `tarjetas.plan_id`): APLICADA.
+- Migración `20260721000000_add_stripe_suscripciones.sql`
+  (`suscripciones.proveedor`, `stripe_customer_id`, `stripe_subscription_id`,
+  `stripe_checkout_session_id`): **APLICADA** (2026-07-21, confirmado con un
+  `select` real de las 4 columnas contra producción).
 
 ## Pendiente técnico sin resolver
 - `eventos_metricas` no permite insert desde authenticated/anon a propósito (por
