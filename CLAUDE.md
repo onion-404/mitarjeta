@@ -247,6 +247,88 @@
   final que Stripe rechazaba con un error de conexión genérico y confuso). Si
   se escribe un script rápido contra `.env.local` en el futuro, usar `.trim()`
   en el valor.
+- **Keys de producción (2026-07-22/23)**: `.env.local` ya tiene las 3 keys de
+  Stripe en modo **LIVE** (`sk_live_`/`pk_live_`/`whsec_`), confirmadas contra
+  la API real (`GET /v1/account`: cuenta `acct_1TvfXG1jsNdj9fiJ`,
+  `business_profile.name: "Linkard"`, `charges_enabled`/`payouts_enabled` en
+  `true`) y contra `GET /v1/webhook_endpoints` (el endpoint live
+  `https://linkard.mx/api/stripe/webhook` existe y está `enabled`). Ojo: el
+  identificador de cuenta después de `sk_live_`/`pk_live_` es distinto al de
+  las keys de test que se usaron para verificar el flujo (`XG1jsNdj9fiJ` vs
+  `XuP0kbhBNzAr`) — se confirmó que es la cuenta correcta, no es un error.
+  **El endpoint live no tiene suscripto `customer.subscription.created`**
+  (solo `checkout.session.completed`, `customer.subscription.updated`,
+  `customer.subscription.deleted`, `invoice.payment_failed`) — el código sí
+  escucha ese evento. En la práctica `checkout.session.completed` +
+  `customer.subscription.updated` deberían cubrir el mismo caso igual, pero
+  sigue pendiente que el usuario agregue `customer.subscription.created` a
+  la lista de eventos del endpoint en el dashboard de Stripe para que quede
+  exactamente alineado con lo que el código espera.
+- **Pendiente de que el usuario lo haga manualmente**: agregar las mismas 3
+  keys (ahora live) a las Environment Variables de Vercel — siguen sin estar
+  ahí, ver nota de arriba sobre `NEXT_PUBLIC_SITE_URL` para el mismo problema
+  recurrente.
+- **Validación de monto mínimo de Stripe para MXN (2026-07-23)**: confirmado
+  contra la tabla oficial "Importe mínimo del cargo por moneda" en
+  docs.stripe.com/currencies — **MXN 10** (o sea $10.00 MXN / 1000 en
+  centavos, la unidad que usa `unit_amount`). Mismo tipo de bug real que ya
+  había pasado con Mercado Pago: un cupón agresivo (o el descuento de tarjeta
+  adicional) puede dejar `precioFinal` por debajo de eso, y sin chequeo previo
+  Stripe rechazaría la Checkout Session con un error críptico del lado del
+  cliente. `app/api/stripe/checkout/route.ts` ahora valida esto ANTES de
+  insertar la fila en `suscripciones` (no queda huérfana) — si
+  `0 < precioFinal < 10`, responde `400` con el motivo exacto en texto plano.
+  `precioFinal === 0` (cupón de 100%) queda afuera a propósito: la doc de
+  Stripe confirma que las suscripciones sí admiten cargos en $0 para cupones/
+  pruebas gratis, el mínimo solo aplica a montos no-cero. `TarjetaForm` ahora
+  muestra el `error` real que devuelve el backend en vez de un mensaje
+  genérico fijo (mismo criterio que el error de cupón inválido). Verificado
+  con una prueba real de punta a punta vía Playwright (cupón real `PRUEBA95`,
+  95% off sobre Presencia mensual $149 → $7.45): `400` real, sin redirigir a
+  Stripe, sin fila huérfana en `suscripciones`, mensaje visible confirmado por
+  captura de pantalla en la UI.
+- **Bug real encontrado de paso (2026-07-23) y corregido**: el texto de ayuda
+  del campo de correo de pago en `TarjetaForm` todavía decía "Usaremos este
+  correo para tu suscripción **en Mercado Pago**" — quedó así desde antes de
+  la migración a Stripe. Corregido a "en Stripe" (y luego el campo entero se
+  quitó del todo, ver el punto siguiente).
+- **Campo de correo de pago ELIMINADO (2026-07-23)**: era redundante con
+  Stripe Checkout, que ya pide el email directamente en su propio checkout
+  hosteado. Se sacó de `TarjetaForm` (estado, efecto de pre-llenado,
+  validación, input) y del body que se manda a `POST /api/stripe/checkout`
+  (`payerEmail` ya no existe en `BodyCrearSuscripcion`). Como consecuencia,
+  `crearCheckoutSession()` (`lib/stripe-suscripciones.ts`) **ya no crea el
+  Customer de antemano** (antes lo creaba con ese email para dejarlo fijo en
+  el checkout) — ahora no pasa `customer` a la Checkout Session, Stripe crea
+  el Customer solo al completar el checkout con el email que la persona
+  ingresa ahí (vuelve a quedar editable, a diferencia de antes).
+  `stripe_customer_id` en `suscripciones` ya no se completa al crear la
+  sesión — se sigue completando igual, pero después, vía el webhook
+  (`checkout.session.completed` → `vincularCheckoutSession`), que ya
+  escribía ese campo de todas formas. **Esto NO afecta al flujo viejo de
+  Mercado Pago** (`/api/suscripciones`, código muerto) ni a Checkout Pro
+  (`/admin/cobro-manual`, `lib/mercadopago.ts`), que tienen su propio
+  `payerEmail` totalmente independiente — no se tocaron.
+- **Formato de moneda + idioma del Checkout arreglado (2026-07-23)**: el
+  Checkout mostraba los montos en formato europeo ("14,90" con coma) y en
+  inglés, en vez de formato/idioma mexicano. Causa confirmada contra la
+  referencia oficial de la API (`api/checkout/sessions/create`): sin
+  `locale` explícito Stripe autodetecta del navegador, y `crearCheckoutSession()`
+  no lo seteaba. `es` (español de España) y `es-419` (español
+  latinoamericano) son dos valores de `locale` DISTINTOS en el enum oficial
+  de Stripe — se agregó `locale: "es-419"` a `stripe.checkout.sessions.create()`.
+  Verificado contra el Checkout real (modo test): ahora muestra "MXN 14.90"
+  (punto decimal, correcto) y toda la página en español ("Suscríbete a...",
+  "Información de contacto", "Suscribirse", etc.) — antes salía en inglés
+  por completo, no solo el número.
+- Ambos cambios verificados juntos con una prueba real de punta a punta vía
+  Playwright, en modo test (para no gastar dinero): `/crear` con Presencia
+  mensual, cero inputs de email en la UI (confirmado por conteo, no solo
+  visual), cupón real `PR90` (90% off, $149 → $14.90) aplicado, submit real
+  → Checkout real de Stripe con el monto y el idioma correctos, confirmado
+  por captura de pantalla. Las keys se volvieron a test temporalmente para
+  la prueba y se restauraron a live al terminar (confirmado con `grep` line
+  a line contra `.env.local`, no solo de memoria).
 
 ## Suscripciones (Mercado Pago) — histórico, ya no es el proveedor activo
 - Modalidad elegida: preapproval **"sin plan asociado"** (términos inline en cada

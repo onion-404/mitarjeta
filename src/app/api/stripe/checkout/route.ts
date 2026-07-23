@@ -11,10 +11,18 @@ interface BodyCrearSuscripcion {
   planId?: string
   periodicidad?: PeriodicidadSuscripcion
   cuponCodigo?: string
-  payerEmail?: string
 }
 
-const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// Monto mínimo de cargo que Stripe acepta para MXN: $10.00 MXN (confirmado
+// contra la tabla oficial "Importe mínimo del cargo por moneda" en
+// docs.stripe.com/currencies — cambia por moneda, no es un número genérico).
+// Sin este chequeo, un cupón agresivo o el descuento de tarjeta adicional
+// pueden dejar precioFinal por debajo de eso y Stripe rechaza la Checkout
+// Session con un error críptico del lado del cliente — mismo tipo de bug
+// real que ya encontramos con Mercado Pago. precioFinal === 0 (cupón de
+// 100%) queda afuera a propósito: Stripe sí admite cargos de suscripción en
+// $0 (para cupones/pruebas gratis), el mínimo solo aplica a montos no-cero.
+const MONTO_MINIMO_MXN = 10
 
 // Reemplaza a /api/suscripciones (Mercado Pago preapproval) para el cobro
 // recurrente del plan de la tarjeta — Checkout Pro de Mercado Pago (citas,
@@ -47,17 +55,10 @@ export async function POST(request: Request) {
   const userId = userData.user.id
 
   const body = (await request.json().catch(() => null)) as BodyCrearSuscripcion | null
-  const { tarjetaId, planId, periodicidad, cuponCodigo, payerEmail } = body ?? {}
+  const { tarjetaId, planId, periodicidad, cuponCodigo } = body ?? {}
 
   if (!tarjetaId || !planId || (periodicidad !== "mensual" && periodicidad !== "anual")) {
     return Response.json({ error: "Datos de suscripción inválidos." }, { status: 400 })
-  }
-
-  if (!payerEmail || !REGEX_EMAIL.test(payerEmail)) {
-    return Response.json(
-      { error: "Ingresá un correo válido para tu suscripción." },
-      { status: 400 }
-    )
   }
 
   const admin = getSupabaseAdmin()
@@ -134,6 +135,15 @@ export async function POST(request: Request) {
   const precioBase = periodicidad === "anual" ? plan.precio_anual : plan.precio_mensual
   const precioFinal = Math.round(precioBase * (1 - descuentoAplicado / 100) * 100) / 100
 
+  if (precioFinal > 0 && precioFinal < MONTO_MINIMO_MXN) {
+    return Response.json(
+      {
+        error: `El descuento deja el precio en $${precioFinal.toLocaleString("es-MX")} MXN, por debajo del mínimo de $${MONTO_MINIMO_MXN} MXN que acepta Stripe. Probá con un cupón de menor porcentaje.`,
+      },
+      { status: 400 }
+    )
+  }
+
   const { data: suscripcion, error: errorInsert } = await admin
     .from("suscripciones")
     .insert({
@@ -166,7 +176,6 @@ export async function POST(request: Request) {
   const checkoutSession = await crearCheckoutSession({
     suscripcionId: suscripcion.id,
     tarjetaId,
-    payerEmail,
     planNombreDisplay: plan.nombre_display,
     precioFinal,
     periodicidad,
@@ -184,12 +193,12 @@ export async function POST(request: Request) {
     )
   }
 
+  // stripe_customer_id se completa vía webhook (checkout.session.completed):
+  // ya no creamos el Customer nosotros de antemano, Stripe lo crea al vuelo
+  // con el email que la propia persona ingresa en su checkout hosteado.
   await admin
     .from("suscripciones")
-    .update({
-      stripe_checkout_session_id: checkoutSession.checkoutSessionId,
-      stripe_customer_id: checkoutSession.customerId,
-    })
+    .update({ stripe_checkout_session_id: checkoutSession.checkoutSessionId })
     .eq("id", suscripcion.id)
 
   return Response.json({ checkoutUrl: checkoutSession.checkoutUrl })

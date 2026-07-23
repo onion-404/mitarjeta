@@ -11,7 +11,6 @@ function logErrorStripe(contexto: string, error: unknown) {
 interface CrearCheckoutSessionParams {
   suscripcionId: string
   tarjetaId: string
-  payerEmail: string
   planNombreDisplay: string
   precioFinal: number
   periodicidad: PeriodicidadSuscripcion
@@ -20,14 +19,13 @@ interface CrearCheckoutSessionParams {
 interface CheckoutSessionCreada {
   checkoutSessionId: string
   checkoutUrl: string
-  customerId: string
 }
 
 /**
- * Crea un Customer + Checkout Session (mode: "subscription", hosteada por
- * Stripe) para el cobro recurrente del plan de una tarjeta. Reemplaza al
- * preapproval "sin plan asociado" de Mercado Pago — Checkout Pro de Mercado
- * Pago (citas, cobro manual) sigue intacto, ver CLAUDE.md.
+ * Crea una Checkout Session (mode: "subscription", hosteada por Stripe) para
+ * el cobro recurrente del plan de una tarjeta. Reemplaza al preapproval "sin
+ * plan asociado" de Mercado Pago — Checkout Pro de Mercado Pago (citas,
+ * cobro manual) sigue intacto, ver CLAUDE.md.
  *
  * Precio con `price_data` inline (no un Price pre-creado en el dashboard de
  * Stripe): `planes.precio_mensual/anual` en Supabase ya es la fuente de
@@ -39,18 +37,23 @@ interface CheckoutSessionCreada {
  * semántica que ya usa Mercado Pago hoy (el descuento aplica para siempre a
  * esa suscripción, no se recalcula por ciclo).
  *
- * Un Customer nuevo por checkout (no reusado entre tarjetas del mismo
- * usuario): el plan vive en la tarjeta, no en el usuario (ver CLAUDE.md), y
- * no hay hoy una tabla de "usuario" donde persistir un customer_id
- * compartido. Se crea con el email ya confirmado por la persona en nuestro
- * formulario — eso hace que Stripe lo pre-llene y lo deje NO editable en su
- * checkout (a propósito: mismo campo que ya construimos para el bug de
- * mismatch de email de Mercado Pago).
+ * No creamos el Customer de antemano (a diferencia de una primera versión de
+ * esto): el email ya lo pide el propio Checkout hosteado de Stripe, pedirlo
+ * también en nuestro formulario era redundante y confuso — Stripe crea el
+ * Customer solo al completar el checkout, con el email que la persona
+ * ingresa ahí. `stripe_customer_id` en `suscripciones` se completa después,
+ * vía el webhook (`checkout.session.completed`), no acá.
+ *
+ * `locale: "es-419"` (español latinoamericano, NO "es" a secas — ese es
+ * español de España): confirmado contra la referencia oficial de la API
+ * (api/checkout/sessions/create) que son dos valores de locale distintos.
+ * Sin esto Stripe autodetecta el locale del navegador, y con locale
+ * "es"/España el checkout mostraba los montos en formato europeo
+ * ("14,90" con coma decimal) en vez del formato mexicano ("14.90").
  */
 export async function crearCheckoutSession({
   suscripcionId,
   tarjetaId,
-  payerEmail,
   planNombreDisplay,
   precioFinal,
   periodicidad,
@@ -59,14 +62,9 @@ export async function crearCheckoutSession({
   if (!stripe) return null
 
   try {
-    const customer = await stripe.customers.create({
-      email: payerEmail,
-      metadata: { tarjeta_id: tarjetaId, suscripcion_id: suscripcionId },
-    })
-
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: customer.id,
+      locale: "es-419",
       client_reference_id: suscripcionId,
       line_items: [
         {
@@ -89,7 +87,7 @@ export async function crearCheckoutSession({
     })
 
     if (!session.url) return null
-    return { checkoutSessionId: session.id, checkoutUrl: session.url, customerId: customer.id }
+    return { checkoutSessionId: session.id, checkoutUrl: session.url }
   } catch (error) {
     logErrorStripe("Error al crear la Checkout Session de Stripe:", error)
     return null
