@@ -75,21 +75,6 @@ const drawerViewportClase = "fixed inset-0 z-50 flex items-end justify-center"
 const drawerPopupClase =
   "w-full max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-border bg-background pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-300 ease-out [transform:translateY(var(--drawer-swipe-movement-y))] data-ending-style:[transform:translateY(100%)] data-starting-style:[transform:translateY(100%)]"
 
-function generarSlug(nombre: string) {
-  const base = nombre
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-  const sufijo =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID().slice(0, 6)
-      : Math.random().toString(36).slice(2, 8)
-  return `${base || "tarjeta"}-${sufijo}`
-}
-
 function redesValidas(redes: RedSocial[]) {
   return redes.filter((red) => {
     if (red.plataforma === "personalizado") return red.url.trim().length > 0
@@ -133,6 +118,15 @@ interface TarjetaFormProps {
 
 export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFormProps) {
   const esEdicion = Boolean(tarjeta)
+  // Una tarjeta existente puede no tener plan activo todavía: se creó, se
+  // llegó a Stripe, pero el pago se canceló o abandonó antes de completarse
+  // (plan_id sigue null). Ese caso necesita seguir mostrando "Tu plan" para
+  // poder reintentar el pago — no es lo mismo que edición normal, aunque
+  // `esEdicion` sea true en ambos casos. `esEdicion` sigue controlando cosas
+  // que no dependen del plan (ej. Agenda, enlace personalizado no editable);
+  // `mostrarSeccionPago` es específicamente sobre mostrar/ocultar "Tu plan".
+  const tienePlanActivo = Boolean(tarjeta?.plan_id)
+  const mostrarSeccionPago = !tienePlanActivo
   const datosIniciales = tarjeta?.datos_contacto
   const visualInicial = tarjeta?.identidad_visual
 
@@ -296,7 +290,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
     if (esEdicion) return
 
     const slug = slugPersonalizado.trim()
-    if (!slug) return
+    if (slug.length < 4) return
 
     const timeoutId = window.setTimeout(async () => {
       const { data, error } = await supabase
@@ -629,6 +623,18 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
       return
     }
 
+    if (!esEdicion) {
+      const slugElegido = slugPersonalizado.trim()
+      if (!slugElegido) {
+        setSaveError("Elegí un enlace personalizado para continuar.")
+        return
+      }
+      if (slugElegido.length < 4) {
+        setSaveError("El enlace debe tener al menos 4 caracteres.")
+        return
+      }
+    }
+
     setSaving(true)
     setSaveError(null)
     setGuardadoOk(false)
@@ -786,7 +792,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
       estiloTipografia,
     }
 
-    if (esEdicion && tarjeta) {
+    if (esEdicion && tarjeta && tienePlanActivo) {
       const { error } = await supabase
         .from("tarjetas")
         .update({ tipo, datos_contacto, identidad_visual })
@@ -864,6 +870,26 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
       setSaving(false)
     }
 
+    // Tarjeta que ya existe pero sin plan activo (tienePlanActivo es false
+    // acá porque el branch de arriba ya se llevó el caso "esEdicion +
+    // tienePlanActivo" con su propio return): canceló o abandonó el
+    // checkout de Stripe la vez anterior. UPDATE en vez de INSERT — el slug
+    // y el id ya existen — y directo a reintentar el pago.
+    if (esEdicion && tarjeta) {
+      const { error } = await supabase
+        .from("tarjetas")
+        .update({ tipo, datos_contacto, identidad_visual })
+        .eq("id", tarjeta.id)
+
+      if (error) {
+        setSaveError("No pudimos guardar los cambios. Probá de nuevo en unos segundos.")
+        setSaving(false)
+        return
+      }
+      await alGuardarConExito({ id: tarjeta.id, slug: tarjeta.slug })
+      return
+    }
+
     const datosBase = {
       tipo,
       datos_contacto,
@@ -874,62 +900,34 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
 
     const slugElegido = slugPersonalizado.trim()
 
-    if (slugElegido) {
-      if (slugDisponible === false) {
-        setSaveError("Ese enlace ya está en uso. Elegí otro para continuar.")
-        setSaving(false)
-        return
-      }
-
-      const { data, error } = await supabase
-        .from("tarjetas")
-        .insert({ slug: slugElegido, ...datosBase })
-        .select("id, slug")
-        .single()
-
-      if (!error && data) {
-        await alGuardarConExito(data)
-        return
-      }
-
-      if (error?.code === "23505") {
-        // Carrera de concurrencia: alguien tomó el enlace justo entre el
-        // chequeo en vivo y este guardado. Se lo marcamos como no disponible
-        // para que la etiqueta bajo el input quede consistente con el toast.
-        setResultadoSlug({ slug: slugElegido, disponible: false })
-        mostrarToast("error", "Justo tomaron ese enlace. Elegí otro y volvé a guardar.")
-        setSaving(false)
-        return
-      }
-
-      setSaveError("No pudimos guardar tu tarjeta. Probá de nuevo en unos segundos.")
+    if (slugDisponible === false) {
+      setSaveError("Ese enlace ya está en uso. Elegí otro para continuar.")
       setSaving(false)
       return
     }
 
-    for (let intento = 0; intento < 2; intento += 1) {
-      const slug = generarSlug(nombrePrincipal)
-      const { data, error } = await supabase
-        .from("tarjetas")
-        .insert({ slug, ...datosBase })
-        .select("id, slug")
-        .single()
+    const { data, error } = await supabase
+      .from("tarjetas")
+      .insert({ slug: slugElegido, ...datosBase })
+      .select("id, slug")
+      .single()
 
-      if (!error && data) {
-        await alGuardarConExito(data)
-        return
-      }
-
-      if (error?.code !== "23505") {
-        setSaveError(
-          "No pudimos guardar tu tarjeta. Probá de nuevo en unos segundos."
-        )
-        setSaving(false)
-        return
-      }
+    if (!error && data) {
+      await alGuardarConExito(data)
+      return
     }
 
-    setSaveError("No pudimos generar un enlace único. Probá con otro nombre.")
+    if (error?.code === "23505") {
+      // Carrera de concurrencia: alguien tomó el enlace justo entre el
+      // chequeo en vivo y este guardado. Se lo marcamos como no disponible
+      // para que la etiqueta bajo el input quede consistente con el toast.
+      setResultadoSlug({ slug: slugElegido, disponible: false })
+      mostrarToast("error", "Justo tomaron ese enlace. Elegí otro y volvé a guardar.")
+      setSaving(false)
+      return
+    }
+
+    setSaveError("No pudimos guardar tu tarjeta. Probá de nuevo en unos segundos.")
     setSaving(false)
   }
 
@@ -1002,8 +1000,11 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
   const verificandoSlug = Boolean(slugActualTrim) && resultadoSlug?.slug !== slugActualTrim
   const slugDisponible = resultadoSlug?.slug === slugActualTrim ? resultadoSlug.disponible : null
 
+  const slugMuyCorto = Boolean(slugActualTrim) && slugActualTrim.length < 4
+
   const slugBloqueaGuardado =
-    !esEdicion && Boolean(slugActualTrim) && (verificandoSlug || slugDisponible === false)
+    !esEdicion &&
+    (!slugActualTrim || slugMuyCorto || verificandoSlug || slugDisponible === false)
 
   // --------------------------------------------------------------------
   // Contenido de cada sección, definido una sola vez y reutilizado tanto
@@ -1170,12 +1171,14 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
 
       {!esEdicion && (
         <label className="flex flex-col gap-1.5">
-          <span className={labelClase}>Enlace personalizado (opcional)</span>
+          <span className={labelClase}>Enlace personalizado</span>
           <div className="flex items-stretch overflow-hidden rounded-xl border border-border bg-white/70 backdrop-blur transition-colors duration-200 ease-out focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-zinc-900/60">
             <span className="flex shrink-0 items-center border-r border-border bg-muted/60 px-3 text-sm text-muted-foreground">
               linkard.mx/
             </span>
             <input
+              required
+              minLength={4}
               value={slugPersonalizado}
               onChange={(e) =>
                 setSlugPersonalizado(
@@ -1190,16 +1193,22 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
             <p
               className={cn(
                 "flex items-center gap-1 text-xs",
-                verificandoSlug
-                  ? "text-muted-foreground"
-                  : slugDisponible === true
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : slugDisponible === false
-                      ? "text-destructive"
-                      : "text-muted-foreground"
+                slugMuyCorto
+                  ? "text-destructive"
+                  : verificandoSlug
+                    ? "text-muted-foreground"
+                    : slugDisponible === true
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : slugDisponible === false
+                        ? "text-destructive"
+                        : "text-muted-foreground"
               )}
             >
-              {verificandoSlug ? (
+              {slugMuyCorto ? (
+                <>
+                  <X className="size-3" /> Mínimo 4 caracteres
+                </>
+              ) : verificandoSlug ? (
                 <>
                   <Loader2 className="size-3 animate-spin" /> Verificando
                   disponibilidad...
@@ -1219,7 +1228,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
       )}
 
       <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-        ¡No te preocupes! El único campo obligatorio es tu nombre.
+        ¡No te preocupes! {esEdicion ? "El único campo obligatorio es tu nombre." : "Los únicos campos obligatorios son tu nombre y tu enlace personalizado."}{" "}
         Todos los demás datos los puedes agregar, cambiar o
         mejorar en el momento que quieras.
       </p>
@@ -1759,7 +1768,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
     </div>
   )
 
-  const contenidoResumenPago = !esEdicion && plan && (
+  const contenidoResumenPago = mostrarSeccionPago && plan && (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-foreground">{plan.nombre_display}</span>
@@ -1771,7 +1780,11 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
       {precioBase !== null && (
         <div className="flex items-baseline gap-2">
           <span className="text-2xl font-semibold text-foreground">
-            ${(precioFinal ?? precioBase).toLocaleString("es-MX")}{" "}
+            $
+            {(precioFinal ?? precioBase).toLocaleString("es-MX", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}{" "}
             <span className="text-sm font-normal text-muted-foreground">
               MXN/{periodicidad === "anual" ? "año" : "mes"}
             </span>
@@ -1823,19 +1836,26 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
     </div>
   )
 
+  // 3 estados posibles, no 2: edición pura (esEdicion && tienePlanActivo),
+  // reintentar pago (esEdicion && !tienePlanActivo — tarjeta ya creada pero
+  // canceló/abandonó el checkout de Stripe), y creación nueva (!esEdicion).
   const contenidoBotonGuardar = guardadoExito ? (
     <span className="inline-flex animate-in items-center gap-1.5 zoom-in-95 duration-300">
       <Check className="size-4" />
-      {esEdicion ? "¡Guardado!" : "¡Listo!"}
+      {esEdicion && tienePlanActivo ? "¡Guardado!" : "¡Listo!"}
     </span>
   ) : saving ? (
     <span className="inline-flex items-center gap-1.5 animate-pulse">
       <Loader2 className="size-4 animate-spin" />
-      {esEdicion ? "Guardando..." : "Creando..."}
+      {esEdicion && tienePlanActivo ? "Guardando..." : "Procesando..."}
     </span>
-  ) : esEdicion ? (
+  ) : esEdicion && tienePlanActivo ? (
     <>
       Guardar cambios <Check className="size-4" />
+    </>
+  ) : esEdicion ? (
+    <>
+      Completar pago <ArrowRight className="size-4" />
     </>
   ) : (
     <>
@@ -2048,7 +2068,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
             ))}
           </Accordion.Root>
 
-          {!esEdicion && (
+          {mostrarSeccionPago && (
             <fieldset className={cn(panelClase, "flex flex-col gap-3 p-5")}>
               <legend className="mb-1 px-1 text-sm font-semibold text-foreground">
                 Tu plan
@@ -2101,7 +2121,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
                 {seccion.titulo}
               </button>
             ))}
-            {!esEdicion && (
+            {mostrarSeccionPago && (
               <button
                 type="button"
                 onClick={() => setTabMovilAbierto("pago")}
@@ -2153,7 +2173,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
           </Drawer.Root>
         ))}
 
-        {!esEdicion && (
+        {mostrarSeccionPago && (
           <Drawer.Root
             open={tabMovilAbierto === "pago"}
             onOpenChange={(open) => setTabMovilAbierto(open ? "pago" : null)}

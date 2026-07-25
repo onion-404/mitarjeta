@@ -144,24 +144,67 @@ export async function POST(request: Request) {
     )
   }
 
-  const { data: suscripcion, error: errorInsert } = await admin
-    .from("suscripciones")
-    .insert({
-      tarjeta_id: tarjetaId,
-      plan_id: planId,
-      proveedor: "stripe",
-      periodicidad,
-      es_adicional: esAdicional,
-      descuento_aplicado: descuentoAplicado,
-      precio_base: precioBase,
-      precio_final: precioFinal,
-      cupon_codigo: cuponValidado?.codigo ?? null,
-    })
-    .select("id")
-    .single()
+  const datosSuscripcion = {
+    tarjeta_id: tarjetaId,
+    plan_id: planId,
+    proveedor: "stripe",
+    periodicidad,
+    es_adicional: esAdicional,
+    descuento_aplicado: descuentoAplicado,
+    precio_base: precioBase,
+    precio_final: precioFinal,
+    cupon_codigo: cuponValidado?.codigo ?? null,
+  }
 
-  if (errorInsert || !suscripcion) {
-    if (errorInsert?.code === "23505") {
+  // Si ya existe una fila 'pendiente' para esta tarjeta (creó la Checkout
+  // Session, pero canceló o abandonó el pago en Stripe la vez anterior), la
+  // reutilizamos en vez de insertar una nueva: un INSERT acá chocaría contra
+  // suscripciones_una_activa_por_tarjeta (una suscripción viva por tarjeta)
+  // con un 409 que hace parecer que hay una suscripción real bloqueando,
+  // cuando en realidad es el propio intento abandonado de la persona. Se
+  // recalculan los montos/cupón por si cambiaron entre intentos, y se
+  // limpian las referencias a la Checkout Session vieja (quedó abandonada/
+  // va a expirar sola) para no arrastrarlas a la sesión nueva. 'autorizada'
+  // y 'pausada' (los otros dos estados que cubre el índice único) NO se
+  // tocan acá a propósito — esos sí son una suscripción real, no un intento
+  // abandonado, y deben seguir bloqueando con el 409 de siempre.
+  const { data: pendienteExistente } = await admin
+    .from("suscripciones")
+    .select("id")
+    .eq("tarjeta_id", tarjetaId)
+    .eq("estado", "pendiente")
+    .maybeSingle()
+
+  let suscripcion: { id: string } | null = null
+  let errorGuardado: { code?: string } | null = null
+
+  if (pendienteExistente) {
+    const { data, error } = await admin
+      .from("suscripciones")
+      .update({
+        ...datosSuscripcion,
+        stripe_checkout_session_id: null,
+        stripe_subscription_id: null,
+        stripe_customer_id: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", pendienteExistente.id)
+      .select("id")
+      .single()
+    suscripcion = data
+    errorGuardado = error
+  } else {
+    const { data, error } = await admin
+      .from("suscripciones")
+      .insert(datosSuscripcion)
+      .select("id")
+      .single()
+    suscripcion = data
+    errorGuardado = error
+  }
+
+  if (errorGuardado || !suscripcion) {
+    if (errorGuardado?.code === "23505") {
       return Response.json(
         { error: "Esta tarjeta ya tiene una suscripción en curso." },
         { status: 409 }

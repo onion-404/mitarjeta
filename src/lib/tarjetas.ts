@@ -1,7 +1,7 @@
 import { cache } from "react"
 
 import { supabase } from "@/lib/supabase"
-import type { ServicioAgendable, Tarjeta } from "@/lib/types"
+import type { PeriodicidadSuscripcion, ServicioAgendable, Tarjeta } from "@/lib/types"
 
 export const getTarjetaPublicada = cache(async (slug: string) => {
   const { data } = await supabase
@@ -64,6 +64,27 @@ export async function getTarjetaPorId(id: string) {
     .maybeSingle()
 
   return data as Tarjeta | null
+}
+
+/**
+ * Recupera plan_id/periodicidad de la suscripción más reciente de una
+ * tarjeta sin plan activo (plan_id null) — para poder ofrecer de nuevo la
+ * sección "Tu plan" en /editar cuando alguien creó la tarjeta, llegó a
+ * Stripe, y canceló o abandonó el checkout sin completar el pago. Trae
+ * cualquier proveedor (incluye filas viejas de Mercado Pago, previas a la
+ * migración a Stripe) y cualquier estado — si lo único que hay es una fila
+ * `cancelada`/`vencida`, igual sirve para saber qué plan intentaba comprar.
+ */
+export async function getSuscripcionPendientePorTarjeta(tarjetaId: string) {
+  const { data } = await supabase
+    .from("suscripciones")
+    .select("plan_id, periodicidad")
+    .eq("tarjeta_id", tarjetaId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  return data as { plan_id: string; periodicidad: PeriodicidadSuscripcion } | null
 }
 
 export async function getTarjetasDeUsuario(userId: string) {

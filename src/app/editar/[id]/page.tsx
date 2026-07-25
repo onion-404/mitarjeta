@@ -8,9 +8,10 @@ import * as React from "react"
 import { AuthMethods } from "@/components/auth/auth-methods"
 import { TarjetaForm } from "@/components/tarjeta/tarjeta-form"
 import { TarjetaSkeleton } from "@/components/tarjeta/tarjeta-skeleton"
-import { getTarjetaPorId } from "@/lib/tarjetas"
+import { getPlanPorId } from "@/lib/planes"
+import { getSuscripcionPendientePorTarjeta, getTarjetaPorId } from "@/lib/tarjetas"
 import { supabase } from "@/lib/supabase"
-import type { Tarjeta } from "@/lib/types"
+import type { Plan, PeriodicidadSuscripcion, Tarjeta } from "@/lib/types"
 
 interface EditarTarjetaPageProps {
   params: Promise<{ id: string }>
@@ -20,6 +21,13 @@ export default function EditarTarjetaPage({ params }: EditarTarjetaPageProps) {
   const { id } = use(params)
   const [session, setSession] = React.useState<Session | null | undefined>(undefined)
   const [tarjeta, setTarjeta] = React.useState<Tarjeta | null | undefined>(undefined)
+  // Solo se resuelve si la tarjeta ya existe pero sin plan activo (canceló o
+  // abandonó el pago en Stripe) — recupera qué plan intentaba comprar para
+  // poder ofrecerle de nuevo la sección "Tu plan" en el editor.
+  const [planPendiente, setPlanPendiente] = React.useState<{
+    plan: Plan
+    periodicidad: PeriodicidadSuscripcion
+  } | null>(null)
 
   React.useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -33,6 +41,15 @@ export default function EditarTarjetaPage({ params }: EditarTarjetaPageProps) {
     if (!session) return
     getTarjetaPorId(id).then(setTarjeta)
   }, [session, id])
+
+  React.useEffect(() => {
+    if (!tarjeta || tarjeta.plan_id) return
+    getSuscripcionPendientePorTarjeta(tarjeta.id).then(async (suscripcion) => {
+      if (!suscripcion) return
+      const plan = await getPlanPorId(suscripcion.plan_id)
+      if (plan) setPlanPendiente({ plan, periodicidad: suscripcion.periodicidad })
+    })
+  }, [tarjeta])
 
   if (session === undefined || (session && tarjeta === undefined)) {
     return (
@@ -66,5 +83,11 @@ export default function EditarTarjetaPage({ params }: EditarTarjetaPageProps) {
     )
   }
 
-  return <TarjetaForm tarjeta={tarjeta} />
+  return (
+    <TarjetaForm
+      tarjeta={tarjeta}
+      plan={planPendiente?.plan}
+      periodicidad={planPendiente?.periodicidad}
+    />
+  )
 }

@@ -329,6 +329,91 @@
   por captura de pantalla. Las keys se volvieron a test temporalmente para
   la prueba y se restauraron a live al terminar (confirmado con `grep` line
   a line contra `.env.local`, no solo de memoria).
+- **Bug de decimales en "Tu plan" corregido (2026-07-23)**: el precio con
+  descuento mostraba "$14.9" en vez de "$14.90" — `precioFinal.toLocaleString("es-MX")`
+  sin forzar decimales, `toLocaleString` recorta el cero final. Se le agregó
+  `{ minimumFractionDigits: 2, maximumFractionDigits: 2 }`. Cambio puramente
+  visual: este `precioFinal` local de `TarjetaForm` ya era solo un preview
+  (confirmado revisando todos sus usos — no se manda al backend, el precio
+  real y autoritativo se recalcula server-side en `/api/stripe/checkout` a
+  partir de `cuponCodigo`), así que no hay riesgo de que el fix afecte el
+  monto real cobrado. Verificado con una prueba real (cupón `PR90`, mismo
+  caso que reportó el bug): pasó de mostrar "$14.9" a "$14.90". Encontré el
+  mismo patrón (`toLocaleString("es-MX")` sin decimales forzados) en
+  `comparativa-planes.tsx` (`/planes`) — hoy no es un bug visible porque los
+  precios de `planes` son todos enteros, pero queda como el mismo punto
+  ciego latente si algún plan alguna vez tiene centavos — no se tocó, fuera
+  del alcance de lo pedido.
+- 🔴 **Investigando (2026-07-23), sin resolver todavía**: reporte real de
+  producción — crear una suscripción para una tarjeta adicional (usuario con
+  otra tarjeta ya con plan activo) devolvió "no pudimos iniciar la
+  suscripción con Stripe". Hipótesis principal (cupón 100% dejando
+  `precioFinal = 0`) **descartada con evidencia real**: se replicó el
+  payload exacto (`unit_amount: 0`, recurring, mismo `price_data`) contra la
+  API real de Stripe en modo LIVE y la aceptó sin problema
+  (`cs_live_a1CHXL2T...`). Tampoco se reprodujo con el caso más simple
+  (tarjeta adicional, sin cupón, Presencia mensual — `200` real, `checkoutUrl`
+  real). En la tabla `tarjetas` quedaron 2 pares de intentos fallidos reales
+  sin fila en `suscripciones` (`nn-fad95a`/`nn-e53fe6` y
+  `prueba-22-ac6c4f`/`prueba-22-1fcdb8`, todos 2026-07-23 ~21:11-21:14) —
+  como el `crearCheckoutSession` fallido borra la fila (best-effort cleanup),
+  no quedó registro de qué cupón/descuento se usó en esos intentos
+  puntuales. **Sin acceso a los Runtime Logs de Vercel desde acá** (no hay
+  `vercel` CLI vinculado ni token) — necesito que el usuario pegue el log
+  real de esos minutos, o un Personal Access Token de Vercel, antes de poder
+  confirmar la causa real. No se aplicó ningún fix todavía, a propósito.
+- **Tarjeta atorada tras cancelar el Checkout de Stripe — corregido
+  (2026-07-23)**: cancelar en Stripe y volver a `/editar/{id}` dejaba la
+  tarjeta sin forma de reintentar el pago — la sección "Tu plan" desaparecía
+  (porque `TarjetaForm` en modo edición solo la mostraba cuando
+  `tarjeta.plan_id` existía) y el botón decía "Guardar cambios" como si la
+  edición ya estuviera completa. Fix con dos partes:
+  - `TarjetaForm`: nuevos derivados `tienePlanActivo`/`mostrarSeccionPago`
+    (antes la condición era `!esEdicion`, ahora `mostrarSeccionPago` — la
+    sección de pago se muestra en edición también cuando no hay plan
+    activo). Botón de guardar con 3 estados: "Guardar cambios" (edición con
+    plan activo), "Completar pago" (edición sin plan — reintento), "Crear e
+    ir a pagar" (creación). `getPlanPorId` (`lib/planes.ts`) y
+    `getSuscripcionPendientePorTarjeta` (`lib/tarjetas.ts`) recuperan qué
+    plan/periodicidad intentaba comprar la tarjeta atorada, resueltas en
+    `/editar/[id]/page.tsx` y pasadas como props a `TarjetaForm`.
+  - `POST /api/stripe/checkout`: bug adicional encontrado durante el
+    análisis — reintentar el pago hacía un INSERT nuevo en `suscripciones`,
+    que chocaba contra el índice único `suscripciones_una_activa_por_tarjeta`
+    (ya existía una fila `pendiente` del intento cancelado) devolviendo un
+    409 engañoso ("ya tenés una suscripción en curso", cuando en realidad
+    era el propio intento abandonado). Ahora, si ya existe una fila
+    `pendiente` para la tarjeta, se reutiliza con UPDATE (recalculando
+    montos/cupón, limpiando `stripe_checkout_session_id`/
+    `stripe_subscription_id`/`stripe_customer_id` a null) en vez de
+    insertar. `autorizada`/`pausada` (los otros dos estados que cubre el
+    índice) siguen sin tocarse — esos sí son una suscripción real y deben
+    seguir bloqueando con el 409 de siempre. Verificado con una integración
+    Playwright real de punta a punta contra Stripe en modo live (crear →
+    Stripe → cancelar → volver a `/editar/{id}` → "Tu plan" reaparece →
+    reintentar → llega a Stripe de nuevo sin 409), no solo piezas sueltas.
+- 🔴 **Investigando (2026-07-23), sin resolver todavía**: login con Google
+  perdiendo el `?plan=` de la URL de retorno, pero **solo con cuentas de
+  Google nuevas** — confirmado por el usuario en Chrome normal, incógnito y
+  con varias cuentas nuevas distintas; cuentas existentes siempre llegan
+  bien a Stripe. Se descartó con evidencia dura la hipótesis de un trigger
+  de Postgres o Auth Hook en `auth.users`: cero `CREATE TRIGGER` en las 6
+  migraciones y en `schema.sql` completo, no existe `supabase/config.toml`
+  en el repo. El código de la app (`auth-methods.tsx`, `crear/page.tsx`,
+  `editar/[id]/page.tsx`) es idéntico para cuenta nueva o existente, sin
+  rama condicional por antigüedad de cuenta, sin ruta `/auth/callback`
+  propia (Supabase resuelve la sesión client-side vía
+  `detectSessionInUrl`). O sea: la causa no está en este repo — tiene que
+  estar en la config del Dashboard de Supabase (Authentication → Hooks,
+  Authentication → URL Configuration) o en Google Cloud Console
+  (OAuth consent screen / publishing status), ninguno de los dos accesible
+  desde acá (no hay `supabase` CLI vinculado ni Management API token).
+  Hipótesis principal: la pantalla "Google no verificó esta app" que Google
+  muestra solo la primera vez que una cuenta autoriza la app (cuentas que ya
+  autorizaron antes la saltan) — es el único paso real del flujo que
+  difiere solo para cuentas nuevas. El usuario va a reproducir de nuevo
+  prestando atención a si aparece esa pantalla antes de confirmar/aplicar
+  un fix.
 
 ## Suscripciones (Mercado Pago) — histórico, ya no es el proveedor activo
 - Modalidad elegida: preapproval **"sin plan asociado"** (términos inline en cada
@@ -578,6 +663,36 @@
 - Esta es la referencia a seguir para cualquier sección nueva del editor
   (agregar un id al array `SECCIONES`, no reinventar el patrón). "Agenda" ya se
   construyó así.
+- **Enlace personalizado (slug) obligatorio, mínimo 4 caracteres
+  (2026-07-23)**: antes era opcional — si se dejaba vacío, se autogeneraba
+  uno a partir del nombre (`generarSlug`, con sufijo random). Ahora es
+  obligatorio al crear: `handleGuardar` valida presencia y longitud mínima
+  antes de `setSaving(true)` (mismo patrón que la validación de `nombre`), y
+  `slugBloqueaGuardado` deshabilita el botón de guardar mientras el slug
+  esté vacío, tenga menos de 4 caracteres, se esté verificando, o ya esté
+  tomado. Se eliminó `generarSlug` (quedó sin otros usos) y el loop de
+  reintento de INSERT con slug autogenerado en `handleGuardar` — ya no hace
+  falta, el slug siempre llega validado desde el input. Verificado con
+  Playwright real (sesión inyectada, no mock): sin slug → botón
+  deshabilitado; slug de 2 caracteres → mensaje "Mínimo 4 caracteres" +
+  deshabilitado; slug válido único → "Enlace disponible" + habilitado.
+
+## Cursor pointer en elementos clickeables (2026-07-23)
+- Ningún botón del proyecto tenía `cursor: pointer` — ni `buttonVariants`
+  (`components/ui/button.tsx`) ni los `<button>` crudos repartidos por el
+  código lo seteaban, y el default de los navegadores para `<button>` es
+  `cursor: default`, no `pointer` (a diferencia de `<a>`). Se relevaron
+  todos los `onClick` del proyecto (11 archivos) y confirmó que **todos**
+  están en elementos `<button>`/`<Button>` (Base UI, que renderiza un
+  `<button>` real) — ninguno en un `<div>`/`<span>` clickeable sin rol. La
+  única excepción encontrada, `Menu.Item` en `compartir-tarjeta.tsx`, ya
+  trae `cursor-default` explícito a propósito (convención estándar de
+  shadcn/ui para ítems de menú, imita el comportamiento de menús nativos del
+  SO) — no se tocó. Fix: una sola regla global en `globals.css`
+  (`@layer base`): `button:not(:disabled), [role="button"]:not([aria-disabled="true"])
+  { cursor: pointer }`, en vez de tocar el className de cada botón
+  individualmente. Verificado con Playwright real (`getComputedStyle`) en
+  `/planes` y `/crear`: 6/6 botones con `cursor: pointer` en ambas.
 
 ## Diferido a fase posterior (NO construir todavía salvo instrucción explícita)
 - Integración con Google Calendar (OAuth + sync) — candidato a feature de plan "poder".
