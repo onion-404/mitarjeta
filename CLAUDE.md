@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-07-18. Este documento es la fuente de verdad para que
+> Última actualización: 2026-07-25. Este documento es la fuente de verdad para que
 > cualquier sesión nueva entienda el estado real del proyecto sin releer el historial
 > de chat. Actualizarlo cuando cambie algo de lo que describe.
 
@@ -725,6 +725,45 @@
   `stripe_checkout_session_id`): **APLICADA** (2026-07-21, confirmado con un
   `select` real de las 4 columnas contra producción).
 
+## Páginas legales (privacidad / condiciones de servicio) — 2026-07-25
+- Creadas para cumplir el requisito mínimo de operar cobrando dinero real y
+  poder publicar un cliente OAuth propio de Google (ver el punto pendiente
+  justo abajo — la creación de estas páginas NO implica que el cliente OAuth
+  ya esté publicado, son dos pasos independientes).
+- `/politica-privacidad` (`src/app/politica-privacidad/page.tsx`) y
+  `/condiciones-servicio` (`src/app/condiciones-servicio/page.tsx`): server
+  components estáticos, mismo patrón visual que `/login` (`<Logo />` +
+  tokens de color ya existentes, sin librería nueva). Enlazadas desde el
+  footer del home (`src/app/page.tsx`).
+- Contenido específico del negocio real, no genérico: datos recopilados vía
+  Google OAuth (nombre/email/foto), Stripe (suscripciones) y Mercado Pago
+  (citas/cobro manual), Supabase (hosting en EE.UU. — transferencia
+  internacional de datos declarada), Cloudinary (imágenes); derechos ARCO
+  con referencia a la LFPDPPP (México); y una aclaración honesta de que la
+  **cancelación de suscripción hoy se gestiona solo por contacto directo**,
+  no hay autogestión todavía en la plataforma (coincide con la realidad
+  descrita en la sección de Suscripciones más arriba).
+- Ambas páginas terminan con el mismo aviso breve: "Este documento es un
+  borrador inicial y será revisado con asesoría legal profesional
+  próximamente" — a propósito no escondido, pero de tono bajo.
+- **Email de contacto usado es un placeholder temporal**:
+  `emuna.interno@gmail.com` (el mismo `ADMIN_EMAIL` de `lib/admin.ts`) — no
+  existe todavía un email de soporte público dedicado. Reemplazar en ambas
+  páginas el día que exista uno.
+- Verificado con Playwright real contra el dev server (no solo visual):
+  ambas rutas devuelven `200`, título/`h1` correctos, disclaimer presente en
+  las dos.
+- **Sin commitear todavía** (`git status` las muestra como untracked):
+  `src/app/politica-privacidad/page.tsx`,
+  `src/app/condiciones-servicio/page.tsx`, y el cambio de footer en
+  `src/app/page.tsx`.
+- 🔴 **Cliente OAuth propio de Google: PENDIENTE, no configurado todavía**
+  (confirmado explícitamente por el usuario el 2026-07-25, no asumido) —
+  falta hacerlo en Google Cloud Console (pantalla de consentimiento OAuth,
+  publicar la app) y/o en el dashboard de Supabase
+  (Authentication → Providers). Fuera del alcance de este repo, no hay nada
+  que verificar desde el código para confirmar su estado.
+
 ## Pendiente técnico sin resolver
 - `eventos_metricas` no permite insert desde authenticated/anon a propósito (por
   diseño, evita inflar métricas). Falta crear el endpoint server-side con
@@ -740,10 +779,20 @@
   inicial, revisar si el doble booking se vuelve un problema real.
 - El gating por plan de `servicios_agendables` en la vista pública (ver "Agenda
   de servicios" arriba) hoy vive SOLO en `getServiciosAgendablesActivos()`
-  (filtro de aplicación), no en la policy `servicios_agendables_select_publica`.
-  Hardening futuro: mover el requisito `plan_id IS NOT NULL` a la propia RLS
-  (join contra `tarjetas` en la policy, como ya hace con `publicado`), para no
-  depender de que esta función sea el único camino de lectura pública.
+  (filtro de aplicación), no en las policies `_select_publica`.
+  🔴 **Migración ya escrita pero NO aplicada (2026-07-25)**:
+  `supabase/migrations/20260725000000_endurecer_rls_servicios_agendables_plan.sql`
+  mueve el requisito `plan_id IS NOT NULL` a las tres policies
+  `servicios_agendables_select_publica`, `disponibilidad_semanal_select_publica`
+  y `disponibilidad_excepciones_select_publica` (mismo patrón que ya usan con
+  `publicado`), sin tocar las policies `_owner_todo`/`_admin_todo`. El archivo
+  está listo para revisión pero **sigue sin commitear** (`git status` lo
+  muestra untracked) **y sin correr contra producción** — no hay `supabase`
+  CLI vinculado en este entorno, así que aplicarla requiere backup
+  (`pg_dump`, convención del proyecto sin staging) + correrla manualmente
+  (CLI vinculado o SQL editor del dashboard de Supabase), método todavía sin
+  decidir. Hasta que se aplique, el filtro de aplicación sigue siendo la
+  única protección real.
 
 ## Notas de proceso
 - Proyecto de Supabase: producción única, sin staging. Antes de cualquier migración:

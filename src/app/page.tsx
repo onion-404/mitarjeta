@@ -121,8 +121,8 @@ export default async function Home() {
         <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-16 px-6 py-20 lg:grid-cols-2 lg:py-28">
           <div className="flex flex-col items-start text-left">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white/70 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur dark:bg-zinc-900/50">
-              <Sparkles className="size-3.5 animate-pulse text-indigo-500" /> Tu
-              contacto, siempre en su celular
+              <Sparkles className="size-3.5 animate-pulse text-indigo-500" />{" "}
+              Linkard: tu contacto, siempre en su celular
             </span>
 
             <h1 className="mt-6 text-4xl font-semibold tracking-tight text-balance text-foreground sm:text-5xl">
@@ -192,6 +192,25 @@ export default async function Home() {
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Qué es Linkard — descripción explícita del producto en texto real,
+          no solo dentro del componente <Logo />, para que quede claro tanto
+          para una persona como para un revisor automatizado qué hace la app
+          y bajo qué nombre. */}
+      <section className="border-t border-border/60 py-14">
+        <div className="mx-auto w-full max-w-3xl px-6 text-center">
+          <h2 className="text-2xl font-semibold text-balance text-foreground sm:text-3xl">
+            ¿Qué es Linkard?
+          </h2>
+          <p className="mt-4 text-lg text-balance text-muted-foreground">
+            <strong className="font-semibold text-foreground">Linkard</strong>{" "}
+            es la tarjeta digital todo-en-uno para negocios y creadores: un
+            solo link con tu perfil de contacto, tu agenda para que tus
+            clientes reserven citas, y tu catálogo de productos para vender.
+            Sin apps que instalar ni tarjetas de papel que imprimir.
+          </p>
         </div>
       </section>
 
@@ -367,12 +386,26 @@ export default async function Home() {
       </section>
 
       <footer className="border-t border-border/60 py-6 text-center">
-        <Link
-          href="/login"
-          className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-        >
-          Acceso Admin
-        </Link>
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs font-medium text-muted-foreground">
+          <Link
+            href="/politica-privacidad"
+            className="underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Política de Privacidad
+          </Link>
+          <Link
+            href="/condiciones-servicio"
+            className="underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Condiciones de Servicio
+          </Link>
+          <Link
+            href="/login"
+            className="underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Acceso Admin
+          </Link>
+        </div>
       </footer>
     </div>
   )

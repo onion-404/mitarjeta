@@ -48,7 +48,7 @@ export default async function Image() {
               fontWeight: 700,
             }}
           >
-            Linkard.
+            Linkard
           </span>
         </div>
         <span

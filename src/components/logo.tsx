@@ -23,7 +23,7 @@ export function Logo({ className, size = "md", href = "/" }: LogoProps) {
         ▲
       </span>
       <span className="font-[family-name:var(--font-logo)] font-bold text-foreground">
-        Linkard.
+        Linkard
       </span>
     </span>
   )
