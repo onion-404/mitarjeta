@@ -39,7 +39,7 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
 
   if (!tarjeta) notFound()
 
-  if (tarjeta.estado_pago !== "aprobado") {
+  if (!tarjeta.plan_id) {
     return (
       <div className="relative flex w-full flex-1 flex-col items-center justify-center overflow-hidden bg-zinc-50 px-4 py-16 text-center dark:bg-black">
         <div

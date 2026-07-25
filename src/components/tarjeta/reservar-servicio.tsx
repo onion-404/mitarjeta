@@ -7,6 +7,7 @@ import * as React from "react"
 import { formatDuracion } from "@/components/tarjeta/tarjeta-card"
 import { Button } from "@/components/ui/button"
 import { formatearFechaHoraLocal, formatearHoraLocal } from "@/lib/fecha"
+import { registrarEvento } from "@/lib/track-evento"
 import type { ServicioAgendable } from "@/lib/types"
 
 interface ReservarServicioProps {
@@ -130,6 +131,13 @@ export function ReservarServicio({ tarjetaId, zonaHoraria, servicio }: ReservarS
       return
     }
 
+    // Solo el caso sin pago se confirma acá mismo — el caso con pago recién
+    // se sabe completado cuando Mercado Pago confirma (confirmar-pago.ts,
+    // server-side), el visitante no ve esta rama en ese caso.
+    registrarEvento(tarjetaId, "agenda_completada", {
+      servicio_id: servicio.id,
+      servicio_nombre: servicio.nombre,
+    })
     setEnviando(false)
     setPaso({ tipo: "confirmado", fechaHoraInicio: slot.inicio })
   }
@@ -142,7 +150,14 @@ export function ReservarServicio({ tarjetaId, zonaHoraria, servicio }: ReservarS
 
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
-      <Dialog.Trigger className="flex w-full items-center justify-between gap-3 rounded-xl border border-[rgba(0,0,0,0.05)] p-3 text-left transition-colors hover:bg-[rgba(0,0,0,0.02)] dark:border-[rgba(255,255,255,0.08)] dark:hover:bg-[rgba(255,255,255,0.04)]">
+      <Dialog.Trigger
+        onClick={() =>
+          registrarEvento(tarjetaId, "click_agendar", {
+            servicio_id: servicio.id,
+            servicio_nombre: servicio.nombre,
+          })
+        }
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-[rgba(0,0,0,0.05)] p-3 text-left transition-colors hover:bg-[rgba(0,0,0,0.02)] dark:border-[rgba(255,255,255,0.08)] dark:hover:bg-[rgba(255,255,255,0.04)]">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
             {servicio.nombre}

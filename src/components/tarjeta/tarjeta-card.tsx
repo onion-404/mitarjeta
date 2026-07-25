@@ -20,6 +20,7 @@ import * as React from "react"
 import { obtenerBannerPreset } from "@/lib/banner-presets"
 import { obtenerColorContraste } from "@/lib/contraste"
 import { obtenerPlataforma } from "@/lib/redes"
+import { registrarEvento, type TipoEventoCliente } from "@/lib/track-evento"
 import { cn } from "@/lib/utils"
 import { obtenerYoutubeEmbedUrl } from "@/lib/youtube"
 import type { DatosContacto, IdentidadVisual, ServicioAgendable, TarjetaTipo } from "@/lib/types"
@@ -118,6 +119,20 @@ export function TarjetaCard({
   const agendaInteractiva = permitirAgendar && Boolean(tarjetaId) && Boolean(zonaHoraria)
   const cardRef = React.useRef<HTMLElement>(null)
   const [descargandoPdf, setDescargandoPdf] = React.useState(false)
+
+  // Solo la tarjeta pública real pasa tarjetaId (el preview del editor y el
+  // demo del home no) — track() queda en no-op ahí, sin pegarle a /api/eventos.
+  const vistaRegistradaRef = React.useRef(false)
+  React.useEffect(() => {
+    if (!tarjetaId || vistaRegistradaRef.current) return
+    vistaRegistradaRef.current = true
+    registrarEvento(tarjetaId, "vista_tarjeta")
+  }, [tarjetaId])
+
+  function track(tipoEvento: TipoEventoCliente, metadata?: Record<string, unknown>) {
+    if (!tarjetaId) return
+    registrarEvento(tarjetaId, tipoEvento, metadata)
+  }
 
   const esEmpresarial = tipo === "empresarial"
   const {
@@ -348,7 +363,12 @@ export function TarjetaCard({
           ) && (
             <div className="mt-5 flex w-full flex-wrap items-center justify-center gap-2">
               {telefonoPrincipal && (
-                <a data-campo="contacto" href={`tel:${telefonoPrincipal}`} className={accionClase}>
+                <a
+                  data-campo="contacto"
+                  href={`tel:${telefonoPrincipal}`}
+                  onClick={() => track("click_enlace", { tipo_enlace: "tel" })}
+                  className={accionClase}
+                >
                   <Phone className="size-3.5" /> Llamar
                 </a>
               )}
@@ -358,13 +378,19 @@ export function TarjetaCard({
                   href={`https://wa.me/${soloDigitos(whatsapp)}`}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => track("click_enlace", { tipo_enlace: "whatsapp" })}
                   className={accionClase}
                 >
                   <SOCIAL_ICONS.whatsapp className="size-3.5" /> WhatsApp
                 </a>
               )}
               {email && (
-                <a data-campo="contacto" href={`mailto:${email}`} className={accionClase}>
+                <a
+                  data-campo="contacto"
+                  href={`mailto:${email}`}
+                  onClick={() => track("click_enlace", { tipo_enlace: "email" })}
+                  className={accionClase}
+                >
                   <Mail className="size-3.5" /> Email
                 </a>
               )}
@@ -374,6 +400,7 @@ export function TarjetaCard({
                   href={sitioWeb}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => track("click_enlace", { tipo_enlace: "sitio_web" })}
                   className={accionClase}
                 >
                   <Globe className="size-3.5" /> Sitio web
@@ -385,6 +412,7 @@ export function TarjetaCard({
                   href={direccionMapsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => track("click_enlace", { tipo_enlace: "ubicacion" })}
                   className={accionClase}
                 >
                   <MapPin className="size-3.5" /> Cómo llegar
@@ -404,6 +432,9 @@ export function TarjetaCard({
                     href={red.url}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() =>
+                      track("click_enlace", { tipo_enlace: "red_social", red: red.plataforma })
+                    }
                     className={accionClase}
                   >
                     <Icono className="size-3.5" /> {etiqueta}
@@ -594,6 +625,9 @@ export function TarjetaCard({
                             href={producto.enlaceUrl}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={() =>
+                              track("click_producto", { producto_titulo: producto.titulo })
+                            }
                             className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-[#3f3f46] underline underline-offset-2 dark:text-[#d4d4d8]"
                           >
                             Ver producto <ExternalLink className="size-2.5" />

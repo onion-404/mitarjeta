@@ -736,23 +736,28 @@
 - Migración `20260725010000_add_suscripciones_historial.sql` (tabla nueva
   `suscripciones_historial` + trigger `trg_suscripciones_historial` AFTER
   UPDATE en `suscripciones` que registra cada transición de `estado` +
-  backfill de un punto de anclaje por suscripción existente): **escrita,
-  pendiente de aplicar** — el usuario la va a revisar y correr manualmente
-  contra producción (mismo protocolo que las anteriores, sin `supabase` CLI
-  vinculado en este entorno). Parte del trabajo de dashboards de métricas
-  (ver sección nueva más abajo). Actualizar esta entrada a **APLICADA**
-  cuando el usuario confirme que ya corrió.
+  backfill de un punto de anclaje por suscripción existente): **APLICADA**
+  (2026-07-25, corrida y verificada manualmente por el usuario contra
+  producción — misma limitación de esta sesión que las anteriores, sin
+  `supabase` CLI vinculado, confirmación es la palabra del usuario). Parte
+  del trabajo de dashboards de métricas (ver sección nueva más abajo).
   - **Limitación aceptada de churn, explícita**: el churn (tasa de
     cancelación de suscripciones) que va a mostrar el dashboard admin solo
-    es preciso **desde el momento en que esta migración se aplique en
-    producción, no es retroactivo**. Antes de esta tabla, `suscripciones`
-    era `estado` last-write-wins sin ningún historial — las transiciones de
-    estado que ya ocurrieron antes de aplicar la migración no dejaron
-    rastro y no se pueden reconstruir con precisión. El backfill que trae
-    la migración inserta un punto de anclaje (estado actual de cada
+    es preciso **desde el momento en que esta migración se aplicó en
+    producción (2026-07-25), no es retroactivo**. Antes de esta tabla,
+    `suscripciones` era `estado` last-write-wins sin ningún historial — las
+    transiciones de estado que ya ocurrieron antes de aplicar la migración
+    no dejaron rastro y no se pueden reconstruir con precisión. El backfill
+    que trae la migración insertó un punto de anclaje (estado de cada
     suscripción al momento de aplicarla), no una reconstrucción de
     transiciones pasadas reales — es la base de comparación a partir de la
-    cual el churn futuro sí va a ser exacto.
+    cual el churn futuro sí es exacto.
+- Migración `20260725020000_add_eventos_metricas_visitante_hash.sql`
+  (columna nueva `eventos_metricas.visitante_hash`, nullable, + índice
+  `(tarjeta_id, visitante_hash)` para distinguir visitantes únicos de
+  recurrentes sin guardar IP/user-agent en crudo): **APLICADA** (2026-07-25,
+  corrida y verificada manualmente por el usuario contra producción, mismo
+  protocolo que las anteriores).
 
 ## Dashboards de métricas (vistas/clicks/conversión + MRR/churn admin) — EN PROGRESO
 - Motivación: `eventos_metricas`/`metricas_diarias` existían desde
@@ -775,6 +780,160 @@
   olvido.
 - **Churn de suscripciones**: ver la nota de limitación aceptada en la
   migración `20260725010000_add_suscripciones_historial.sql` arriba.
+- ✅ **`POST /api/eventos` + instrumentación pública, implementado y
+  verificado end-to-end (2026-07-25)**:
+  - `src/lib/eventos.ts` (server-only): `TIPOS_EVENTO`/`esTipoEvento`
+    (deben coincidir con el check constraint de
+    `eventos_metricas.tipo_evento`), `hashVisitante(ip, userAgent)` (sha256
+    de `ip|user-agent|fecha-UTC|pepper`, rota diario; el pepper reusa
+    `SUPABASE_SERVICE_ROLE_KEY` en vez de pedir una env var nueva solo para
+    esto — sin pepper el hash sería trivialmente reversible por fuerza
+    bruta de IPs conocidas) y `registrarEventoServidor()` (insert
+    compartido, usado tanto por el endpoint como por `confirmar-pago.ts`).
+  - `src/app/api/eventos/route.ts`: sin auth (guest-facing, mismo patrón
+    que `/api/citas`), rate-limit 60/min por IP vía `lib/rate-limit.ts` ya
+    existente, valida `tipo_evento` contra el enum real y que `tarjeta_id`
+    sea una tarjeta real y `publicado = true` antes de insertar. Devuelve
+    `{ok:true}` incluso sin `SUPABASE_SERVICE_ROLE_KEY` configurada — un
+    problema de config propio no debe romper la experiencia del visitante.
+  - `src/lib/track-evento.ts` (sin `"server-only"`, es cliente):
+    `registrarEvento()` fire-and-forget con `fetch(..., {keepalive:true})`,
+    nunca lanza ni bloquea. Deliberadamente sin `"compra_completada"` en su
+    tipo (ver punto de arriba).
+  - `tarjeta-card.tsx`: `vista_tarjeta` en un `useEffect` al montar (gateado
+    a que `tarjetaId` esté presente — así el preview del editor y el demo
+    del home, que no lo pasan, no generan tráfico a `/api/eventos`);
+    `click_enlace` (con `metadata.tipo_enlace`: tel/whatsapp/email/
+    sitio_web/ubicacion/red_social) en cada link de contacto/redes;
+    `click_producto` en "Ver producto".
+  - `reservar-servicio.tsx`: `click_agendar` en el `onClick` de
+    `Dialog.Trigger` (Base UI reenvía/mergea `onClick` sin romper su propio
+    toggle de apertura — verificado); `agenda_completada` solo en la rama
+    SIN pago (`setPaso({tipo:"confirmado"})`).
+  - `confirmar-pago.ts` (`confirmarPagoCita`): dispara `agenda_completada`
+    server-side cuando una cita CON pago queda `pagada` — es el único lugar
+    que sabe que el pago se confirmó de verdad; el visitante nunca vuelve a
+    cargar la tarjeta pública en ese momento (viene del redirect/webhook de
+    Mercado Pago), así que ningún componente cliente podría dispararlo.
+  - **Verificado de punta a punta con una tarjeta de prueba real**
+    (`prueba-e2e-metricas-*`, con plan activo + 1 servicio agendable +
+    disponibilidad completa, creada con service role, borrada por completo
+    al terminar — cascada real vía `on delete cascade`, confirmado que no
+    quedó ninguna fila en `eventos_metricas`/`metricas_diarias` ni en
+    ninguna tabla de agenda): carga real de `/[slug]` → `vista_tarjeta`;
+    click en "Cómo llegar"/"Instagram" (`target="_blank"`, confirmado que
+    siguen abriendo pestaña nueva sin que el `onClick` interfiera) →
+    `click_enlace`; click en "Ver producto" → `click_producto`; abrir el
+    diálogo de agendar → `click_agendar`; completar una reserva real sin
+    pago → `agenda_completada`. Las 6 filas resultantes en
+    `eventos_metricas` y su rollup en `metricas_diarias` se confirmaron con
+    una lectura real (service role), no solo por el `200` del network tab.
+    También se validó `POST /api/eventos` directo con `curl`: `tipo_evento`
+    inválido → `400`, `tarjeta_id` faltante → `400`, tarjeta inexistente →
+    `400`, y el rate-limit de 60/min sí corta (65 requests seguidos: ~55
+    con `200`, el resto `429`). Cero errores de consola en todo el flujo.
+  - **Hallazgo real no relacionado, encontrado en el camino**: `/[slug]`
+    sigue gateando con `tarjeta.estado_pago !== "aprobado"` (mensaje
+    "Tarjeta temporalmente inactiva") — un remanente del modelo viejo de
+    pago único que sigue activo en producción hoy. Una tarjeta nueva creada
+    por el flujo actual de suscripciones nunca setea `estado_pago` (queda
+    en su default `"pendiente"`, ver sección "Flujo de compra" arriba), así
+    que **toda tarjeta creada después de la migración a Stripe depende de
+    que algo más ponga `estado_pago = "aprobado"` para publicarse
+    realmente** — no confirmado en esta sesión si algo lo hace hoy (fuera
+    del alcance de esta tarea, no se tocó, pero es una posible causa raíz
+    si algún usuario real reporta su tarjeta como "inactiva" pese a tener
+    plan activo).
+  - Falta todavía (no es parte de esta tarea, ver el resto del plan):
+    migración de `visitante_hash` para "único vs. recurrente" (columna ya
+    existe y se llenó correctamente en la prueba de arriba, pero el
+    dashboard que la consuma es el siguiente paso), y ambos dashboards
+    (dueño/admin).
+
+## 🔴→✅ Bug crítico real: `/[slug]` gateaba con `estado_pago`, un campo
+## huérfano del modelo viejo — RESUELTO (2026-07-25)
+- **Encontrado como efecto colateral de la prueba de instrumentación de
+  arriba** (hubo que setear `estado_pago: "aprobado"` a mano para que la
+  tarjeta de prueba dejara de mostrarse como inactiva) — se investigó a
+  fondo y se confirmó que era un bug real de producción, no solo una
+  rareza de la tarjeta de prueba.
+- **Causa raíz, confirmada con evidencia exacta**:
+  - `src/app/[slug]/page.tsx:42` (antes del fix): `if (tarjeta.estado_pago
+    !== "aprobado") { ... }` — el bloque JSX de "Tarjeta temporalmente
+    inactiva" está inline ahí mismo (líneas 43-73 de la versión vieja), no
+    es un componente aparte.
+  - `estado_pago` es un campo 100% huérfano del modelo viejo de pago único
+    de tarjeta (Mercado Pago Checkout Pro, previo a la migración a planes/
+    suscripciones). Confirmado con grep exhaustivo: **cero referencias** a
+    `estado_pago` en `lib/stripe.ts`, `lib/stripe-suscripciones.ts`,
+    `lib/confirmar-suscripcion-stripe.ts`, ni en ninguna ruta de
+    `app/api/stripe/`. El flujo actual de suscripciones (Checkout de
+    Stripe → webhook → `procesarSuscripcionStripe()`) nunca lo toca, solo
+    escribe/lee `suscripciones.estado` y sincroniza `tarjetas.plan_id`.
+  - Todas las referencias reales a `estado_pago` en el código (grep
+    completo de `src/`): (1) `src/app/admin/dashboard/page.tsx` — el
+    toggle manual admin y la lista "Ventas recientes" del modelo viejo de
+    ventas (`precio_pagado`/`estado_pago`), una feature de bookkeeping
+    separada, no un gate de acceso — **no se tocó, sigue siendo válida
+    para las tarjetas viejas que sí pasaron por ese modelo**; (2)
+    `src/lib/confirmar-pago.ts:251` — el branch `tipo: "tarjeta"` de
+    `actualizarEstadoPagoTarjeta`, que solo se alcanza si
+    `external_reference` viene de una preferencia creada por
+    `/api/checkout` — confirmado con grep que **`/api/checkout` no tiene
+    ningún caller real hoy** (cero `fetch("/api/checkout"...)` en todo
+    `src/`, coincide con lo ya documentado arriba en "Flujo de compra") —
+    o sea, código 100% muerto para cualquier tarjeta nueva, no se tocó;
+    (3) `src/lib/types.ts` — solo el tipo, sin lógica. **El único gate de
+    acceso real que dependía de `estado_pago` era la línea 42 de
+    `[slug]/page.tsx`** — ya arreglada, no hay ningún otro lugar
+    equivalente pendiente.
+  - Confirmado con una consulta real a producción (antes del fix): los 15
+    tarjetas más recientes (2026-07-23 a 2026-07-25) tienen **todas**
+    `estado_pago: "pendiente"` — ninguna llega nunca a `"aprobado"` por sí
+    sola. Cualquier tarjeta nueva creada por el flujo actual, aunque
+    consiga una suscripción de Stripe `autorizada` real (`plan_id`
+    seteado), se hubiera seguido mostrando "Tarjeta temporalmente
+    inactiva" a **todo el mundo** — rompiendo el único canal real de
+    crecimiento del producto (compartir el link) para cualquier cliente
+    pagador nuevo. Verificado también que **cero riesgo de regresión**:
+    consulta real confirmó 0 tarjetas publicadas con `estado_pago =
+    'aprobado' AND plan_id IS NULL` (ninguna tarjeta viva depende hoy
+    exclusivamente del gate viejo) y 0 tarjetas publicadas con `plan_id`
+    seteado y `estado_pago != 'aprobado'` (nadie tiene hoy una suscripción
+    activa real todavía — el bug no había afectado a ningún cliente real
+    aún, pero iba a afectar al primero que se suscribiera).
+- **Fix**: `src/app/[slug]/page.tsx:42` cambiado a `if (!tarjeta.plan_id)`
+  — la misma fuente de verdad que ya usan las policies RLS de agenda
+  (`servicios_agendables_select_publica` etc., ver migración
+  `20260725000000_...`) y toda la documentación de arriba sobre
+  "`tarjetas.plan_id` es la fuente de verdad de si tiene un plan activo
+  hoy". Una sola línea, sin tocar el resto del archivo ni el mensaje de
+  "Tarjeta temporalmente inactiva" (el copy sigue siendo válido para
+  "sin plan activo").
+- **Verificado de punta a punta con Stripe en modo test real** (no
+  simulado): login real vía `stripe login` (CLI, cuenta
+  `acct_1TvfXG1jsNdj9fiJ`, misma cuenta que ya se usa en live), keys de
+  test obtenidas del propio `stripe config --list` (sin pedirle al
+  usuario que las pegue a mano), `stripe listen --forward-to
+  localhost:3000/api/stripe/webhook` para el webhook real. Se creó un
+  usuario real de Supabase Auth + una tarjeta real (sin `plan_id`, con
+  `estado_pago` en su default `"pendiente"`, igual que cualquier tarjeta
+  real hoy) → `POST /api/stripe/checkout` real (con el Bearer token real
+  de la sesión) → Checkout real de Stripe (`cs_test_...`) completado con
+  la tarjeta de prueba pública `4242 4242 4242 4242` → webhook real
+  recibido (`checkout.session.completed` + `customer.subscription.created`,
+  ambos `200`). Confirmado con una lectura real de Supabase después:
+  `tarjetas.plan_id` quedó seteado, `suscripciones.estado = "autorizada"`,
+  y **`estado_pago` se quedó en `"pendiente"` — confirma la causa raíz
+  exacta**. `/[slug]` de esa tarjeta ya NO mostraba "inactiva" (confirmado
+  con `curl` crudo + captura de pantalla real). El caso contrario (tarjeta
+  sin `plan_id`) se verificó ANTES del pago, contra la misma tarjeta real:
+  sí mostraba "inactiva" correctamente. Limpieza completa después:
+  suscripción cancelada y customer borrado en Stripe test (ambos webhooks
+  de cancelación también `200`), tarjeta+suscripción+usuario de prueba
+  borrados de Supabase (cascada confirmada, cero filas huérfanas), keys
+  de Stripe devueltas a live en `.env.local` (diff byte-a-byte contra el
+  backup previo, confirmado idéntico).
 
 ## Páginas legales (privacidad / condiciones de servicio) — 2026-07-25
 - Creadas para cumplir el requisito mínimo de operar cobrando dinero real y

@@ -1,5 +1,6 @@
 import "server-only"
 
+import { registrarEventoServidor } from "@/lib/eventos"
 import { verificarPago } from "@/lib/mercadopago"
 import { getSupabaseAdmin } from "@/lib/supabase-admin"
 import type { EstadoPago } from "@/lib/types"
@@ -120,7 +121,7 @@ async function confirmarPagoCita(citaId: string, pago: PagoVerificado): Promise<
 
   const { data: cita, error: errorLectura } = await admin
     .from("citas")
-    .select("id, tarjeta_id, monto_bruto, estado")
+    .select("id, tarjeta_id, servicio_id, monto_bruto, estado")
     .eq("id", citaId)
     .maybeSingle()
 
@@ -180,6 +181,19 @@ async function confirmarPagoCita(citaId: string, pago: PagoVerificado): Promise<
       `No se pudo actualizar la cita en Supabase: ${errorUpdate.message}`,
       pago.status ?? null
     )
+  }
+
+  // El visitante nunca vuelve a cargar la tarjeta pública en este momento
+  // (está en el redirect de retorno de Mercado Pago, o esto llegó vía el
+  // webhook server-to-server) — ningún componente cliente puede disparar
+  // este "agenda_completada", solo acá se sabe que el pago realmente se
+  // confirmó.
+  if (nuevoEstado === "pagada") {
+    await registrarEventoServidor(admin, {
+      tarjetaId: cita.tarjeta_id,
+      tipoEvento: "agenda_completada",
+      metadata: { servicio_id: cita.servicio_id, origen: "pago_confirmado" },
+    })
   }
 }
 
