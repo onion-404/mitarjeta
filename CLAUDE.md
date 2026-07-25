@@ -763,6 +763,42 @@
   publicar la app) y/o en el dashboard de Supabase
   (Authentication → Providers). Fuera del alcance de este repo, no hay nada
   que verificar desde el código para confirmar su estado.
+- 🔴 **Google Cloud rechazó la primera verificación de marca del OAuth
+  (2026-07-25)** con 3 problemas, 2 sobre el contenido del home
+  (`src/app/page.tsx`): (1) "no se explica el propósito de la app", (2) "el
+  nombre de la app 'Linkard' no coincide con el nombre de la app de tu
+  página principal". Ambos corregidos en el mismo `src/app/page.tsx`:
+  - Nueva sección **"¿Qué es Linkard?"** justo después del hero: un `<h2>` +
+    párrafo con texto real y explícito del propósito ("Linkard es la
+    tarjeta digital todo-en-uno para negocios y creadores: perfil, agenda
+    de servicios y venta de productos, todo en un solo link"). Antes el
+    único texto con propósito real era el hero, que es solo un gancho de
+    marketing ("No más tarjetas de papel...") sin mencionar el nombre ni
+    describir la función de la app.
+  - La etiqueta ("eyebrow") sobre el H1 ahora arranca con "**Linkard**: tu
+    contacto, siempre en su celular" en vez de solo el texto sin marca —
+    refuerza el nombre bien arriba, cerca del H1.
+  - Verificado con `curl` contra el HTML crudo devuelto por el servidor
+    (sin ejecutar JS): el `<h2>` y el párrafo aparecen como texto real en
+    el DOM (`<h2>¿Qué es Linkard?</h2>`, `<strong>Linkard</strong> es la
+    tarjeta digital...`), no dentro de una imagen/canvas — confirma que un
+    revisor automatizado (o humano viendo el código fuente) puede
+    extraerlo como texto plano.
+  - **Se quitó el punto final del wordmark** ("Linkard." → "Linkard") en
+    `src/components/logo.tsx` (`<Logo />`, usado en home/login/admin/footer
+    de tarjeta pública) **y también en `src/app/opengraph-image.tsx`**
+    (la imagen OG general del sitio tiene su propio render del wordmark
+    con Satori porque no puede reusar el componente `<Logo />` — se
+    encontró la misma "Linkard." con punto ahí y se corrigió igual, por
+    consistencia de marca). Razón: si el nombre registrado en el cliente
+    OAuth de Google es exactamente "Linkard" sin punto, esa diferencia
+    textual podía ser parte de por qué el revisor marcó "no coincide".
+    Verificado visualmente (zoom de captura en `/`, `/opengraph-image` y
+    `/login` con `<Logo size="lg" />`): sin problemas de espaciado al
+    quitar el punto, no hizo falta ningún ajuste adicional de layout.
+  - **Todavía no reenviado a revisión de Google** — estos son los cambios
+    de código; falta que el usuario vuelva a solicitar la verificación de
+    marca en Google Cloud Console.
 
 ## Pendiente técnico sin resolver
 - `eventos_metricas` no permite insert desde authenticated/anon a propósito (por
