@@ -724,6 +724,57 @@
   (`suscripciones.proveedor`, `stripe_customer_id`, `stripe_subscription_id`,
   `stripe_checkout_session_id`): **APLICADA** (2026-07-21, confirmado con un
   `select` real de las 4 columnas contra producción).
+- Migración `20260725000000_endurecer_rls_servicios_agendables_plan.sql`
+  (endurece `servicios_agendables_select_publica`,
+  `disponibilidad_semanal_select_publica` y
+  `disponibilidad_excepciones_select_publica` para exigir también
+  `plan_id IS NOT NULL`, no solo `publicado = true`): **APLICADA** (2026-07-25,
+  corrida manualmente por el usuario contra producción — a diferencia de las
+  migraciones anteriores, esta confirmación es la palabra del usuario, no una
+  consulta de verificación corrida desde esta sesión, porque no hay `supabase`
+  CLI vinculado en este entorno).
+- Migración `20260725010000_add_suscripciones_historial.sql` (tabla nueva
+  `suscripciones_historial` + trigger `trg_suscripciones_historial` AFTER
+  UPDATE en `suscripciones` que registra cada transición de `estado` +
+  backfill de un punto de anclaje por suscripción existente): **escrita,
+  pendiente de aplicar** — el usuario la va a revisar y correr manualmente
+  contra producción (mismo protocolo que las anteriores, sin `supabase` CLI
+  vinculado en este entorno). Parte del trabajo de dashboards de métricas
+  (ver sección nueva más abajo). Actualizar esta entrada a **APLICADA**
+  cuando el usuario confirme que ya corrió.
+  - **Limitación aceptada de churn, explícita**: el churn (tasa de
+    cancelación de suscripciones) que va a mostrar el dashboard admin solo
+    es preciso **desde el momento en que esta migración se aplique en
+    producción, no es retroactivo**. Antes de esta tabla, `suscripciones`
+    era `estado` last-write-wins sin ningún historial — las transiciones de
+    estado que ya ocurrieron antes de aplicar la migración no dejaron
+    rastro y no se pueden reconstruir con precisión. El backfill que trae
+    la migración inserta un punto de anclaje (estado actual de cada
+    suscripción al momento de aplicarla), no una reconstrucción de
+    transiciones pasadas reales — es la base de comparación a partir de la
+    cual el churn futuro sí va a ser exacto.
+
+## Dashboards de métricas (vistas/clicks/conversión + MRR/churn admin) — EN PROGRESO
+- Motivación: `eventos_metricas`/`metricas_diarias` existían desde
+  `20260716120000_add_planes_suscripciones_metricas.sql` (con el rollup ya
+  armado) pero sin ningún endpoint que insertara en `eventos_metricas` (sin
+  policy de insert para anon/authenticated a propósito) ni ningún dashboard
+  que leyera de ninguna de las dos — deuda técnica documentada desde el
+  inicio del proyecto (ver "Pendiente técnico sin resolver"). Instrumentado
+  a partir de 2026-07-25, en curso.
+- **`compra_completada` queda sin instrumentar por ahora, a propósito**:
+  los productos (`datos_contacto.productos[].enlaceUrl`) son links de salida
+  a un destino externo (WhatsApp, tienda externa, etc.) — no hay checkout
+  propio de productos en la plataforma, así que no existe ninguna señal de
+  que la venta se completó del otro lado. `click_producto` (el click de
+  salida, real y observable) es la métrica que sí se instrumenta y se
+  muestra como proxy de interés/conversión. `compra_completada` sigue
+  existiendo en el check constraint de `eventos_metricas.tipo_evento` y en
+  el dashboard está listo para conectarse el día que exista un flujo de
+  compra de productos propio — decisión explícita del cliente, no un
+  olvido.
+- **Churn de suscripciones**: ver la nota de limitación aceptada en la
+  migración `20260725010000_add_suscripciones_historial.sql` arriba.
 
 ## Páginas legales (privacidad / condiciones de servicio) — 2026-07-25
 - Creadas para cumplir el requisito mínimo de operar cobrando dinero real y
@@ -799,6 +850,18 @@
   - **Todavía no reenviado a revisión de Google** — estos son los cambios
     de código; falta que el usuario vuelva a solicitar la verificación de
     marca en Google Cloud Console.
+- 🔴 **Estado real de la verificación de Google (2026-07-25, según el
+  usuario — no verificable desde este repo)**: sigue **pendiente por el
+  registro TXT del dominio** (verificación de propiedad de `linkard.mx` que
+  Google exige antes de aprobar el cliente OAuth) — no es algo que se
+  resuelva con código, es un registro DNS que el usuario debe agregar en
+  el proveedor de dominio. **Plan de contingencia mientras tanto**: agregar
+  usuarios de prueba manualmente en la pantalla de consentimiento OAuth de
+  Google Cloud Console (una app en modo "Testing" permite login con Google
+  para una lista explícita de correos sin necesitar la verificación de
+  marca completa) — así se puede seguir operando/probando el login real
+  mientras se resuelve el TXT record, en vez de bloquear todo el flujo de
+  autenticación hasta que Google apruebe.
 
 ## Pendiente técnico sin resolver
 - `eventos_metricas` no permite insert desde authenticated/anon a propósito (por
@@ -813,22 +876,21 @@
   dos personas agendan la misma franja al mismo instante). Hardening futuro: EXCLUDE
   constraint con extensión btree_gist. Aceptado como riesgo bajo para el volumen
   inicial, revisar si el doble booking se vuelve un problema real.
-- El gating por plan de `servicios_agendables` en la vista pública (ver "Agenda
-  de servicios" arriba) hoy vive SOLO en `getServiciosAgendablesActivos()`
-  (filtro de aplicación), no en las policies `_select_publica`.
-  🔴 **Migración ya escrita pero NO aplicada (2026-07-25)**:
+- ✅ **RESUELTO (2026-07-25)**: el gating por plan de `servicios_agendables`
+  en la vista pública ya no depende solo del filtro de aplicación en
+  `getServiciosAgendablesActivos()`. Migración
   `supabase/migrations/20260725000000_endurecer_rls_servicios_agendables_plan.sql`
-  mueve el requisito `plan_id IS NOT NULL` a las tres policies
+  (commiteada) mueve el requisito `plan_id IS NOT NULL` a las tres policies
   `servicios_agendables_select_publica`, `disponibilidad_semanal_select_publica`
   y `disponibilidad_excepciones_select_publica` (mismo patrón que ya usan con
-  `publicado`), sin tocar las policies `_owner_todo`/`_admin_todo`. El archivo
-  está listo para revisión pero **sigue sin commitear** (`git status` lo
-  muestra untracked) **y sin correr contra producción** — no hay `supabase`
-  CLI vinculado en este entorno, así que aplicarla requiere backup
-  (`pg_dump`, convención del proyecto sin staging) + correrla manualmente
-  (CLI vinculado o SQL editor del dashboard de Supabase), método todavía sin
-  decidir. Hasta que se aplique, el filtro de aplicación sigue siendo la
-  única protección real.
+  `publicado`), sin tocar las policies `_owner_todo`/`_admin_todo` (el dueño
+  y el admin siguen viendo su agenda aunque el plan esté vencido). **Aplicada
+  y confirmada por el usuario contra producción** (corrida manualmente, ver
+  nota abajo) — no verificado desde este entorno de sesión (sin `supabase`
+  CLI vinculado ni acceso directo a la base para correr una consulta de
+  confirmación propia). El filtro de aplicación en `getServiciosAgendablesActivos()`
+  sigue existiendo igual (no se quitó, es defensa en profundidad), ya no es
+  la única protección.
 
 ## Notas de proceso
 - Proyecto de Supabase: producción única, sin staging. Antes de cualquier migración:
