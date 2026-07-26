@@ -19,6 +19,7 @@ import Link from "next/link"
 import * as React from "react"
 
 import { AgendaServicios } from "@/components/tarjeta/agenda-servicios"
+import { EstadisticasTarjeta } from "@/components/tarjeta/estadisticas-tarjeta"
 import { Button } from "@/components/ui/button"
 import { CompartirTarjeta } from "@/components/tarjeta/compartir-tarjeta"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
@@ -1768,6 +1769,12 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
     </div>
   )
 
+  const contenidoMetricas = esEdicion && tarjeta && (
+    <div className="px-5 pb-5 pt-1">
+      <EstadisticasTarjeta tarjetaId={tarjeta.id} planId={tarjeta.plan_id} />
+    </div>
+  )
+
   const contenidoResumenPago = mostrarSeccionPago && plan && (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
@@ -1880,6 +1887,9 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
     { id: "servicios", titulo: "Servicios", contenido: contenidoServicios },
     { id: "productos", titulo: "Productos", contenido: contenidoProductos },
     ...(esEdicion && tarjeta ? [{ id: "agenda", titulo: "Agenda", contenido: contenidoAgenda }] : []),
+    ...(esEdicion && tarjeta
+      ? [{ id: "metricas", titulo: "Estadísticas", contenido: contenidoMetricas }]
+      : []),
   ]
 
   return (

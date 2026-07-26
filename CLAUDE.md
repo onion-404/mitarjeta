@@ -759,7 +759,7 @@
   corrida y verificada manualmente por el usuario contra producción, mismo
   protocolo que las anteriores).
 
-## Dashboards de métricas (vistas/clicks/conversión + MRR/churn admin) — EN PROGRESO
+## Dashboards de métricas (vistas/clicks/conversión + MRR/churn admin) — EN PROGRESO (falta solo el dashboard admin)
 - Motivación: `eventos_metricas`/`metricas_diarias` existían desde
   `20260716120000_add_planes_suscripciones_metricas.sql` (con el rollup ya
   armado) pero sin ningún endpoint que insertara en `eventos_metricas` (sin
@@ -833,22 +833,10 @@
     `400`, y el rate-limit de 60/min sí corta (65 requests seguidos: ~55
     con `200`, el resto `429`). Cero errores de consola en todo el flujo.
   - **Hallazgo real no relacionado, encontrado en el camino**: `/[slug]`
-    sigue gateando con `tarjeta.estado_pago !== "aprobado"` (mensaje
-    "Tarjeta temporalmente inactiva") — un remanente del modelo viejo de
-    pago único que sigue activo en producción hoy. Una tarjeta nueva creada
-    por el flujo actual de suscripciones nunca setea `estado_pago` (queda
-    en su default `"pendiente"`, ver sección "Flujo de compra" arriba), así
-    que **toda tarjeta creada después de la migración a Stripe depende de
-    que algo más ponga `estado_pago = "aprobado"` para publicarse
-    realmente** — no confirmado en esta sesión si algo lo hace hoy (fuera
-    del alcance de esta tarea, no se tocó, pero es una posible causa raíz
-    si algún usuario real reporta su tarjeta como "inactiva" pese a tener
-    plan activo).
-  - Falta todavía (no es parte de esta tarea, ver el resto del plan):
-    migración de `visitante_hash` para "único vs. recurrente" (columna ya
-    existe y se llenó correctamente en la prueba de arriba, pero el
-    dashboard que la consuma es el siguiente paso), y ambos dashboards
-    (dueño/admin).
+    gateaba con `tarjeta.estado_pago !== "aprobado"`, un campo huérfano del
+    modelo viejo — **RESUELTO el mismo día, ver sección dedicada más abajo**.
+  - Dashboard del dueño (consume `visitante_hash` + toda esta instrumentación):
+    **implementado, ver sección dedicada más abajo.**
 
 ## 🔴→✅ Bug crítico real: `/[slug]` gateaba con `estado_pago`, un campo
 ## huérfano del modelo viejo — RESUELTO (2026-07-25)
@@ -934,6 +922,100 @@
   borrados de Supabase (cascada confirmada, cero filas huérfanas), keys
   de Stripe devueltas a live en `.env.local` (diff byte-a-byte contra el
   backup previo, confirmado idéntico).
+
+## Dashboard del dueño — sección "Estadísticas" en TarjetaForm (2026-07-25)
+- Implementado siguiendo exactamente el patrón ya establecido por "Agenda":
+  nueva entrada en el array `SECCIONES` de `tarjeta-form.tsx`
+  (`{ id: "metricas", titulo: "Estadísticas", contenido: contenidoMetricas }`),
+  condicionada a `esEdicion && tarjeta` — se renderiza sola en el accordion
+  desktop y el drawer/tab mobile (cero cambios en esa mecánica, ya
+  genérica sobre `SECCIONES`).
+- `src/components/tarjeta/estadisticas-tarjeta.tsx` (nuevo,
+  `<EstadisticasTarjeta tarjetaId planId />`): mismo patrón exacto que
+  `AgendaServicios` — recibe `planId` (no el objeto `Plan` completo, que
+  `TarjetaForm` no tiene en modo edición) y resuelve el plan él mismo
+  con `getPlanPorId` (reusa `lib/planes.ts`, no duplica la query como sí
+  hace `AgendaServicios` con un `.from("planes")` inline). Bloqueo total
+  con `if (!planId)` (mismo mensaje ámbar "Necesitás un plan activo...")
+  antes de consultar nada — mismo criterio fail-closed que Agenda.
+- `src/lib/metricas.ts` (nuevo): `getTotalesPorPeriodo`/`getSerieDiaria`
+  leen `metricas_diarias` (disponible a TODOS los planes, son totales, no
+  desglose); `getEventosDetalle` lee `eventos_metricas` crudo (solo se
+  llama si `plan.features.metricas_desglose`). Los tres con el cliente
+  `supabase` normal (no service role) — las policies `_select_propia` ya
+  alcanzan, mismo criterio ya documentado en el research previo a esta
+  implementación.
+- Gating por `planes.features` (valores reales sembrados, no hardcodeados):
+  `metricas_desglose` (alcance+poder) habilita desglose por enlace/servicio/
+  producto (top 5 c/u, `BarChart` horizontal de una sola serie) + donut de
+  único/recurrente (via `visitante_hash`: recurrente = mismo hash en más de
+  un día distinto dentro del período); `metricas_rango_custom` (solo poder)
+  habilita el tab "Rango personalizado" con dos `<input type="date">`;
+  `metricas_exportacion` (solo poder) habilita "Exportar CSV" (cliente-side,
+  mismo patrón `Blob`+`URL.createObjectURL` que ya usa `handleGuardarContacto`
+  en `tarjeta-card.tsx`, sin endpoint nuevo). Presencia ve 4 stat tiles
+  (vistas/clicks/agendamientos/clicks a productos, con % conversión desde
+  vistas donde aplica) + el gráfico de tendencia + comparativa vs. período
+  anterior — nada de esto depende de `metricas_desglose`, son totales.
+- **`compra_completada` deliberadamente ausente de toda la UI** (ni tile, ni
+  tipo en `TipoEventoCliente` del lado cliente) — coherente con la decisión
+  ya documentada arriba de no fabricar esa métrica.
+- **Paleta de charts**: se repurificaron los tokens `--chart-1..5` de
+  `globals.css` (antes placeholders grises de shadcn sin usar en ningún
+  lado, confirmado con grep) con la paleta categórica validada de la skill
+  `dataviz` — 6 checks corridos con `scripts/validate_palette.js` contra
+  las superficies real del proyecto (light `#fcfcfb`-equivalente y dark),
+  todos en PASS (el único WARN, contraste de 3 colores en modo claro, está
+  mitigado por leyenda + tooltip visibles, no color solo). Los 5 `<Line>`
+  del gráfico de tendencia y el donut de único/recurrente usan
+  `var(--chart-1)`...`var(--chart-5)`, así que responden sin JS extra al
+  toggle de tema (`.dark`) ya existente en la app.
+- **Bug real encontrado y corregido durante la verificación en vivo**: la
+  fila donut+leyenda de "único vs. recurrente" desbordaba su card
+  (`scrollWidth` 286px vs. `clientWidth` 225px reales, confirmado con
+  `getBoundingClientRect`) en el ancho real de la columna del accordion
+  desktop — el número aparecía recortado ("Nuevos:" sin el valor visible).
+  Corregido: `flex items-center gap-4` → `flex flex-wrap items-center
+  gap-4` + donut de 144px a 112px + `min-w-0` en la columna de texto.
+  Verificado de nuevo tras el fix: "Nuevos: 2", "Recurrentes: 1", "3
+  visitantes únicos en total" totalmente visibles.
+- **Segundo ajuste real encontrado en la misma verificación**:
+  `metricas_diarias` no guarda filas en cero (solo días con actividad
+  real) — graficar la serie cruda producía una línea recta entre los 2
+  únicos puntos con datos en un rango de 30 días, insinuando falsamente una
+  tendencia continua. Se agregó `rellenarSerie()` (capa de presentación,
+  no toca `lib/metricas.ts`) que completa cada día del rango elegido con
+  cero explícito antes de pasarle los datos a `recharts` — el gráfico
+  ahora muestra correctamente una base plana en cero con picos solo donde
+  hubo actividad real. `interval="preserveStartEnd"` + `minTickGap={24}`
+  en el `XAxis` para que el eje no se sature de etiquetas en el rango de
+  30 días.
+- `npm install recharts` (confirmado que NO estaba instalado pese a que el
+  pedido original asumía que sí — instalado como dependencia nueva,
+  `^3.10.1`).
+- **Verificado de punta a punta con datos reales, dos tarjetas de prueba**
+  (una por tier, `plan_id` seteado directo con service role — simula el
+  estado real post-Stripe ya verificado en la sección anterior — con
+  eventos reales sembrados vía `eventos_metricas`, incluyendo un período
+  "anterior" a ~10 días para probar la comparativa, y visitantes con
+  `visitante_hash` repetido en 2 días distintos para probar recurrencia):
+  login inyectado en el navegador real (localStorage con una sesión real
+  de Supabase Auth de un usuario de prueba, mismo `storageKey` que usa el
+  cliente de la app) → `/editar/[id]` real → tab "Estadísticas". Presencia:
+  4 tiles + deltas + gráfico, SIN ningún bloque de desglose, con el mensaje
+  de upsell correcto — todos los números coincidieron exactamente con los
+  datos sembrados (incluyendo el caso "Nuevo" cuando el período anterior
+  era 0, y el % de conversión). Poder: mismos tiles + "Rango personalizado"
+  + "Exportar CSV" visibles (ausentes en Presencia, confirmado), desglose
+  de enlaces/servicios/productos y donut único/recurrente con conteos
+  exactos, cambio de período (Hoy/7 días/30 días) recalculando todo
+  correctamente, CSV descargado y verificado con contenido real. Cero
+  errores de consola en todo el flujo. Limpieza completa después: ambas
+  tarjetas de prueba y sus 2 usuarios de prueba borrados (cascada
+  confirmada, cero filas huérfanas).
+- Falta todavía (no es parte de esta tarea): dashboard admin (MRR, churn,
+  distribución de tarjetas por plan, uso de features) — es el siguiente
+  paso del plan original.
 
 ## Páginas legales (privacidad / condiciones de servicio) — 2026-07-25
 - Creadas para cumplir el requisito mínimo de operar cobrando dinero real y
