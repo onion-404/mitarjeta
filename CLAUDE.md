@@ -1861,6 +1861,109 @@ el acceso correcto a cada rol.
   `pg_dump` ni DDL directo — el usuario la corrió con su propio backup
   primero).
 
+## Sistema de personalización avanzada del editor (2026-07-27)
+- **Alcance**: 6 formas de avatar (círculo/redondeado/hexágono ya
+  existían o son básicas nuevas; blob/corazón/estrella son nuevas y
+  avanzadas), 4 divisores banner→tarjeta (recta/onda/diagonal/zigzag),
+  modo simple/avanzado de color (3 colores base + 3 overrides de texto),
+  modo simple/avanzado de tipografía (título/cuerpo separados),
+  glassmorfismo, gating por plan con patrón candado+upsell, y 6
+  plantillas de partida. Gating: `personalizacion_libre` (ya existía)
+  sigue cubriendo básicas (Alcance+); `personalizacion_avanzada` (nueva
+  clave en `planes.features`, migración de datos
+  `20260727030000_add_personalizacion_avanzada_feature.sql`, **aplicada**)
+  cubre exóticas/divisores no-rectos/glass/modos avanzados (Poder
+  exclusivo).
+- **`IdentidadVisual` extendida 100% con campos opcionales** (jsonb, sin
+  migración de schema): `colorBotones`/`colorBadges` (default =
+  `colorPrimario`/`colorSecundario` si no están seteados — reproduce el
+  look de cualquier tarjeta ya guardada sin cambios), `modoColorAvanzado`
+  + 3 overrides de texto, `modoTipografiaAvanzado` + `estiloTipografiaCuerpo`,
+  `divisorBanner`, `glassmorfismo`, `plantillaBase`. `AvatarForma` gana 4
+  valores nuevos; **"cuadrado" (legacy) queda retirado del picker pero
+  sigue renderizando igual para tarjetas que ya lo tengan guardado** — se
+  eligió no migrar datos ni forzar un valor nuevo, decisión confirmada.
+- **`lib/personalizacion.ts`** (nuevo): metadata de formas/divisores/
+  tipografías + las 6 plantillas (`Partial<IdentidadVisual>` puro, sin
+  campos bespoke — "glow"/"doble anillo" de los briefs se logran
+  combinando color + la técnica de anillo, no son mecanismos aparte) +
+  `estaBloqueada()`/`calcularBloqueos()`: el candado de una opción **nunca
+  se muestra sobre el valor ya guardado** (compara contra
+  `identidad_visual` persistida, no contra un set abstracto de
+  "permitido") — así bajar de plan no bloquea ni rompe visualmente algo
+  que la tarjeta ya tenía; nuevas selecciones que excedan el plan sí
+  bloquean el guardado (se puede probar en vivo en el preview siempre,
+  solo el guardado queda condicionado). Verificado en vivo: una tarjeta en
+  plan Alcance con `divisorBanner: "onda"` ya guardado (simulando venir de
+  un plan Poder anterior) mostró "Onda" seleccionada sin candado y
+  "Diagonal"/"Zigzag" con candado Poder — exactamente el comportamiento
+  esperado.
+- **2 bugs reales encontrados y corregidos ANTES de integrar nada**,
+  ambos vía un harness HTML propio renderizado y revisado con capturas
+  reales antes de fijar los valores (no solo calculados a mano): el
+  primer intento de "blob orgánico" renderizaba como un círculo liso,
+  indistinguible de la forma "circulo" — se iteraron 4 candidatos y se
+  eligió el que se ve claramente orgánico. Y el path del divisor "onda"
+  tenía el borde inferior fijo en `y=100` — como el panel de contenido
+  real mide varios cientos de px según el contenido (agenda, servicios,
+  productos), eso hubiera recortado (invisible) todo lo que quedara
+  debajo de esos primeros 100px; corregido a `y=4000` (excede cualquier
+  alto real posible).
+- **Técnica de "anillo" con clip-path**: un `ring-*`/box-shadow normal
+  sigue el rectángulo del elemento, no la silueta — para hexágono/blob/
+  corazón/estrella eso se ve como un halo rectangular roto (verificado
+  renderizado antes de implementar). Solución: una segunda capa con el
+  MISMO clip-path, un poco más grande, detrás de la foto — funciona para
+  cualquier forma, sin casos especiales. `src/components/tarjeta/
+  avatar-forma.tsx` (nuevo) encapsula las 3 estrategias de render
+  (className legacy / clip-path directo porcentual / clip-path con
+  wrapper+scale para path() con curvas) y esta técnica de anillo.
+- **`path()` vs porcentajes**: `polygon()` escala solo con el tamaño real
+  del elemento (hexágono, estrella, diagonal, zigzag); `path()` con
+  curvas (blob, corazón, onda) usa píxeles literales de la caja de
+  referencia — para blob/corazón (que se renderizan tanto en un swatch de
+  32px como en un avatar real de 96px) hace falta un wrapper de 100×100 +
+  `transform: scale()`; para el divisor "onda" (que solo varía en un
+  rango angosto de 320-384px de ancho real) se verificó que un solo path
+  autorado para 340px tolera bien todo el rango sin reescalar.
+- **Reorganización de `TarjetaForm`**: las 2 secciones viejas ("Diseño de
+  tarjeta" y "Identidad visual", contenido repartido sin un criterio
+  claro entre ambas) se reemplazan por 3: "Plantillas" (nueva, primera de
+  todas — disponible tanto al crear como al editar, no es un paso
+  separado antes del formulario), "Colores y tipografía" (tema +
+  colores + tipografía, con los toggles de modo avanzado), "Avatar y
+  banner" (foto + forma + banner + divisor + efecto vidrio).
+- **Gating de guardado**: requiere el plan REAL de la tarjeta, no el
+  `plan` que ya recibía `TarjetaForm` (que en modo edición es sobre una
+  suscripción pendiente/abandonada, un concepto distinto). Se agregó
+  `planActivo` como prop nueva, resuelta en `/editar/[id]/page.tsx` vía
+  `getPlanPorId(tarjeta.plan_id)` — no existía ningún punto donde el
+  editor conociera las features del plan ACTIVO de la tarjeta hasta
+  ahora.
+- **Verificado de punta a punta con 4 tarjetas de prueba reales** (planes
+  Presencia/Alcance/Poder + una de "regresión" con identidad_visual
+  mínima, sesiones inyectadas vía magic link, mismo patrón no-destructivo
+  ya usado en sesiones anteriores): candados correctos en los 3 niveles de
+  plan — la primera verificación (Alcance/Poder) solo disparó el candado
+  violeta (Poder) en vivo, así que se sembró una 4ta tarjeta en Presencia
+  aparte para confirmar también el ámbar (Alcance) con evidencia real, no
+  solo por código: "Redondeado"/"Hexágono" (básicas) y el label "Colores"
+  mostraron el candado ámbar correcto, mientras "Estrella"/"Corazón"/
+  "Blob"/"Modo avanzado" siguieron mostrando el violeta — los 2 colores
+  distintos confirmados renderizados, no asumidos. Probar una opción
+  bloqueada actualiza el preview en vivo
+  sin bloquear nada hasta intentar guardar, el botón de guardar se
+  deshabilita con la lista exacta de bloqueos y se rehabilita al revertir,
+  aplicar "Aurora Creator" de punta a punta en la tarjeta Poder guardó
+  exactamente los campos esperados (confirmado con una lectura real de la
+  DB) y el efecto vidrio se confirmó a nivel CSS real
+  (`getComputedStyle`: `rgba(99,102,241,0.8)` + `blur(12px)`), y la
+  tarjeta de "regresión" (solo `colorPrimario`/`colorSecundario`, sin
+  ningún campo nuevo) se ve exactamente igual que el estilo clásico
+  pre-feature. Limpieza completa después: las 3 tarjetas y sus 3 usuarios
+  de prueba borrados, confirmado en cero. `npm run build` + `tsc
+  --noEmit` + `eslint` limpios en cada paso.
+
 ## Pendiente técnico sin resolver
 - `eventos_metricas` no permite insert desde authenticated/anon a propósito (por
   diseño, evita inflar métricas). Falta crear el endpoint server-side con

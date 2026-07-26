@@ -29,6 +29,13 @@ export default function EditarTarjetaPage({ params }: EditarTarjetaPageProps) {
     plan: Plan
     periodicidad: PeriodicidadSuscripcion
   } | null>(null)
+  // Plan REAL de la tarjeta (distinto de planPendiente, que es sobre una
+  // suscripción abandonada/cancelada) — necesario para el gating por plan
+  // de la personalización avanzada (formas exóticas, divisores, modo
+  // avanzado, glassmorfismo). Sin plan_id (nunca pagó), queda null y el
+  // gating cae fail-closed (igual que el resto del gating por plan del
+  // proyecto).
+  const [planActivo, setPlanActivo] = React.useState<Plan | null>(null)
 
   React.useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -51,6 +58,11 @@ export default function EditarTarjetaPage({ params }: EditarTarjetaPageProps) {
       if (plan) setPlanPendiente({ plan, periodicidad: suscripcion.periodicidad })
     })
   }, [tarjeta])
+
+  React.useEffect(() => {
+    if (!tarjeta?.plan_id) return
+    getPlanPorId(tarjeta.plan_id).then(setPlanActivo)
+  }, [tarjeta?.plan_id])
 
   let contenido: React.ReactNode
   if (session === undefined || (session && tarjeta === undefined)) {
@@ -85,6 +97,7 @@ export default function EditarTarjetaPage({ params }: EditarTarjetaPageProps) {
         tarjeta={tarjeta}
         plan={planPendiente?.plan}
         periodicidad={planPendiente?.periodicidad}
+        planActivo={planActivo}
       />
     )
   }

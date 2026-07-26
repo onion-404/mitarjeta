@@ -22,8 +22,22 @@ export interface Servicio {
 }
 
 export type TemaModo = "claro" | "oscuro"
-export type AvatarForma = "circulo" | "suave" | "cuadrado"
+// "cuadrado" queda solo por compatibilidad con tarjetas ya guardadas con ese
+// valor (border-radius chico) — el picker del editor ya no la ofrece, la
+// reemplaza "suave" ("Redondeado" en la UI). Las 4 nuevas (hexagono/blob/
+// corazon/estrella) usan clip-path, ver lib/personalizacion.ts.
+export type AvatarForma =
+  | "circulo"
+  | "suave"
+  | "cuadrado"
+  | "hexagono"
+  | "blob"
+  | "corazon"
+  | "estrella"
 export type EstiloTipografia = "moderna" | "elegante" | "creativa"
+// "recta" = el rounded-t-[2rem] que ya existe hoy, sin cambios. Las otras 3
+// usan clip-path, ver lib/personalizacion.ts.
+export type DivisorBanner = "recta" | "onda" | "diagonal" | "zigzag"
 
 export interface Producto {
   titulo: string
@@ -67,6 +81,23 @@ export interface IdentidadVisual {
   temaModo?: TemaModo
   avatarForma?: AvatarForma
   estiloTipografia?: EstiloTipografia
+  // --- Personalización avanzada (gating por plan, ver lib/personalizacion.ts) ---
+  /** Color de botones — default: colorPrimario (reproduce el look actual si no está seteado). */
+  colorBotones?: string
+  /** Color de badges — default: colorSecundario (reproduce el look actual si no está seteado). */
+  colorBadges?: string
+  /** Modo avanzado de color: desbloquea los 3 overrides de texto de abajo. Sin esto, todo es auto-contraste. */
+  modoColorAvanzado?: boolean
+  colorTextoBotones?: string
+  colorTextoBadges?: string
+  colorTextoGeneral?: string
+  /** Modo avanzado de tipografía: fuente de cuerpo separada de la de títulos (estiloTipografia). */
+  modoTipografiaAvanzado?: boolean
+  estiloTipografiaCuerpo?: EstiloTipografia
+  divisorBanner?: DivisorBanner
+  glassmorfismo?: boolean
+  /** Trazabilidad de qué plantilla se usó como base, si alguna — no afecta el render. */
+  plantillaBase?: string | null
 }
 
 export type MetodoPago = "mercado_pago" | "transferencia"

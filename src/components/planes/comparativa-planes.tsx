@@ -32,6 +32,11 @@ const FEATURES: { clave: string; etiqueta: string; render: (valor: unknown) => R
   },
   { clave: "personalizacion_libre", etiqueta: "Personalización libre de colores", render: renderBooleano },
   { clave: "temas_preestablecidos", etiqueta: "Temas prediseñados", render: renderBooleano },
+  {
+    clave: "personalizacion_avanzada",
+    etiqueta: "Personalización avanzada (formas, divisores, efectos)",
+    render: renderBooleano,
+  },
   { clave: "metricas_desglose", etiqueta: "Métricas con desglose", render: renderBooleano },
   { clave: "metricas_rango_custom", etiqueta: "Métricas por rango de fechas", render: renderBooleano },
   { clave: "metricas_exportacion", etiqueta: "Exportar métricas", render: renderBooleano },

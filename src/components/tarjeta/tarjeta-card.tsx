@@ -19,11 +19,13 @@ import * as React from "react"
 
 import { obtenerBannerPreset } from "@/lib/banner-presets"
 import { obtenerColorContraste } from "@/lib/contraste"
+import { DIVISORES_BANNER, ESTILOS_TIPOGRAFIA } from "@/lib/personalizacion"
 import { obtenerPlataforma } from "@/lib/redes"
 import { registrarEvento, type TipoEventoCliente } from "@/lib/track-evento"
 import { cn } from "@/lib/utils"
 import { obtenerYoutubeEmbedUrl } from "@/lib/youtube"
 import type { DatosContacto, IdentidadVisual, ServicioAgendable, TarjetaTipo } from "@/lib/types"
+import { AvatarForma } from "@/components/tarjeta/avatar-forma"
 import { ReservarServicio } from "@/components/tarjeta/reservar-servicio"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 
@@ -165,6 +167,16 @@ export function TarjetaCard({
     temaModo,
     avatarForma,
     estiloTipografia,
+    colorBotones,
+    colorBadges,
+    modoColorAvanzado,
+    colorTextoBotones,
+    colorTextoBadges,
+    colorTextoGeneral,
+    modoTipografiaAvanzado,
+    estiloTipografiaCuerpo,
+    divisorBanner,
+    glassmorfismo,
   } = identidadVisual
   const [productosAbiertos, setProductosAbiertos] = React.useState(false)
   const [serviciosAbiertos, setServiciosAbiertos] = React.useState<Set<number>>(
@@ -185,18 +197,22 @@ export function TarjetaCard({
   const telefonoPrincipal = esEmpresarial ? telefonoCorporativo : telefono
   const videoEmbedUrl = obtenerYoutubeEmbedUrl(videoUrl)
   const esOscuro = temaModo === "oscuro"
-  const AVATAR_FORMA_CLASE: Record<string, string> = {
-    circulo: "rounded-full",
-    suave: "rounded-[2rem]",
-    cuadrado: "rounded-xl",
-  }
-  const avatarFormaClase = AVATAR_FORMA_CLASE[avatarForma ?? "circulo"]
-  const fuenteEncabezado =
-    estiloTipografia === "elegante"
+
+  function fuentePorEstilo(estilo: typeof estiloTipografia) {
+    return estilo === "elegante"
       ? "var(--font-elegante)"
-      : estiloTipografia === "creativa"
+      : estilo === "creativa"
         ? "var(--font-creativa)"
         : undefined
+  }
+  const fuenteEncabezado = fuentePorEstilo(estiloTipografia)
+  // Modo simple (default): el cuerpo usa la fuente del sistema, igual que
+  // siempre. Modo avanzado: el cuerpo puede tener su propia fuente,
+  // independiente de la de título — si no se eligió ninguna, cae en
+  // ESTILOS_TIPOGRAFIA[0] ("moderna", sin fuente especial).
+  const fuenteCuerpo = modoTipografiaAvanzado
+    ? fuentePorEstilo(estiloTipografiaCuerpo ?? ESTILOS_TIPOGRAFIA[0].id)
+    : undefined
 
   const preset = obtenerBannerPreset(bannerPreset)
   const gradienteInline =
@@ -204,17 +220,63 @@ export function TarjetaCard({
       ? `linear-gradient(135deg, ${colorPrimario}, ${colorSecundario})`
       : undefined
   const fondoBanner = preset?.background ?? gradienteInline
-  const colorTextoCta = colorPrimario ? obtenerColorContraste(colorPrimario) : undefined
-  const estiloCta = colorPrimario
-    ? { backgroundColor: colorPrimario, color: colorTextoCta }
+
+  // Botones/badges: colorBotones/colorBadges son nuevos, con default =
+  // colorPrimario/colorSecundario para que una tarjeta que nunca los seteó
+  // se vea exactamente igual que antes de este sistema.
+  const colorBotonesFinal = colorBotones ?? colorPrimario
+  const colorBadgesFinal = colorBadges ?? colorSecundario
+  // Vidrio: fondo translúcido (sufijo de alfa en HEX) + blur. Sin soporte
+  // de backdrop-filter en el navegador, el blur simplemente no aplica y
+  // queda el fondo translúcido solo — se sigue viendo intencional, no
+  // roto (fallback gratis, sin @supports ni JS).
+  const alfaVidrio = glassmorfismo ? "cc" : ""
+  const estiloVidrio = glassmorfismo
+    ? { backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }
     : undefined
-  const estiloBadge = colorSecundario
-    ? { backgroundColor: `${colorSecundario}1a`, color: colorSecundario }
+  const colorTextoCta =
+    modoColorAvanzado && colorTextoBotones
+      ? colorTextoBotones
+      : colorBotonesFinal
+        ? obtenerColorContraste(colorBotonesFinal)
+        : undefined
+  const estiloCta = colorBotonesFinal
+    ? {
+        backgroundColor: `${colorBotonesFinal}${alfaVidrio}`,
+        color: colorTextoCta,
+        ...estiloVidrio,
+      }
     : undefined
+  // Modo simple: badge "tintado" (fondo al 10% del color, texto sólido del
+  // mismo color) — look de siempre. Modo avanzado: badge sólido con texto
+  // propio, más gráfico/con más peso (ver "Mono Bold" en las plantillas).
+  const colorTextoBadgeFinal =
+    modoColorAvanzado && colorTextoBadges
+      ? colorTextoBadges
+      : colorBadgesFinal
+        ? obtenerColorContraste(colorBadgesFinal)
+        : undefined
+  const estiloBadge = colorBadgesFinal
+    ? modoColorAvanzado
+      ? {
+          backgroundColor: `${colorBadgesFinal}${alfaVidrio}`,
+          color: colorTextoBadgeFinal,
+          ...estiloVidrio,
+        }
+      : { backgroundColor: `${colorBadgesFinal}1a`, color: colorBadgesFinal, ...estiloVidrio }
+    : undefined
+  const estiloTextoGeneral = modoColorAvanzado && colorTextoGeneral ? { color: colorTextoGeneral } : undefined
+
+  const divisorMeta = DIVISORES_BANNER.find((d) => d.id === divisorBanner)
+  const estiloDivisor = divisorMeta?.clipPath ? { clipPath: divisorMeta.clipPath } : undefined
 
   // Colores en HEX/RGBA (no oklch/color-mix) para que html2canvas pueda exportar el PDF
-  const accionClase =
-    "inline-flex items-center gap-1.5 rounded-full border border-[rgba(0,0,0,0.05)] bg-[rgba(255,255,255,0.8)] px-3.5 py-1.5 text-xs font-medium text-[#3f3f46] shadow-sm backdrop-blur transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#f4f4f5]"
+  const accionClase = cn(
+    "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0",
+    glassmorfismo
+      ? "border-[rgba(255,255,255,0.3)] bg-[rgba(255,255,255,0.3)] text-[#3f3f46] backdrop-blur-lg dark:border-[rgba(255,255,255,0.15)] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#f4f4f5]"
+      : "border-[rgba(0,0,0,0.05)] bg-[rgba(255,255,255,0.8)] text-[#3f3f46] backdrop-blur dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#f4f4f5]"
+  )
 
   const nombreArchivo = (nombrePrincipal || "tarjeta")
     .toLowerCase()
@@ -282,29 +344,24 @@ export function TarjetaCard({
           )}
         </div>
 
-        <div className="relative -mt-14 rounded-t-[2rem] border-t border-[rgba(255,255,255,0.5)] bg-[rgba(255,255,255,0.85)] px-6 pb-7 pt-3 text-center shadow-[0_-8px_30px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(24,24,27,0.85)]">
+        <div
+          data-campo="divisor"
+          style={estiloDivisor}
+          className={cn(
+            "relative -mt-14 border-t border-[rgba(255,255,255,0.5)] bg-[rgba(255,255,255,0.85)] px-6 pb-7 pt-3 text-center shadow-[0_-8px_30px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(24,24,27,0.85)]",
+            !estiloDivisor && "rounded-t-[2rem]"
+          )}
+        >
           <div className="-mt-14 flex justify-center">
-            <div
-              data-campo="avatar"
-              className={cn(
-                "relative flex size-24 shrink-0 items-center justify-center overflow-hidden text-xl font-semibold text-[#71717a] shadow-lg ring-4 ring-white dark:text-[#d4d4d8] dark:ring-[#18181b]",
-                avatarFormaClase
-              )}
-            >
-              {avatarUrl ? (
-                <Image
-                  src={avatarUrl}
-                  alt={nombrePrincipal ?? "Avatar"}
-                  fill
-                  sizes="96px"
-                  unoptimized={!esUrlOptimizable(avatarUrl)}
-                  className="object-cover"
-                />
-              ) : (
-                <span className="flex size-full items-center justify-center bg-[#f4f4f5] dark:bg-[#27272a]">
-                  {iniciales(nombrePrincipal)}
-                </span>
-              )}
+            <div data-campo="avatar">
+              <AvatarForma
+                forma={avatarForma}
+                tamanoPx={96}
+                imagenUrl={avatarUrl}
+                alt={nombrePrincipal ?? "Avatar"}
+                iniciales={iniciales(nombrePrincipal)}
+                unoptimized={avatarUrl ? !esUrlOptimizable(avatarUrl) : undefined}
+              />
             </div>
           </div>
 
@@ -326,16 +383,23 @@ export function TarjetaCard({
 
           <h1
             data-campo="nombre"
-            style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+            style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
             className="mt-2 text-xl font-semibold text-balance text-[#18181b] dark:text-[#fafafa]"
           >
             {nombrePrincipal?.trim() || "Sin nombre"}
           </h1>
           {empresa?.trim() && (
-            <p className="text-sm font-medium text-[#3f3f46] dark:text-[#d4d4d8]">{empresa}</p>
+            <p
+              style={{ fontFamily: fuenteCuerpo }}
+              className="text-sm font-medium text-[#3f3f46] dark:text-[#d4d4d8]"
+            >
+              {empresa}
+            </p>
           )}
           {subtitulo?.trim() && (
-            <p className="text-xs text-[#71717a] dark:text-[#a1a1aa]">{subtitulo}</p>
+            <p style={{ fontFamily: fuenteCuerpo }} className="text-xs text-[#71717a] dark:text-[#a1a1aa]">
+              {subtitulo}
+            </p>
           )}
 
           {(direccion?.trim() || (esEmpresarial && horarios?.trim())) && (
@@ -465,7 +529,10 @@ export function TarjetaCard({
                 Servicios
               </h2>
               {descripcionServicios?.trim() && (
-                <p className="mt-1.5 text-sm text-[#3f3f46] dark:text-[#d4d4d8]">
+                <p
+                  style={{ fontFamily: fuenteCuerpo }}
+                  className="mt-1.5 text-sm text-[#3f3f46] dark:text-[#d4d4d8]"
+                >
                   {descripcionServicios}
                 </p>
               )}

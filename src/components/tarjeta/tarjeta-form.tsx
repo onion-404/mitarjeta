@@ -21,13 +21,25 @@ import * as React from "react"
 import { AgendaServicios } from "@/components/tarjeta/agenda-servicios"
 import { EstadisticasTarjeta } from "@/components/tarjeta/estadisticas-tarjeta"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
+import { CandadoPlan } from "@/components/tarjeta/candado-plan"
 import { CompartirTarjeta } from "@/components/tarjeta/compartir-tarjeta"
+import { OpcionPersonalizacion, SwatchDivisor, SwatchForma } from "@/components/tarjeta/opcion-personalizacion"
+import { PlantillasGaleria } from "@/components/tarjeta/plantillas-galeria"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 import { RecortarAvatar } from "@/components/tarjeta/recortar-avatar"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
 import { BANNER_PRESETS } from "@/lib/banner-presets"
 import { validarCupon } from "@/lib/cupones"
+import {
+  DIVISORES_BANNER,
+  ESTILOS_TIPOGRAFIA,
+  FORMAS_AVATAR,
+  calcularBloqueos,
+  estaBloqueada,
+  type Plantilla,
+} from "@/lib/personalizacion"
 import { PLATAFORMAS, obtenerPlataforma } from "@/lib/redes"
 import { subirImagenCloudinary, validarImagen } from "@/lib/subir-imagen"
 import { supabase } from "@/lib/supabase"
@@ -36,7 +48,9 @@ import type {
   AvatarForma,
   Cupon,
   DatosContacto,
+  DivisorBanner,
   EstiloTipografia,
+  IdentidadVisual,
   PeriodicidadSuscripcion,
   Plan,
   PlataformaRed,
@@ -104,9 +118,13 @@ interface TarjetaFormProps {
   plan?: Plan
   /** Ciclo de facturación elegido en /planes — requerido en modo creación. */
   periodicidad?: PeriodicidadSuscripcion
+  /** Plan REAL de la tarjeta en modo edición (distinto de `plan`, que en
+   *  edición es sobre una suscripción pendiente/abandonada) — fuente del
+   *  gating de personalización avanzada. Null si nunca pagó. */
+  planActivo?: Plan | null
 }
 
-export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFormProps) {
+export function TarjetaForm({ tarjeta, plan, periodicidad = "anual", planActivo }: TarjetaFormProps) {
   const esEdicion = Boolean(tarjeta)
   // Una tarjeta existente puede no tener plan activo todavía: se creó, se
   // llegó a Stripe, pero el pago se canceló o abandonó antes de completarse
@@ -192,6 +210,66 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
   const [estiloTipografia, setEstiloTipografia] = React.useState<EstiloTipografia>(
     visualInicial?.estiloTipografia ?? "moderna"
   )
+
+  // --- Personalización avanzada (gating por plan, ver lib/personalizacion.ts) ---
+  const [colorBotones, setColorBotones] = React.useState(
+    visualInicial?.colorBotones ?? visualInicial?.colorPrimario ?? "#6366f1"
+  )
+  const [colorBadges, setColorBadges] = React.useState(
+    visualInicial?.colorBadges ?? visualInicial?.colorSecundario ?? "#a855f7"
+  )
+  const [modoColorAvanzado, setModoColorAvanzado] = React.useState(
+    visualInicial?.modoColorAvanzado ?? false
+  )
+  const [colorTextoBotones, setColorTextoBotones] = React.useState(
+    visualInicial?.colorTextoBotones ?? "#ffffff"
+  )
+  const [colorTextoBadges, setColorTextoBadges] = React.useState(
+    visualInicial?.colorTextoBadges ?? "#ffffff"
+  )
+  const [colorTextoGeneral, setColorTextoGeneral] = React.useState(
+    visualInicial?.colorTextoGeneral ?? "#18181b"
+  )
+  const [modoTipografiaAvanzado, setModoTipografiaAvanzado] = React.useState(
+    visualInicial?.modoTipografiaAvanzado ?? false
+  )
+  const [estiloTipografiaCuerpo, setEstiloTipografiaCuerpo] = React.useState<EstiloTipografia>(
+    visualInicial?.estiloTipografiaCuerpo ?? "moderna"
+  )
+  const [divisorBanner, setDivisorBanner] = React.useState<DivisorBanner>(
+    visualInicial?.divisorBanner ?? "recta"
+  )
+  const [glassmorfismo, setGlassmorfismo] = React.useState(visualInicial?.glassmorfismo ?? false)
+  const [plantillaBase, setPlantillaBase] = React.useState<string | null>(
+    visualInicial?.plantillaBase ?? null
+  )
+
+  // Fail-closed: sin plan confirmado (ni el elegido al crear, ni uno activo
+  // en edición), el gating queda en el nivel más restrictivo — mismo
+  // criterio que el resto del gating por plan del proyecto.
+  const featuresGating = esEdicion ? planActivo?.features : plan?.features
+  const featuresPersonalizacion = {
+    personalizacion_libre: Boolean(featuresGating?.personalizacion_libre),
+    personalizacion_avanzada: Boolean(featuresGating?.personalizacion_avanzada),
+  }
+
+  function aplicarPlantilla(plantilla: Plantilla) {
+    const v = plantilla.valores
+    if (v.colorPrimario !== undefined) setColorPrimario(v.colorPrimario)
+    if (v.colorSecundario !== undefined) setColorSecundario(v.colorSecundario)
+    if (v.colorBotones !== undefined) setColorBotones(v.colorBotones)
+    if (v.colorBadges !== undefined) setColorBadges(v.colorBadges)
+    if (v.modoColorAvanzado !== undefined) setModoColorAvanzado(v.modoColorAvanzado)
+    if (v.colorTextoBotones !== undefined) setColorTextoBotones(v.colorTextoBotones)
+    if (v.colorTextoBadges !== undefined) setColorTextoBadges(v.colorTextoBadges)
+    if (v.avatarForma !== undefined) setAvatarForma(v.avatarForma)
+    if (v.divisorBanner !== undefined) setDivisorBanner(v.divisorBanner)
+    if (v.glassmorfismo !== undefined) setGlassmorfismo(v.glassmorfismo)
+    if (v.estiloTipografia !== undefined) setEstiloTipografia(v.estiloTipografia)
+    if (v.temaModo !== undefined) setTemaModo(v.temaModo)
+    if (v.bannerPreset !== undefined) setBannerPresetId(v.bannerPreset)
+    setPlantillaBase(plantilla.id)
+  }
 
   const [avatarFile, setAvatarFile] = React.useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = React.useState("")
@@ -770,7 +848,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
           email: email.trim() || undefined,
         }
 
-    const identidad_visual = {
+    const identidad_visual: IdentidadVisual = {
       colorPrimario,
       colorSecundario,
       avatarUrl,
@@ -780,6 +858,25 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
       temaModo,
       avatarForma,
       estiloTipografia,
+      colorBotones,
+      colorBadges,
+      modoColorAvanzado,
+      colorTextoBotones: modoColorAvanzado ? colorTextoBotones : undefined,
+      colorTextoBadges: modoColorAvanzado ? colorTextoBadges : undefined,
+      colorTextoGeneral: modoColorAvanzado ? colorTextoGeneral : undefined,
+      modoTipografiaAvanzado,
+      estiloTipografiaCuerpo: modoTipografiaAvanzado ? estiloTipografiaCuerpo : undefined,
+      divisorBanner,
+      glassmorfismo,
+      plantillaBase,
+    }
+
+    if (bloqueosGuardado.length > 0) {
+      setSaveError(
+        "Hay cambios que requieren un plan superior — revertilos o actualizá tu plan para guardar."
+      )
+      setSaving(false)
+      return
     }
 
     if (esEdicion && tarjeta && tienePlanActivo) {
@@ -963,7 +1060,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
         email,
       }
 
-  const identidadVisualActual = {
+  const identidadVisualActual: IdentidadVisual = {
     colorPrimario,
     colorSecundario,
     avatarUrl: avatarMostrado,
@@ -973,7 +1070,24 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
     temaModo,
     avatarForma,
     estiloTipografia,
+    colorBotones,
+    colorBadges,
+    modoColorAvanzado,
+    colorTextoBotones: modoColorAvanzado ? colorTextoBotones : undefined,
+    colorTextoBadges: modoColorAvanzado ? colorTextoBadges : undefined,
+    colorTextoGeneral: modoColorAvanzado ? colorTextoGeneral : undefined,
+    modoTipografiaAvanzado,
+    estiloTipografiaCuerpo: modoTipografiaAvanzado ? estiloTipografiaCuerpo : undefined,
+    divisorBanner,
+    glassmorfismo,
+    plantillaBase,
   }
+
+  const bloqueosGuardado = calcularBloqueos(
+    identidadVisualActual,
+    visualInicial ?? null,
+    featuresPersonalizacion
+  )
 
   // Precio de vista previa nada más: la combinación real con el descuento de
   // tarjeta adicional (el mayor de los dos, no se suman — ver CLAUDE.md) se
@@ -996,12 +1110,62 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
     !esEdicion &&
     (!slugActualTrim || slugMuyCorto || verificandoSlug || slugDisponible === false)
 
+  const personalizacionBloqueaGuardado = bloqueosGuardado.length > 0
+
+  const contenidoAvisoBloqueos = personalizacionBloqueaGuardado && (
+    <div className="flex flex-col gap-1.5 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+      <p className="font-semibold">Hay cambios que necesitan un plan superior para guardarse:</p>
+      <ul className="flex flex-col gap-0.5 pl-4 list-disc">
+        {bloqueosGuardado.map((b) => (
+          <li key={b.campo}>
+            {b.campo} ({b.valorEtiqueta}) requiere el plan{" "}
+            <span className="font-semibold capitalize">{b.plan}</span>
+          </li>
+        ))}
+      </ul>
+      <Link href="/planes" className="font-semibold underline underline-offset-2">
+        Ver planes y actualizar
+      </Link>
+    </div>
+  )
+
   // --------------------------------------------------------------------
   // Contenido de cada sección, definido una sola vez y reutilizado tanto
   // en el accordion de desktop como en los drawers móviles (mismo patrón,
   // dos contenedores: nada se duplica).
   // --------------------------------------------------------------------
-  const contenidoDiseno = (
+  const contenidoPlantillas = (
+    <PlantillasGaleria
+      identidadVisual={identidadVisualActual}
+      guardado={visualInicial ?? null}
+      features={featuresPersonalizacion}
+      onAplicar={aplicarPlantilla}
+      onEmpezarDeCero={() => setPlantillaBase(null)}
+    />
+  )
+
+  const bloqueoColorAvanzado = estaBloqueada(
+    "avanzada",
+    true,
+    visualInicial?.modoColorAvanzado ?? false,
+    featuresPersonalizacion
+  )
+  const bloqueoTipografiaAvanzada = estaBloqueada(
+    "avanzada",
+    true,
+    visualInicial?.modoTipografiaAvanzado ?? false,
+    featuresPersonalizacion
+  )
+  // Colores/tipografía "simple" (fondo/botones/badges, estiloTipografia) no
+  // son grillas discretas de opciones — el candado se muestra de forma
+  // estática mientras el plan no tenga personalizacion_libre, sin comparar
+  // contra lo guardado (a diferencia de las grillas, acá alcanza con avisar
+  // que la sección entera requiere Alcance).
+  const bloqueoColoresSimple = !featuresPersonalizacion.personalizacion_libre
+    ? ({ plan: "alcance" } as const)
+    : null
+
+  const contenidoColoresYTipografia = (
     <div className="flex flex-col gap-5 px-5 pb-5 pt-1">
       <div className="flex flex-col gap-2">
         <span className={labelClase}>Tema de la tarjeta</span>
@@ -1029,70 +1193,147 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <span className={labelClase}>Forma del avatar</span>
-        <div className="grid grid-cols-3 gap-2">
-          {(
-            [
-              { valor: "circulo", etiqueta: "Círculo", clase: "rounded-full" },
-              { valor: "suave", etiqueta: "Suave", clase: "rounded-2xl" },
-              { valor: "cuadrado", etiqueta: "Cuadrado", clase: "rounded-md" },
-            ] as const
-          ).map((opcion) => (
-            <button
-              key={opcion.valor}
-              type="button"
-              onClick={() => setAvatarForma(opcion.valor)}
-              className={cn(
-                "flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-2.5 text-xs transition-colors duration-200 ease-out",
-                avatarForma === opcion.valor
-                  ? "border-foreground bg-background"
-                  : "border-border bg-background/50 hover:bg-background"
-              )}
-            >
-              <span
-                className={cn(
-                  "size-6 border-2 border-muted-foreground",
-                  opcion.clase
-                )}
-              />
-              {opcion.etiqueta}
-            </button>
-          ))}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <span className={cn(labelClase, "flex items-center gap-1.5")}>
+            Colores
+            {bloqueoColoresSimple && <CandadoPlan plan={bloqueoColoresSimple.plan} />}
+          </span>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            Modo avanzado
+            {bloqueoColorAvanzado && <CandadoPlan plan={bloqueoColorAvanzado.plan} />}
+            <Switch checked={modoColorAvanzado} onCheckedChange={setModoColorAvanzado} />
+          </label>
         </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+            <span className="text-xs text-muted-foreground">Fondo</span>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="color"
+                value={colorPrimario}
+                onChange={(e) => setColorPrimario(e.target.value)}
+                onFocus={() => scrollPreviewTo("banner")}
+                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+              />
+              <input
+                type="color"
+                value={colorSecundario}
+                onChange={(e) => setColorSecundario(e.target.value)}
+                onFocus={() => scrollPreviewTo("banner")}
+                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+              />
+            </div>
+          </div>
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+            <span className="text-xs text-muted-foreground">Botones</span>
+            <input
+              type="color"
+              value={colorBotones}
+              onChange={(e) => setColorBotones(e.target.value)}
+              className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+            />
+          </label>
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+            <span className="text-xs text-muted-foreground">Badges</span>
+            <input
+              type="color"
+              value={colorBadges}
+              onChange={(e) => setColorBadges(e.target.value)}
+              className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+            />
+          </label>
+        </div>
+
+        {modoColorAvanzado && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+              <span className="text-xs text-muted-foreground">Texto de botones</span>
+              <input
+                type="color"
+                value={colorTextoBotones}
+                onChange={(e) => setColorTextoBotones(e.target.value)}
+                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+              <span className="text-xs text-muted-foreground">Texto de badges</span>
+              <input
+                type="color"
+                value={colorTextoBadges}
+                onChange={(e) => setColorTextoBadges(e.target.value)}
+                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2 sm:col-span-2">
+              <span className="text-xs text-muted-foreground">Texto general</span>
+              <input
+                type="color"
+                value={colorTextoGeneral}
+                onChange={(e) => setColorTextoGeneral(e.target.value)}
+                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+              />
+            </label>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className={labelClase}>Estilo tipográfico</span>
-        <div className="grid grid-cols-3 gap-2">
-          {(
-            [
-              { valor: "moderna", etiqueta: "Moderna", fuente: undefined },
-              { valor: "elegante", etiqueta: "Elegante", fuente: "var(--font-elegante)" },
-              { valor: "creativa", etiqueta: "Creativa", fuente: "var(--font-creativa)" },
-            ] as const
-          ).map((opcion) => (
-            <button
-              key={opcion.valor}
-              type="button"
-              onClick={() => setEstiloTipografia(opcion.valor)}
-              className={cn(
-                "flex flex-col items-center gap-1 rounded-xl border-2 px-2 py-2.5 text-xs transition-colors duration-200 ease-out",
-                estiloTipografia === opcion.valor
-                  ? "border-foreground bg-background"
-                  : "border-border bg-background/50 hover:bg-background"
-              )}
-            >
-              <span
-                style={opcion.fuente ? { fontFamily: opcion.fuente } : undefined}
-                className="text-lg font-semibold"
-              >
-                Aa
-              </span>
-              {opcion.etiqueta}
-            </button>
-          ))}
+        <div className="flex items-center justify-between">
+          <span className={labelClase}>Tipografía</span>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            Modo avanzado
+            {bloqueoTipografiaAvanzada && <CandadoPlan plan={bloqueoTipografiaAvanzada.plan} />}
+            <Switch checked={modoTipografiaAvanzado} onCheckedChange={setModoTipografiaAvanzado} />
+          </label>
         </div>
+        <span className="text-xs text-muted-foreground">
+          {modoTipografiaAvanzado ? "Título" : "Estilo tipográfico"}
+        </span>
+        <div className="grid grid-cols-3 gap-2">
+          {ESTILOS_TIPOGRAFIA.map((estilo) => {
+            const bloqueada = estaBloqueada(
+              estilo.tier,
+              estilo.id,
+              visualInicial?.estiloTipografia ?? "moderna",
+              featuresPersonalizacion
+            )
+            return (
+              <OpcionPersonalizacion
+                key={estilo.id}
+                seleccionada={estiloTipografia === estilo.id}
+                bloqueada={bloqueada}
+                etiqueta={estilo.etiqueta}
+                onClick={() => setEstiloTipografia(estilo.id)}
+              >
+                <span style={{ fontFamily: estilo.fuente }} className="text-lg font-semibold">
+                  Aa
+                </span>
+              </OpcionPersonalizacion>
+            )
+          })}
+        </div>
+
+        {modoTipografiaAvanzado && (
+          <>
+            <span className="mt-2 text-xs text-muted-foreground">Cuerpo</span>
+            <div className="grid grid-cols-3 gap-2">
+              {ESTILOS_TIPOGRAFIA.map((estilo) => (
+                <OpcionPersonalizacion
+                  key={estilo.id}
+                  seleccionada={estiloTipografiaCuerpo === estilo.id}
+                  etiqueta={estilo.etiqueta}
+                  onClick={() => setEstiloTipografiaCuerpo(estilo.id)}
+                >
+                  <span style={{ fontFamily: estilo.fuente }} className="text-lg font-semibold">
+                    Aa
+                  </span>
+                </OpcionPersonalizacion>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -1225,31 +1466,15 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
     </div>
   )
 
-  const contenidoIdentidadVisual = (
-    <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
-          <span className={labelClase}>Color primario</span>
-          <input
-            type="color"
-            value={colorPrimario}
-            onChange={(e) => setColorPrimario(e.target.value)}
-            onFocus={() => scrollPreviewTo("banner")}
-            className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-          />
-        </label>
-        <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
-          <span className={labelClase}>Color secundario</span>
-          <input
-            type="color"
-            value={colorSecundario}
-            onChange={(e) => setColorSecundario(e.target.value)}
-            onFocus={() => scrollPreviewTo("banner")}
-            className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-          />
-        </label>
-      </div>
+  const bloqueoGlassmorfismo = estaBloqueada(
+    "avanzada",
+    true,
+    visualInicial?.glassmorfismo ?? false,
+    featuresPersonalizacion
+  )
 
+  const contenidoAvatarYBanner = (
+    <div className="flex flex-col gap-5 px-5 pb-5 pt-1">
       <div className="flex flex-col gap-1.5">
         <span className={labelClase}>
           {esEmpresarial ? "Foto o logo" : "Foto de perfil"}
@@ -1284,6 +1509,31 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
               "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
             )}
           />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className={labelClase}>Forma de avatar</span>
+        <div className="grid grid-cols-3 gap-2">
+          {FORMAS_AVATAR.map((forma) => {
+            const bloqueada = estaBloqueada(
+              forma.tier,
+              forma.id,
+              visualInicial?.avatarForma ?? "circulo",
+              featuresPersonalizacion
+            )
+            return (
+              <OpcionPersonalizacion
+                key={forma.id}
+                seleccionada={avatarForma === forma.id}
+                bloqueada={bloqueada}
+                etiqueta={forma.etiqueta}
+                onClick={() => setAvatarForma(forma.id)}
+              >
+                <SwatchForma forma={forma} />
+              </OpcionPersonalizacion>
+            )
+          })}
         </div>
       </div>
 
@@ -1341,6 +1591,39 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
           />
         </div>
       </div>
+
+      <div className="flex flex-col gap-2">
+        <span className={labelClase}>Divisor banner → tarjeta</span>
+        <div className="grid grid-cols-4 gap-2">
+          {DIVISORES_BANNER.map((divisor) => {
+            const bloqueada = estaBloqueada(
+              divisor.tier,
+              divisor.id,
+              visualInicial?.divisorBanner ?? "recta",
+              featuresPersonalizacion
+            )
+            return (
+              <OpcionPersonalizacion
+                key={divisor.id}
+                seleccionada={(divisorBanner ?? "recta") === divisor.id}
+                bloqueada={bloqueada}
+                etiqueta={divisor.etiqueta}
+                onClick={() => setDivisorBanner(divisor.id)}
+              >
+                <SwatchDivisor divisor={divisor} />
+              </OpcionPersonalizacion>
+            )
+          })}
+        </div>
+      </div>
+
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+        <span className={cn(labelClase, "flex items-center gap-1.5")}>
+          Efecto vidrio
+          {bloqueoGlassmorfismo && <CandadoPlan plan={bloqueoGlassmorfismo.plan} />}
+        </span>
+        <Switch checked={glassmorfismo} onCheckedChange={setGlassmorfismo} />
+      </label>
     </div>
   )
 
@@ -1866,9 +2149,10 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
   }
 
   const SECCIONES: Seccion[] = [
-    { id: "diseno", titulo: "Diseño de tarjeta", contenido: contenidoDiseno },
+    { id: "plantillas", titulo: "Plantillas", contenido: contenidoPlantillas },
     { id: "datos", titulo: "Datos esenciales", contenido: contenidoDatosEsenciales },
-    { id: "visual", titulo: "Identidad visual", contenido: contenidoIdentidadVisual },
+    { id: "colores", titulo: "Colores y tipografía", contenido: contenidoColoresYTipografia },
+    { id: "avatar-banner", titulo: "Avatar y banner", contenido: contenidoAvatarYBanner },
     { id: "contacto", titulo: "Canales de contacto", contenido: contenidoContacto },
     { id: "redes", titulo: "Redes sociales", contenido: contenidoRedes },
     { id: "ubicacion", titulo: "Ubicación y negocio", contenido: contenidoUbicacion },
@@ -2076,12 +2360,13 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
             </fieldset>
           )}
 
+          {contenidoAvisoBloqueos}
           {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
           <Button
             type="submit"
             size="lg"
-            disabled={saving || guardadoExito || slugBloqueaGuardado}
+            disabled={saving || guardadoExito || slugBloqueaGuardado || personalizacionBloqueaGuardado}
             className={cn(
               "w-full transition-colors duration-300 ease-out",
               guardadoExito && "bg-emerald-600 text-white hover:bg-emerald-600"
@@ -2094,13 +2379,14 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual" }: TarjetaFo
         {/* Barra fija + tabs: solo mobile. El submit apunta a #tarjeta-form
             vía el atributo `form`, aunque el <form> esté oculto en mobile. */}
         <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col gap-2 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] pt-2.5 backdrop-blur lg:hidden">
+          {personalizacionBloqueaGuardado && <div className="px-4">{contenidoAvisoBloqueos}</div>}
           {saveError && <p className="px-4 text-xs text-destructive">{saveError}</p>}
           <div className="px-4">
             <Button
               type="submit"
               form="tarjeta-form"
               size="sm"
-              disabled={saving || guardadoExito || slugBloqueaGuardado}
+              disabled={saving || guardadoExito || slugBloqueaGuardado || personalizacionBloqueaGuardado}
               className={cn(
                 "w-full transition-colors duration-300 ease-out",
                 guardadoExito && "bg-emerald-600 text-white hover:bg-emerald-600"
