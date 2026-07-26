@@ -59,25 +59,60 @@
   sin esto las URLs de OG image resuelven mal al compartir) + bloques
   `openGraph`/`twitter` explícitos (`card: "summary_large_image"`).
 
-### 🔴 PENDIENTE PRIORITARIO: imagen OG dinámica por tarjeta individual
-- Lo de arriba es solo la imagen OG **general del sitio** (home, metadata por
-  default). Las tarjetas individuales (`/[slug]`) siguen sin su propio
-  `opengraph-image` — cuando alguien comparte el link de SU tarjeta (WhatsApp,
-  redes), el preview muestra la imagen genérica de Linkard, no algo con el
-  nombre/foto/colores de esa tarjeta puntual.
-- **Es el siguiente paso natural y de alto impacto**: compartir el link de la
-  tarjeta (WhatsApp, redes, bio de Instagram) es la principal vía de
-  interacción y crecimiento del producto — cada preview genérico en vez de
-  personalizado es una oportunidad de conversión perdida.
-- Implementación sugerida (no hecha todavía): `src/app/[slug]/opengraph-image.tsx`
-  dinámico (recibe `params.slug`, lee la tarjeta con `getTarjetaPublicada`,
-  usa `nombrePrincipal`, `identidad_visual.colorPrimario/colorSecundario` y
-  posiblemente el avatar/logo de la tarjeta si tiene uno subido a Cloudinary).
+### ✅ Imagen OG dinámica por tarjeta individual — RESUELTO (2026-07-26)
+- `src/app/[slug]/opengraph-image.tsx` (nuevo): genera un preview 1200×630
+  propio por tarjeta con `getTarjetaPublicada(slug)` — nombre/nombreEmpresa
+  según tipo, `puesto`/`giro` como subtítulo, fondo con
+  `identidad_visual.colorPrimario/colorSecundario` (gradiente si hay ambos,
+  sólido si solo uno, `#171717` si ninguno) y color de texto resuelto con
+  `obtenerColorContraste()` (`lib/contraste.ts`, ya existía, usado por
+  `TarjetaCard` para el mismo propósito). Watermark del logo (triángulo SVG +
+  "Linkard", discreto, esquina inferior derecha) en vez del logo protagonista
+  de la imagen genérica.
+- **Avatar**: si `identidad_visual.avatarUrl` existe (Cloudinary), se
+  descarga y convierte a data URI ANTES de construir el `ImageResponse`
+  (`cargarImagenBase64()`, con try/catch propio) — **a propósito, no
+  `<img src={avatarUrl}>` directo**: aunque Satori sí soporta fetch remoto
+  por URL, esa carga ocurre de forma perezosa dentro del `ReadableStream`
+  interno de `ImageResponse` (confirmado leyendo
+  `next/dist/server/og/image-response.js`), fuera de cualquier try/catch
+  que se escriba en la función `Image()` — una foto caída/lenta hubiera
+  roto la imagen OG entera sin forma de interceptarlo. Resolviendo la
+  imagen nosotros mismos, un fallo cae limpiamente a un círculo con la
+  inicial del nombre (mismo criterio de fallback que ya usa `HeaderGlobal`
+  para el avatar del usuario).
+- **Fallback a la imagen genérica del sitio** (`renderOgImageGenerico()`,
+  ver debajo) si la tarjeta no existe (`notFound`-equivalente) o
+  `plan_id` es `null` (nunca pagó, o se le canceló/pausó la suscripción) —
+  mismo criterio fail-closed que el resto del proyecto usa para gating por
+  plan (`/[slug]/page.tsx`, agenda, RLS).
+- **`src/lib/og.tsx` (nuevo)**: extrae `cargarSoraBold()` (fetch de la
+  fuente Sora bold para Satori) y `renderOgImageGenerico()` (el JSX de la
+  imagen OG general) de `src/app/opengraph-image.tsx` a un módulo
+  compartido — ambos archivos (`opengraph-image.tsx` raíz y
+  `[slug]/opengraph-image.tsx`) los importan, en vez de duplicar la lógica
+  de fuente + el diseño genérico. `opengraph-image.tsx` raíz quedó como un
+  wrapper delgado sobre este módulo, sin cambio visual.
+- El triángulo del logo se sigue dibujando como SVG (`<polygon>`), no el
+  carácter Unicode ▲ — mismo motivo ya documentado (Satori no lo resuelve
+  contra la fuente Sora cargada).
+- Verificado con 4 tarjetas de prueba reales (sembradas y borradas después,
+  vía service role, cero rastro): avatar real de Cloudinary con gradiente
+  morado, tarjeta empresarial sin foto (fallback de inicial, fondo
+  amarillo/naranja con texto negro — contraste correcto), nombre largo
+  (wrap a 2 líneas, tamaño de fuente reducido automáticamente si
+  `nombre.length > 22`), y una tarjeta publicada pero con `plan_id: null`
+  (cayó exactamente al mismo PNG — mismo tamaño en bytes — que el fallback
+  genérico y que una tarjeta inexistente). Las 4 devolvieron `200` con PNG
+  real de 1200×630. `npm run build` + `tsc --noEmit` + `eslint` limpios.
 - **Pendiente de que el usuario lo haga manualmente (NO lo hace Claude)**:
   actualizar `NEXT_PUBLIC_SITE_URL` a `https://linkard.mx` en las Environment
   Variables del proyecto en el dashboard de Vercel (ya está actualizada en
   `.env.local` para desarrollo local, pero Vercel usa su propia configuración
-  independiente) y disparar un redeploy para que tome efecto en producción.
+  independiente) y disparar un redeploy para que tome efecto en producción —
+  sin esto, las URLs absolutas de OG image siguen resolviendo mal en
+  producción al compartir (mismo pendiente ya documentado arriba para la
+  imagen genérica, no es nuevo de este cambio).
 
 ## Modelo de negocio
 - Plataforma tipo link-in-bio + agenda de servicios + venta de productos.
@@ -264,6 +299,22 @@
   sigue pendiente que el usuario agregue `customer.subscription.created` a
   la lista de eventos del endpoint en el dashboard de Stripe para que quede
   exactamente alineado con lo que el código espera.
+- 🔴 **Pendiente de que el usuario lo haga manualmente (2026-07-26)**: el
+  endpoint live tampoco tiene suscripto `invoice.paid` — necesario para el
+  sistema de afiliados (`registrarCobroDeCupon()`, ver sección "Sistema de
+  afiliados" más abajo). Sin este evento en el dashboard, ninguna venta de
+  afiliado se registra en producción aunque el código ya lo escuche. El
+  set completo que el endpoint live debería tener (6 eventos): `checkout.
+  session.completed`, `customer.subscription.created`, `customer.
+  subscription.updated`, `customer.subscription.deleted`, `invoice.
+  payment_failed`, `invoice.paid`. **`charge.updated` NO hace falta** —se
+  consideró como respaldo para el fee real de Stripe durante el diseño,
+  pero se descartó: confirmado revisando los tipos reales de `stripe`
+  v22.3.2 que ni `Charge` ni `PaymentIntent` tienen ningún campo que apunte
+  de vuelta al `Invoice` en esta versión de API, así que un handler de
+  `charge.updated` no podría correlacionar el cobro con la suscripción de
+  todos modos — la captura del fee real quedó 100% dentro del handler de
+  `invoice.paid` (reintentos con backoff corto, ver esa sección).
 - **Pendiente de que el usuario lo haga manualmente**: agregar las mismas 3
   keys (ahora live) a las Environment Variables de Vercel — siguen sin estar
   ahí, ver nota de arriba sobre `NEXT_PUBLIC_SITE_URL` para el mismo problema
@@ -1296,7 +1347,9 @@
   plan y uso de agenda que antes vivían en el dashboard), `/admin/
   suscripciones` (listado fila-por-fila nuevo — antes solo había
   agregados — + MRR por plan + churn), `/admin/cupones` (ver sistema de
-  cupones abajo), `/admin/cobro-manual` (se le quitó su propio header,
+  cupones abajo), `/admin/afiliados` (nuevo, agregado el mismo
+  2026-07-26 — ver sección "Sistema de afiliados con comisión
+  recurrente"), `/admin/cobro-manual` (se le quitó su propio header,
   ahora vive dentro del shell), `/admin/configuracion` (nuevo: CRUD real
   de `planes.precio_mensual/anual` + editor de
   `descuento_tarjeta_adicional_pct`, pedido explícito del cliente que no
@@ -1308,7 +1361,11 @@
   pocas tarjetas), `/mi-cuenta/estadisticas` (nuevo: vista agregada de
   TODAS las tarjetas del usuario, ver abajo), `/mi-cuenta/suscripcion`
   (nuevo: botón "Administrar pago" por tarjeta vía Stripe Customer
-  Portal, ver abajo), `/mi-cuenta/cuenta` (email + logout).
+  Portal, ver abajo), `/mi-cuenta/cuenta` (email + logout),
+  `/mi-cuenta/ganancias` (nuevo, agregado el mismo 2026-07-26 —
+  **pestaña condicional**, solo visible si el email de la sesión matchea
+  un afiliado activo, ver sección "Sistema de afiliados con comisión
+  recurrente").
 - **`src/components/panel/filtro-tarjetas.tsx`** (`<FiltroTarjetas
   tarjetas mostrarFiltroPlan?>`): reutilizado entre `/admin/tarjetas`
   (con selector de plan) y `/mi-cuenta/tarjetas` (sin él). Filtro por tipo
@@ -1401,20 +1458,16 @@
   autoritativa del servidor (`/api/stripe/checkout/route.ts`, con el
   cliente admin) — una sola implementación en vez de duplicar la lógica
   de vencimiento/límite en TypeScript en dos lugares que podrían divergir.
-- **Punto exacto de inserción del uso**: dentro de
-  `procesarSuscripcionStripe()` (`lib/confirmar-suscripcion-stripe.ts`),
-  no en `crearCheckoutSession()` ni en el webhook
-  `checkout.session.completed` — ninguno de esos dos momentos confirma
-  que el pago se aprobó de verdad (la suscripción puede seguir
-  `incomplete` esperando 3DS y terminar rechazada). Se inserta justo
-  después de que la transición real a `estado: 'autorizada'` tiene éxito,
-  reutilizando la misma guarda de idempotencia que ya protege el resto de
-  la función (`nuevoEstado === "autorizada" && suscripcion.estado !==
-  nuevoEstado`) — sin tabla de dedup adicional. Si el insert de
-  `cupon_usos` falla, no se relanza el error (el pago y `tarjetas.plan_id`
-  ya están confirmados/sincronizados; perder la auditoría del cupón no
-  debe tumbar la confirmación real del pago) — se loguea para
-  investigar manualmente.
+- **Punto exacto de inserción del uso — REEMPLAZADO el 2026-07-26, ver
+  sección "Sistema de afiliados con comisión recurrente" más abajo**: esto
+  describía el diseño ORIGINAL (una fila de `cupon_usos` por suscripción,
+  insertada una sola vez dentro de `procesarSuscripcionStripe()` al pasar
+  a `'autorizada'`). Con el sistema de afiliados, la comisión se calcula
+  sobre CADA cobro/renovación, no solo la venta inicial — ese diseño de
+  una-fila-por-suscripción ya no aplica. Se deja este párrafo como
+  registro histórico de la decisión original, pero el comportamiento real
+  hoy es el de `registrarCobroDeCupon()` (dispara con `invoice.paid`, una
+  fila por invoice).
 - **`src/lib/cupones.ts`** (nuevo, separado de `configuracion.ts` —
   crecía demasiado): `getCupones`, `crearCupon` (objeto con los campos
   nuevos), `actualizarCupon`, `eliminarCupon` (nuevo — el `on delete set
@@ -1479,16 +1532,222 @@
   después (cupones y filas de `cupon_usos` de prueba borrados,
   confirmado sin rastro). `npm run build` + `tsc --noEmit` + `eslint`
   limpios en cada paso.
-- **Limitación de esta verificación, honesta**: no se probó el flujo
-  completo de principio a fin a través de un Checkout real de Stripe con
-  webhook (ver la verificación end-to-end ya documentada más arriba para
-  el flujo de pago general, que sigue vigente sin cambios) — la inserción
-  real del uso del cupón dentro de `procesarSuscripcionStripe()` se
-  verificó por inspección de código + los tests de `fn_cupon_es_valido`/
-  `cupon_usos` a nivel DB, no con un cobro de Stripe real de punta a
-  punta con un cupón aplicado. Si hace falta esa confirmación adicional,
-  es el próximo paso natural (requiere Stripe CLI en modo test, mismo
-  procedimiento ya usado varias veces en este archivo).
+- ✅ **La limitación que quedaba acá ("no se probó con un Checkout real de
+  Stripe de punta a punta") se resolvió el mismo día (2026-07-26)**: se
+  verificó con un cobro real de Stripe en modo test (cupón `E2EAFILMS1ARO00`,
+  30% off) — ver el resumen al final de la sección "Sistema de afiliados
+  con comisión recurrente" más abajo, que además extiende esa verificación
+  a 2 ciclos de facturación reales (no solo la venta inicial).
+
+## Sistema de afiliados con comisión recurrente (2026-07-26)
+
+### Decisión de negocio, confirmada explícitamente con el cliente
+- Un afiliado inicia sesión con el MISMO login de Google que ya usan los
+  dueños de tarjeta — si su email matchea un registro en `afiliados`, ve
+  una pestaña nueva "Ganancias" en Mi Cuenta (además de sus tabs normales
+  si también es dueño de tarjeta — un usuario puede ser ambas cosas).
+- **La comisión es RECURRENTE: se calcula sobre CADA cobro (venta inicial
+  + cada renovación), no solo sobre la venta inicial** — esto es lo que
+  obligó a cambiar el punto de captura de `cupon_usos` (ver abajo), un
+  fork real de arquitectura respecto al diseño original de la Parte B de
+  cupones (que solo capturaba la venta inicial, una fila por suscripción).
+- Un afiliado puede tener MÚLTIPLES cupones a la vez o a lo largo del
+  tiempo — el registro del afiliado es independiente de sus códigos, se
+  vinculan vía `cupones.afiliado_id` (FK nueva).
+- Cada afiliado tiene su PROPIO % de comisión — vive en `afiliados.
+  porcentaje_comision`, no en el cupón.
+- La comisión se calcula sobre el monto NETO (ya con el fee real de
+  Stripe restado), nunca sobre el bruto ni con un % estimado.
+- Alta de afiliados 100% manual por el admin — sin autoregistro.
+
+### Migraciones (dos, ambas aplicadas y verificadas)
+- `20260727000000_add_sistema_afiliados.sql`: tabla `afiliados` (`id uuid`,
+  `nombre`, `email` con índice único case-insensitive `lower(email)`,
+  `porcentaje_comision numeric(5,2)`, `activo`, `created_at`) — **sin FK a
+  `auth.users`, a propósito**: el admin puede dar de alta un afiliado por
+  su email antes de que esa persona haya iniciado sesión alguna vez, así
+  que el matching es en tiempo de consulta vía `auth.jwt()->>'email'`
+  (mismo patrón que `ADMIN_EMAIL` en RLS, usado en todo el proyecto).
+  Tabla `afiliado_pagos` (registro manual de pagos ya hechos: `monto`,
+  `fecha`, `nota`, `registrado_por` con `default (auth.jwt()->>'email')` —
+  no se puede spoofear desde el cliente) con el mismo patrón de auditoría
+  ya validado en `cupon_usos`: `afiliado_id` nullable + `on delete set
+  null` + snapshot de `afiliado_nombre`, para que el historial de pagos
+  sobreviva si el afiliado se borra. `cupones.afiliado_id` (FK nueva,
+  nullable) — `afiliado_nombre` (texto libre) se mantiene como snapshot
+  legacy/de respaldo. `cupon_usos` gana `afiliado_id`, `stripe_invoice_id`,
+  `comision_stripe`, `monto_neto`.
+- `20260727010000_fix_cupon_usos_stripe_invoice_id_unique.sql`: **bug real
+  encontrado en la verificación en vivo, no un ajuste preventivo**. El
+  diseño original de `stripe_invoice_id` era un índice ÚNICO PARCIAL
+  (`where stripe_invoice_id is not null`, para permitir múltiples filas
+  legacy con esa columna en null). Error real confirmado en los logs del
+  dev server al ejecutar el primer `upsert(..., {onConflict:
+  "stripe_invoice_id"})`: `there is no unique or exclusion constraint
+  matching the ON CONFLICT specification` (código Postgres `42P10`) —
+  Postgres exige que el `ON CONFLICT` incluya el mismo predicado `WHERE`
+  del índice parcial, algo que `supabase-js` no permite expresar. La
+  solución real es más simple que el diseño original: un `unique
+  constraint` normal en Postgres YA trata cada `NULL` como distinto de
+  cualquier otro `NULL` (nunca chocan entre sí) — no hacía falta el índice
+  parcial para permitir múltiples filas legacy en null, un constraint sin
+  condición `WHERE` ya lo permite igual, y SÍ funciona como target de
+  `ON CONFLICT`. Reemplazado: `drop index ...; alter table cupon_usos add
+  constraint cupon_usos_stripe_invoice_id_key unique (stripe_invoice_id)`.
+
+### Punto de captura: `invoice.paid`, no la transición de estado de la suscripción
+- **`registrarCobroDeCupon(invoice)`** (`lib/confirmar-suscripcion-stripe.ts`,
+  nuevo) reemplaza a la vieja `registrarUsoDeCupon()` — ya NO se llama
+  desde `procesarSuscripcionStripe()` (esa función volvió a su alcance
+  original: solo sincroniza `suscripciones.estado`/`tarjetas.plan_id`).
+  Se dispara con el evento `invoice.paid`, que confirma dispara igual en
+  la venta inicial que en cada renovación (mismo evento, un solo handler
+  cubre ambos casos) — inserta una fila de `cupon_usos` por CADA invoice
+  de Stripe (`stripe_invoice_id` es la clave de idempotencia real vía
+  `upsert(..., {onConflict: "stripe_invoice_id", ignoreDuplicates:
+  true})`, protege contra reintentos de webhook). Esto significa que
+  `cupon_usos` ya NO es "una fila por suscripción" (diseño original de la
+  Parte B de cupones) sino "una fila por cobro" — una suscripción con 5
+  renovaciones deja 5 filas, todas con el mismo `suscripcion_id` pero
+  `stripe_invoice_id` distinto.
+- **Efecto colateral en código ya shippeado, corregido en el mismo
+  cambio**: `getCuponesConRendimiento()` (`lib/cupones.ts`) calculaba
+  "tarjetas activas atribuibles" contando FILAS de `cupon_usos` — con
+  múltiples filas por suscripción eso sobre-contaba. Corregido: ahora
+  dedupea por `Set` de `suscripcion_id` antes de contar. `usosTotal`/
+  `ingresosGenerados` siguen sumando todas las filas sin cambios (es
+  correcto que sumen cada ciclo, no solo el primero).
+- **Race condition real encontrada en la verificación en vivo**: los
+  webhooks de Stripe no garantizan orden — `invoice.paid` llegó antes que
+  `checkout.session.completed` (`vincularCheckoutSession`) terminara de
+  escribir `stripe_subscription_id` en la primera compra, así que la
+  búsqueda de la suscripción por ese campo no encontraba nada y la fila no
+  se insertaba (fallaba en silencio, sin error). Corregido con el mismo
+  fallback que ya usa `procesarSuscripcionStripe()`: si no se encuentra
+  por `stripe_subscription_id`, cae a buscar por el `suscripcion_id` que
+  viaja en `invoice.parent.subscription_details.metadata` (snapshot de
+  los metadata de la suscripción al momento de finalizar el invoice,
+  poblado desde el 29 de junio de 2023 — no hace falta una llamada extra
+  a la API de Stripe, ya viaja en el propio invoice).
+
+### Fee real de Stripe — investigación de la API, dos hallazgos reales
+- **`intentarObtenerFeeReal()`**: el fee exacto vive en
+  `BalanceTransaction.fee` (centavos), accesible vía
+  `Charge.balance_transaction`. Camino real usado:
+  `invoice.payments.data[0].payment.payment_intent` →
+  `stripe.paymentIntents.retrieve(id, {expand:
+  ["latest_charge.balance_transaction"]})`. Reintenta hasta 3 veces con
+  1.5s de espera entre cada uno (Stripe: el `balance_transaction` puede
+  no estar listo todavía en el instante exacto de la confirmación,
+  captura asíncrona) — si nunca llega, `comision_stripe`/`monto_neto`
+  quedan en `null` y `getRendimientoAfiliado()` cae a un fallback
+  (`monto_neto ?? precio_final`, ligera sobreestimación temporal en vez
+  de excluir la venta).
+- **Hallazgo real #1**: `invoice.payments` **NO viene poblado ni siquiera
+  en el objeto completo que trae el payload del webhook** — hace falta
+  `expand: ["payments"]` explícito en un `stripe.invoices.retrieve()`
+  aparte. Sin este fix, `obtenerPaymentIntentId()` siempre devolvía
+  `null` y el fee nunca se capturaba (confirmado con una respuesta rápida
+  ~5ms de más, sin ningún reintento — el código ni llegaba a intentar la
+  llamada a Stripe). `obtenerPaymentIntentId()` ahora re-consulta el
+  invoice por su cuenta con ese expand en vez de confiar en el objeto que
+  ya tiene `registrarCobroDeCupon()`.
+- **Hallazgo real #2, descartó un diseño completo de respaldo antes de
+  escribir código**: el plan original (ver la propuesta previa a la
+  implementación) incluía un handler de `charge.updated` como respaldo
+  para el caso en que el fee no estuviera listo en el primer intento,
+  correlacionando `charge.invoice` → `stripe_invoice_id`. Al revisar los
+  tipos reales de `stripe` v22.3.2 instalados en el proyecto (no
+  documentación, los `.d.ts` reales) se confirmó que **ni `Charge` ni
+  `PaymentIntent` tienen ningún campo `invoice`** en esta versión de API
+  — no hay forma de ir de un cobro hacia atrás hasta su invoice. Se
+  descartó el handler de `charge.updated` por completo (no está en el
+  código, no hace falta suscribirlo en el dashboard de Stripe) y se
+  reemplazó por los reintentos con backoff dentro del mismo handler de
+  `invoice.paid`, que sí tiene el invoice en mano desde el principio.
+
+### `src/lib/afiliados.ts` (nuevo)
+`getAfiliados`/`crearAfiliado`/`actualizarAfiliado` (admin, CRUD),
+`getAfiliadoPropio` (RLS-scoped a la propia fila vía `afiliados_
+select_propio`, usado tanto para el gate de la pestaña "Ganancias" como
+por la propia página), `getRendimientoAfiliado(afiliadoId,
+porcentajeComision)` (compartido entre la vista de detalle del admin y
+"Ganancias" del afiliado — mismo cálculo, RLS ya escopea qué filas puede
+leer cada uno: `ventasBrutas`/`ventasNetas` sumadas de `cupon_usos`,
+`comisionGenerada = ventasNetas * pct/100`, `saldoPendiente =
+comisionGenerada - sum(afiliado_pagos.monto)`), `getPagosAfiliado`,
+`registrarPagoAfiliado` (admin), `getAfiliadosConResumen` (listado admin
+con rendimiento agregado). Todo con el cliente `supabase` normal (no
+service role) — mismo criterio que `cupones.ts`: las policies RLS ya dan
+el acceso correcto a cada rol.
+
+### UI
+- **`/admin/afiliados`**: listado (nombre, email, %, cobros, netas,
+  pendiente) con alta manual + detalle expandible por fila (editar
+  nombre/%/activo, ventas brutas/netas/comisión/saldo, códigos vigentes +
+  históricos, historial de pagos, form "Registrar pago" inline).
+- **`/mi-cuenta/ganancias`**: solo lectura (ventas netas atribuidas,
+  comisión, ya cobrado, saldo pendiente, historial de pagos) — la propia
+  página revalida con `getAfiliadoPropio()` (fail-closed, mismo criterio
+  que el gating de Agenda por `plan_id`), no confía solo en que la pestaña
+  esté oculta para alguien que navegue directo a la URL.
+- `mi-cuenta/layout.tsx`: `MI_CUENTA_TABS` (base, sin "Ganancias") +
+  `GANANCIAS_TAB` (constante aparte en `panel-tabs.ts`) insertada
+  condicionalmente vía `getAfiliadoPropio()` en un `useEffect` — la
+  pestaña aparece/desaparece según el email de la sesión, sin recargar la
+  página completa.
+- `admin/cupones/page.tsx`: el campo de texto libre "Afiliado" se
+  reemplazó por un `<select>` de afiliados activos (`getAfiliados()`), que
+  setea `afiliado_id` (fuente de verdad nueva) y auto-completa
+  `afiliado_nombre` (snapshot legacy) con el nombre del afiliado elegido.
+
+### Verificación end-to-end, con Stripe test clocks (no `stripe trigger`)
+- **`stripe trigger` no sirve para esto**: genera eventos de fixture
+  sintéticos que no correlacionan con una suscripción real nuestra (sin
+  `metadata.suscripcion_id`, sin nuestro `stripe_subscription_id`) — no
+  dispara nuestro código de negocio de forma realista.
+- **Test clocks sí**: se creó un `Customer` anclado a un
+  `test_clock` (`stripe.testHelpers.testClocks.create()`), se le asoció a
+  una Checkout Session real (replicando exactamente los params de
+  `crearCheckoutSession()` + `customer: customerId`, sin tocar el código
+  real de la app — el resto del flujo, webhooks incluidos, corrió 100%
+  real) completada en el navegador real con `4242 4242 4242 4242`. Ciclo
+  1 (venta inicial) confirmado con `cupon_usos` real: `comision_stripe:
+  7.71`, `monto_neto: 81.39` (89.10 - 7.71, exacto). Se avanzó el clock
+  32 días (`testClocks.advance()`, polling hasta `status: "ready"`) —
+  Stripe generó y cobró una renovación real SIN intervención del
+  navegador (usa el método de pago ya guardado), confirmado con
+  `invoice.paid` real llegando al webhook.
+- **Resultado: 2 filas distintas en `cupon_usos` para la misma
+  `suscripcion_id`**, `stripe_invoice_id` distinto en cada una, mismo
+  monto/fee (mismo precio cada ciclo). `getRendimientoAfiliado()`
+  verificado exacto en las dos UIs reales (sesiones inyectadas, admin y
+  afiliado): brutas $178.20, netas $162.78, comisión (20%) $32.56.
+  Se registró un pago real de $20 desde la UI del admin → saldo pendiente
+  recalculó a $12.56 en AMBAS vistas (admin y "Ganancias" del afiliado).
+- Cancelación real (`testClocks.del()`, cascada: customer + subscription +
+  invoices) confirmó que `customer.subscription.deleted` sincronizó
+  `suscripciones.estado: 'cancelada'` / `tarjetas.plan_id: null` — mismo
+  comportamiento fail-closed ya validado en sesiones anteriores. Limpieza
+  completa después: todas las filas de prueba (`afiliados`,
+  `afiliado_pagos`, `cupon_usos`, `cupones`, `tarjetas`, `suscripciones`,
+  2 usuarios de auth) borradas y confirmadas en cero; keys de Stripe
+  restauradas a live (diff byte-a-byte contra backup, confirmado
+  idéntico); `npm run build` + `tsc --noEmit` + `eslint` limpios.
+
+### Pendiente
+- 🔴 **Backfill de `afiliado_id` en cupones/cupon_usos legacy**: los
+  cupones que ya tenían `afiliado_nombre` (texto libre) de antes de este
+  sistema NO tienen `afiliado_id` poblado — no hay ningún afiliado real
+  dado de alta todavía en producción contra el cual matchear. Cuando el
+  admin dé de alta afiliados reales, hace falta un backfill de una sola
+  vez (`UPDATE cupones/cupon_usos SET afiliado_id = ... WHERE
+  lower(trim(afiliado_nombre)) = lower(trim(afiliados.nombre))`) para que
+  su historial pre-existente quede vinculado — no automático, requiere
+  que primero existan las filas reales de `afiliados` para matchear.
+- Ver el punto ya marcado 🔴 más arriba (sección de Stripe): agregar
+  `invoice.paid` al webhook LIVE del dashboard de Stripe — sin esto el
+  sistema de afiliados no registra nada en producción real todavía.
 
 ## Pendiente técnico sin resolver
 - `eventos_metricas` no permite insert desde authenticated/anon a propósito (por
