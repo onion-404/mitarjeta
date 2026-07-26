@@ -1,6 +1,10 @@
 import type Stripe from "stripe"
 
-import { procesarSuscripcionStripe, vincularCheckoutSession } from "@/lib/confirmar-suscripcion-stripe"
+import {
+  procesarSuscripcionStripe,
+  registrarCobroDeCupon,
+  vincularCheckoutSession,
+} from "@/lib/confirmar-suscripcion-stripe"
 import { getStripe } from "@/lib/stripe"
 
 // Reemplaza (para el cobro recurrente) al webhook de Mercado Pago —
@@ -42,6 +46,13 @@ export async function POST(request: Request) {
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         await procesarSuscripcionStripe(event.data.object.id)
+        break
+      }
+      case "invoice.paid": {
+        // Comisión de afiliados (ver CLAUDE.md): registra CADA cobro
+        // atribuido a un cupón, no solo la venta inicial — corre
+        // independiente de la sincronización de estado/plan_id de arriba.
+        await registrarCobroDeCupon(event.data.object)
         break
       }
       case "invoice.payment_failed": {

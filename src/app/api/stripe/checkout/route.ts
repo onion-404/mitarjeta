@@ -119,15 +119,28 @@ export async function POST(request: Request) {
     ? (configuracion?.descuento_tarjeta_adicional_pct ?? 0)
     : 0
 
+  // fn_cupon_es_valido() (misma función que usa el preview del cliente en
+  // lib/cupones.ts) es la única fuente de verdad de "¿este código sirve
+  // hoy?" — activo, no vencido, no alcanzó su límite de usos real (contra
+  // filas de cupon_usos, no un contador cacheado). Esta es la validación
+  // AUTORITATIVA: el preview del cliente puede haber quedado desactualizado
+  // (alguien más agotó el cupón entre que se mostró el preview y este
+  // submit), así que se re-valida acá antes de aceptar el descuento.
   let cuponValidado: { codigo: string; porcentaje_descuento: number } | null = null
   if (cuponCodigo?.trim()) {
-    const { data: cupon } = await admin
-      .from("cupones")
-      .select("codigo, porcentaje_descuento")
-      .eq("codigo", cuponCodigo.trim().toUpperCase())
-      .eq("activo", true)
-      .maybeSingle()
-    cuponValidado = cupon ?? null
+    const codigoNormalizado = cuponCodigo.trim().toUpperCase()
+    const { data: esValido } = await admin.rpc("fn_cupon_es_valido", {
+      p_codigo: codigoNormalizado,
+    })
+    if (esValido) {
+      const { data: cupon } = await admin
+        .from("cupones")
+        .select("codigo, porcentaje_descuento")
+        .eq("codigo", codigoNormalizado)
+        .eq("activo", true)
+        .maybeSingle()
+      cuponValidado = cupon ?? null
+    }
   }
 
   const descuentoAplicado = Math.max(descuentoAdicionalPct, cuponValidado?.porcentaje_descuento ?? 0)

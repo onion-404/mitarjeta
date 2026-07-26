@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-07-25. Este documento es la fuente de verdad para que
+> Última actualización: 2026-07-26. Este documento es la fuente de verdad para que
 > cualquier sesión nueva entienda el estado real del proyecto sin releer el historial
 > de chat. Actualizarlo cuando cambie algo de lo que describe.
 
@@ -1269,6 +1269,226 @@
   necesariamente el look pulido que tiene hoy el modo mobile inmersivo de
   `TarjetaForm`. No es un bug (nada queda invisible ni rompe), pero vale
   una revisión visual real en un dispositivo/emulador cuando se pueda.
+
+## Rediseño de arquitectura: shell de paneles admin/mi-cuenta + sistema de
+## cupones avanzado (2026-07-26)
+- Reemplaza el dashboard admin de una sola página (~900 líneas) y el
+  `/mi-cuenta` de una sola pantalla por un shell de navegación por pestañas
+  reutilizable entre los dos paneles, patrón Vercel/Stripe Dashboard —
+  rutas propias por sección (no tabs por estado de React, cada tab es una
+  ruta real con back-button funcional).
+- **`src/components/panel/panel-shell.tsx`** (`<PanelShell titulo tabs>`,
+  presentacional puro, sin fetch de sesión propio) + **`panel-tabs.ts`**
+  (`ADMIN_TABS`/`MI_CUENTA_TABS`, arrays constantes de `{href, label,
+  icon}`). Desktop: sidebar izquierdo fijo. Mobile: topbar + hamburguesa
+  que abre un `Drawer` de `@base-ui/react/drawer` deslizando desde la
+  **izquierda** (`swipeDirection="left"`, mismo primitivo que ya usaba
+  `TarjetaForm` para su bottom-sheet, configurado distinto — decisión
+  explícita: un panel de navegación entre secciones necesita verse
+  completo de un vistazo, a diferencia del patrón de pills horizontales de
+  `TarjetaForm`, que sigue intacto y es intencionalmente distinto).
+- **`/admin/layout.tsx`** (nuevo): auth-gate único para toda la sección
+  (antes cada página admin repetía el chequeo de `ADMIN_EMAIL`) + monta
+  `<HeaderGlobal />` + `<PanelShell tabs={ADMIN_TABS}>`. Rutas:
+  `/admin/dashboard` ("Resumen", solo stat tiles — ver más abajo por qué
+  cambiaron), `/admin/tarjetas` (listado global filtrable por tipo/plan/
+  estado, reemplaza "Ventas recientes", + gráficos de distribución por
+  plan y uso de agenda que antes vivían en el dashboard), `/admin/
+  suscripciones` (listado fila-por-fila nuevo — antes solo había
+  agregados — + MRR por plan + churn), `/admin/cupones` (ver sistema de
+  cupones abajo), `/admin/cobro-manual` (se le quitó su propio header,
+  ahora vive dentro del shell), `/admin/configuracion` (nuevo: CRUD real
+  de `planes.precio_mensual/anual` + editor de
+  `descuento_tarjeta_adicional_pct`, pedido explícito del cliente que no
+  tenía UI hasta ahora).
+- **`/mi-cuenta/layout.tsx`** (nuevo): mismo patrón pero con `<AuthMethods>`
+  inline si `session === null` (no redirect a `/login`, esa página está
+  hardcodeada al acceso admin). Rutas: `/mi-cuenta` ("Resumen"), `/mi-
+  cuenta/tarjetas` (filtrable, sin selector de plan — un usuario tiene
+  pocas tarjetas), `/mi-cuenta/estadisticas` (nuevo: vista agregada de
+  TODAS las tarjetas del usuario, ver abajo), `/mi-cuenta/suscripcion`
+  (nuevo: botón "Administrar pago" por tarjeta vía Stripe Customer
+  Portal, ver abajo), `/mi-cuenta/cuenta` (email + logout).
+- **`src/components/panel/filtro-tarjetas.tsx`** (`<FiltroTarjetas
+  tarjetas mostrarFiltroPlan?>`): reutilizado entre `/admin/tarjetas`
+  (con selector de plan) y `/mi-cuenta/tarjetas` (sin él). Filtro por tipo
+  lee de un array constante (`TARJETA_TIPO_OPTIONS`), no de pestañas —
+  agregar un tipo de tarjeta nuevo a futuro es una entrada en ese array,
+  cero cambios estructurales.
+- **Home page (`src/app/page.tsx`)**: se quitó la sección de precios del
+  modelo viejo de pago único anual ("Un solo pago, todo un año..." con
+  `configuracion.precio_regular/precio_lanzamiento/promocion_*`) —
+  encontrada todavía viva ahí durante este trabajo, contradecía el modelo
+  real de 3 planes por suscripción. Reemplazada por un teaser liviano sin
+  precios propios (evita desincronizarse de `/planes`, la fuente real) →
+  botón a `/planes`. `configuracion.precio_regular/precio_lanzamiento/
+  promocion_*` quedaron huérfanas (sin ninguna UI de edición ni lectura),
+  no se borraron de la tabla — sin uso real hoy. `PromoCountdown`
+  (`src/components/landing/promo-countdown.tsx`) quedó sin caller, no se
+  borró (mismo criterio de código muerto ya usado en el proyecto).
+- **Stat tiles del Resumen admin corregidos (mismo día)**: "Ventas
+  totales"/"Pagos aprobados"/"Pagos pendientes" leían `estado_pago`/
+  `precio_pagado` (modelo viejo, huérfano — ver el bug de `estado_pago`
+  documentado más abajo en este archivo) y ya no reflejaban nada real
+  desde que el flujo de Stripe dejó de escribirlos. Reemplazados por:
+  "Tarjetas con plan activo" (`tarjetas.plan_id is not null`), "Tasa de
+  conversión" (% con plan / total), "Suscripciones pendientes"
+  (`suscripciones.estado = 'pendiente'`, checkouts iniciados y nunca
+  confirmados — señal nueva, no existía como tile en ningún lado). "MRR
+  total" y "Churn (30 días)" se mantuvieron sin cambios.
+- **Estadísticas agregadas (`/mi-cuenta/estadisticas`)**: extiende
+  `src/lib/metricas.ts` con variantes multi-tarjeta
+  (`getTotalesPorPeriodoUsuario`/`getSerieDiariaUsuario`/
+  `getEventosDetalleUsuario`, todas `tarjeta_id in (...)`). Los totales y
+  la tendencia se suman sin importar el plan de cada tarjeta; el desglose
+  (top enlaces/servicios/productos, únicos/recurrentes) solo se calcula
+  con las tarjetas que individualmente califican para
+  `metricas_desglose`, con aviso explícito en la UI si el usuario tiene
+  tarjetas mixtas ("Desglose disponible para N de tus M tarjetas").
+- **Stripe Customer Portal (`/mi-cuenta/suscripcion`)**: el plan vive en
+  la tarjeta, no en el usuario, y cada suscripción tiene su propio
+  `stripe_customer_id` (Customer nuevo por Checkout, no compartido entre
+  tarjetas del mismo usuario) — no existe "un portal único de la
+  cuenta". Botón "Administrar pago" **por tarjeta**, deshabilitado hasta
+  que esa suscripción puntual ya tenga `stripe_customer_id` (pasó por
+  `checkout.session.completed`). `crearPortalSession()`
+  (`lib/stripe-suscripciones.ts`) + `POST /api/stripe/portal` (Bearer
+  token, verifica ownership, usa la suscripción MÁS RECIENTE con
+  `stripe_customer_id` de esa tarjeta —
+  `getSuscripcionesDeUsuario()` en `lib/tarjetas.ts`). **Pendiente de que
+  el usuario lo haga manualmente**: configurar el "Customer portal"
+  default en el Dashboard de Stripe (Settings → Billing → Customer
+  portal) — sin eso, `billingPortal.sessions.create()` falla con "No
+  configuration provided". Verificado en vivo contra la API real de
+  Stripe con un `stripe_customer_id` inventado: `502` limpio con mensaje
+  claro en la UI (`No such customer`), sin crash — confirma que el
+  circuito completo (botón → fetch → ownership check → llamada a
+  Stripe → error) funciona; la config del portal en sí queda pendiente
+  del usuario.
+
+### Sistema de cupones avanzado (afiliados, vencimiento, límite de usos)
+- Migración `20260726000000_add_cupones_avanzado.sql`: **APLICADA y
+  verificada** (columnas nuevas confirmadas con `information_schema`
+  real, `cupon_usos` confirmada queryable, `fn_cupon_es_valido()`
+  confirmada `true`/`false` contra cupones reales). `cupones` gana
+  `afiliado_nombre`, `fecha_vencimiento`, `limite_usos` (las tres
+  nullable = sin restricción). Tabla nueva `cupon_usos`: auditoría de
+  cada uso exitoso, con snapshot congelado de `codigo`/`afiliado_nombre`
+  al momento del uso (sobrevive el borrado del cupón padre).
+- **Bug real encontrado y corregido durante el diseño de la migración**:
+  el primer intento de aplicar la migración falló porque asumía
+  `cupones.id uuid` — confirmado con una query real (introspección
+  OpenAPI de PostgREST + `select id from cupones`) que `cupones.id` es en
+  realidad **`bigint`** (a diferencia de `tarjetas.id`/`suscripciones.id`,
+  que sí son `uuid` vía `gen_random_uuid()`) — no todas las tablas del
+  proyecto usan el mismo tipo de PK. `cupon_usos.cupon_id` corregido a
+  `bigint`.
+- **Las tres FK de `cupon_usos` (`cupon_id`, `tarjeta_id`,
+  `suscripcion_id`) son nullable con `on delete set null`, ninguna en
+  cascada** — decisión explícita del cliente: si se borra el cupón, la
+  tarjeta, o se cancela y borra la suscripción (en cualquier orden, meses
+  después), la fila de auditoría sobrevive con la FK correspondiente en
+  `null`, nunca se pierde el registro de que ese código generó esa venta.
+  El snapshot (`codigo`, `afiliado_nombre`, `monto_descontado`,
+  `precio_final`) es lo que mantiene la fila útil incluso con las tres FK
+  en null a la vez.
+- **`fn_cupon_es_valido(p_codigo)`** (Postgres, `security definer`, grant
+  a `anon`/`authenticated`): única fuente de verdad de "¿este código
+  sirve hoy?" (activo + no vencido + no alcanzó su límite de usos real,
+  contado contra filas reales de `cupon_usos`, no un contador cacheado).
+  Llamada tanto desde el preview del cliente (`validarCupon()` en
+  `lib/cupones.ts`, usado por `TarjetaForm`) como desde la validación
+  autoritativa del servidor (`/api/stripe/checkout/route.ts`, con el
+  cliente admin) — una sola implementación en vez de duplicar la lógica
+  de vencimiento/límite en TypeScript en dos lugares que podrían divergir.
+- **Punto exacto de inserción del uso**: dentro de
+  `procesarSuscripcionStripe()` (`lib/confirmar-suscripcion-stripe.ts`),
+  no en `crearCheckoutSession()` ni en el webhook
+  `checkout.session.completed` — ninguno de esos dos momentos confirma
+  que el pago se aprobó de verdad (la suscripción puede seguir
+  `incomplete` esperando 3DS y terminar rechazada). Se inserta justo
+  después de que la transición real a `estado: 'autorizada'` tiene éxito,
+  reutilizando la misma guarda de idempotencia que ya protege el resto de
+  la función (`nuevoEstado === "autorizada" && suscripcion.estado !==
+  nuevoEstado`) — sin tabla de dedup adicional. Si el insert de
+  `cupon_usos` falla, no se relanza el error (el pago y `tarjetas.plan_id`
+  ya están confirmados/sincronizados; perder la auditoría del cupón no
+  debe tumbar la confirmación real del pago) — se loguea para
+  investigar manualmente.
+- **`src/lib/cupones.ts`** (nuevo, separado de `configuracion.ts` —
+  crecía demasiado): `getCupones`, `crearCupon` (objeto con los campos
+  nuevos), `actualizarCupon`, `eliminarCupon` (nuevo — el `on delete set
+  null` hace que sea seguro sin pasos extra), `validarCupon` (ahora llama
+  a `fn_cupon_es_valido` antes del select), `getCuponesConRendimiento`
+  (nuevo — agrupado por **`codigo`**, no por `cupon_id`, para que un
+  cupón borrado siga apareciendo con su historial intacto: usos totales,
+  ingresos generados —`sum(precio_final)`, nunca depende de las FK—, y
+  tarjetas activas atribuibles —cruza `suscripcion_id` contra
+  `suscripciones.estado = 'autorizada'`, **null-safe**: un uso con
+  `suscripcion_id` en null simplemente no suma a "activas" pero sí sigue
+  sumando a usos/ingresos—). `configuracion.ts` quedó solo con
+  `getConfiguracionActiva`/`actualizarConfiguracion`.
+- **UI admin (`/admin/cupones`)**: crear (código, %, afiliado opcional,
+  vencimiento opcional, límite opcional) + listado expandible (click en
+  una fila abre edición inline: todos los campos + toggle activo +
+  Guardar + Eliminar) + sección aparte "Cupones eliminados con historial"
+  (códigos que ya no existen en `cupones` pero sí tienen filas en
+  `cupon_usos`, de solo lectura). Estado derivado en el cliente
+  (vigente/inactivo/vencido/agotado) comparando `fecha_vencimiento`/
+  `limite_usos` contra los datos ya traídos — no una columna en DB.
+  Eliminar muestra un mensaje de confirmación distinto si el cupón tiene
+  usos registrados ("se va a borrar el cupón, pero el historial... se
+  conserva") vs. si no tiene ninguno.
+- **Bug real encontrado y corregido durante la verificación en vivo**: el
+  campo de vencimiento en el formulario de edición mostraba el día
+  siguiente al que realmente se había elegido (ej. elegir 15 de enero
+  volvía a mostrar 16 de enero al reabrir la edición). Causa: la fecha se
+  guarda como `new Date("YYYY-MM-DDT23:59:59").toISOString()` (interpreta
+  el string en hora LOCAL del navegador, lo convierte a UTC para guardar)
+  pero se releía con `iso.slice(0, 10)` (toma el día en UTC directo, sin
+  convertir de vuelta a local) — en un huso horario detrás de UTC (como
+  México), 23:59:59 local cae después de medianoche UTC, así que el
+  slice mostraba el día siguiente. Corregido: `paraInputDate()` ahora usa
+  `new Date(iso).getFullYear()/getMonth()/getDate()` (getters locales,
+  revierten exactamente la misma conversión) en vez de recortar el string
+  UTC crudo.
+- **Verificado de punta a punta con datos y sesiones reales** (no
+  simulado): (1) a nivel DB con un script real usando el service role —
+  crear cupón con `limite_usos: 1`, confirmar `fn_cupon_es_valido` en
+  `true`, registrar 1 uso real en `cupon_usos`, confirmar que pasa a
+  `false` (agotado) tanto con el cliente admin como con el cliente
+  **anon** (mismo camino que usa `validarCupon()` del lado del cliente);
+  cupón con `fecha_vencimiento` de ayer → `false` (vencido); borrar el
+  cupón agotado → la fila de `cupon_usos` sigue existiendo con `cupon_id
+  = null` y el snapshot de `codigo` intacto; limpieza completa después,
+  cero rastro. (2) en el navegador real, con una sesión real de la cuenta
+  admin (`emuna.interno@gmail.com`, inyectada vía magic link + verifyOtp
+  de la Admin API — no destructivo, no cambia contraseña ni vínculo de
+  Google): crear un cupón real vía el formulario de la UI (con afiliado +
+  vencimiento + límite), confirmar que aparece con los datos correctos;
+  expandir y editar (cambiar % de 25 a 40), confirmar que persiste;
+  sembrar 2 usos reales para un segundo cupón de prueba vía service role
+  (simulando pagos confirmados) y confirmar que el rendimiento se ve
+  agregado correctamente en la UI (2 usos, $250 generados, 0 activas —
+  correcto, sin `suscripcion_id`); eliminarlo desde la UI (con
+  `window.confirm` stubbeado para no bloquear la sesión de automatización,
+  nunca clickeado un diálogo nativo real) y confirmar el mensaje de
+  confirmación exacto ("Este cupón tiene 2 usos registrados...") y que
+  el cupón eliminado reaparece correctamente en la sección "Cupones
+  eliminados con historial" con su rendimiento intacto. Limpieza completa
+  después (cupones y filas de `cupon_usos` de prueba borrados,
+  confirmado sin rastro). `npm run build` + `tsc --noEmit` + `eslint`
+  limpios en cada paso.
+- **Limitación de esta verificación, honesta**: no se probó el flujo
+  completo de principio a fin a través de un Checkout real de Stripe con
+  webhook (ver la verificación end-to-end ya documentada más arriba para
+  el flujo de pago general, que sigue vigente sin cambios) — la inserción
+  real del uso del cupón dentro de `procesarSuscripcionStripe()` se
+  verificó por inspección de código + los tests de `fn_cupon_es_valido`/
+  `cupon_usos` a nivel DB, no con un cobro de Stripe real de punta a
+  punta con un cupón aplicado. Si hace falta esa confirmación adicional,
+  es el próximo paso natural (requiere Stripe CLI en modo test, mismo
+  procedimiento ya usado varias veces en este archivo).
 
 ## Pendiente técnico sin resolver
 - `eventos_metricas` no permite insert desde authenticated/anon a propósito (por

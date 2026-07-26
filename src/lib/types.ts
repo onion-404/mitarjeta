@@ -142,10 +142,67 @@ export interface Configuracion {
 }
 
 export interface Cupon {
-  id: string
+  id: number
   codigo: string
   porcentaje_descuento: number
   activo: boolean
+  afiliado_nombre: string | null
+  afiliado_id: string | null
+  fecha_vencimiento: string | null
+  limite_usos: number | null
+  created_at: string
+}
+
+// Auditoría de CADA cobro (venta inicial + cada renovación) atribuido a un
+// cupón — una fila por invoice de Stripe, no una por suscripción (ver
+// migración 20260727000000_add_sistema_afiliados.sql: la comisión de
+// afiliados es recurrente, se calcula sobre cada cobro). Snapshot
+// congelado al momento de la confirmación de pago (codigo/afiliado_nombre
+// sobreviven aunque se borre el cupón, la tarjeta, la suscripción o el
+// afiliado — todas esas FK son nullable con ON DELETE SET NULL, la fila
+// nunca se borra en cascada). comision_stripe/monto_neto pueden llegar
+// null temporalmente (lag async del balance_transaction de Stripe, ver
+// backfillComisionStripe).
+export interface CuponUso {
+  id: string
+  cupon_id: number | null
+  afiliado_id: string | null
+  tarjeta_id: string | null
+  suscripcion_id: string | null
+  stripe_invoice_id: string | null
+  codigo: string
+  afiliado_nombre: string | null
+  monto_descontado: number
+  precio_final: number
+  comision_stripe: number | null
+  monto_neto: number | null
+  created_at: string
+}
+
+// Alta 100% manual por el admin — sin autoregistro. email matchea contra
+// el login de Google (mismo email que ya usan los dueños de tarjeta) para
+// habilitar la pestaña "Ganancias" en Mi Cuenta.
+export interface Afiliado {
+  id: string
+  nombre: string
+  email: string
+  porcentaje_comision: number
+  activo: boolean
+  created_at: string
+}
+
+// Registro manual de un pago ya realizado a un afiliado — afiliado_id
+// nullable con ON DELETE SET NULL (mismo patrón que cupon_usos), el
+// snapshot de afiliado_nombre mantiene la fila útil aunque se borre el
+// afiliado. Solo lectura para el propio afiliado, CRUD para el admin.
+export interface AfiliadoPago {
+  id: string
+  afiliado_id: string | null
+  afiliado_nombre: string
+  monto: number
+  fecha: string
+  nota: string | null
+  registrado_por: string
   created_at: string
 }
 

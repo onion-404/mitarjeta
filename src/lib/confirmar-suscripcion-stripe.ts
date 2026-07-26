@@ -181,3 +181,169 @@ export async function procesarSuscripcionStripe(stripeSubscriptionId: string): P
     throw new Error(`No se pudo actualizar el plan de la tarjeta: ${errorTarjeta.message}`)
   }
 }
+
+/**
+ * Extrae el id del PaymentIntent que pagó una factura — camino confirmado
+ * contra los tipos reales de `stripe` v22.3.2 instalados en este proyecto
+ * (InvoicePayments.d.ts): `invoice.payments.data[].payment.payment_intent`,
+ * NO `invoice.payment_intent` (ese campo top-level ya no existe en esta
+ * versión de API, mismo tipo de drift ya documentado en CLAUDE.md para
+ * `current_period_end`/`invoice.subscription`). Solo poblado para invoices
+ * finalizadas desde el 15 de marzo de 2019 — siempre cierto para nosotros.
+ *
+ * `invoice.payments` NO viene poblado por default — ni siquiera en el
+ * objeto completo que trae el payload del webhook — hace falta pedirlo
+ * con `expand: ["payments"]` en un retrieve aparte (confirmado en la
+ * verificación en vivo: sin este expand, `invoice.payments` llega
+ * `undefined`). Por eso esta función re-consulta el invoice por su cuenta
+ * en vez de confiar en el objeto que ya tiene `registrarCobroDeCupon`.
+ */
+async function obtenerPaymentIntentId(stripe: Stripe, invoiceId: string): Promise<string | null> {
+  const invoiceConPagos = await stripe.invoices.retrieve(invoiceId, { expand: ["payments"] })
+  const pago = invoiceConPagos.payments?.data[0]?.payment
+  const paymentIntent = pago?.payment_intent
+  if (!paymentIntent) return null
+  return typeof paymentIntent === "string" ? paymentIntent : paymentIntent.id
+}
+
+/**
+ * Fee real de Stripe para ESTE cobro puntual — nunca un % estimado.
+ * `balance_transaction.fee` puede no estar listo todavía en el instante
+ * exacto en que se confirma el pago (Stripe: "the balance_transaction
+ * field... could be null immediately after confirmation" con captura
+ * async) — se reintenta unas pocas veces con una espera corta antes de
+ * resignarse a dejarlo en null (se autocorregiría en la próxima
+ * renovación si esto pasara, no hay backfill retroactivo separado: no
+ * existe un campo confiable de Charge/PaymentIntent que apunte de vuelta
+ * al Invoice en esta versión de API, confirmado revisando los tipos reales
+ * — Charge no tiene `invoice`, PaymentIntent tampoco).
+ */
+async function intentarObtenerFeeReal(
+  stripe: Stripe,
+  invoice: Stripe.Invoice
+): Promise<{ comisionStripe: number | null; montoNeto: number | null }> {
+  const precioFinal = invoice.amount_paid / 100
+  const paymentIntentId = await obtenerPaymentIntentId(stripe, invoice.id as string)
+  if (!paymentIntentId) return { comisionStripe: null, montoNeto: null }
+
+  for (let intento = 0; intento < 3; intento++) {
+    if (intento > 0) await new Promise((resolve) => setTimeout(resolve, 1500))
+
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId, {
+      expand: ["latest_charge.balance_transaction"],
+    })
+    const charge = typeof paymentIntent.latest_charge === "object" ? paymentIntent.latest_charge : null
+    const balanceTransaction =
+      charge && typeof charge.balance_transaction === "object" ? charge.balance_transaction : null
+
+    if (balanceTransaction) {
+      const comisionStripe = balanceTransaction.fee / 100
+      return { comisionStripe, montoNeto: precioFinal - comisionStripe }
+    }
+  }
+
+  return { comisionStripe: null, montoNeto: null }
+}
+
+/**
+ * `invoice.paid`: registra CADA cobro atribuido a un cupón — no solo la
+ * venta inicial, también cada renovación (decisión de negocio confirmada:
+ * la comisión de afiliados es recurrente sobre cada cobro, ver CLAUDE.md).
+ * Reemplaza a la vieja `registrarUsoDeCupon()`, que solo corría una vez
+ * por suscripción desde `procesarSuscripcionStripe` — `invoice.paid` ya
+ * dispara igual en el primer cobro (confirmado con el log real de
+ * `stripe listen` de la verificación de Parte B), así que este único
+ * handler cubre ambos casos sin duplicar lógica.
+ *
+ * Idempotencia: `stripe_invoice_id` tiene un unique constraint en
+ * `cupon_usos` (un constraint normal, no un índice parcial — Postgres ya
+ * trata cada NULL como distinto de cualquier otro NULL, así que las filas
+ * legacy sin `stripe_invoice_id` no chocan entre sí; ver migración
+ * 20260727010000, corrigió un primer intento con índice parcial que no
+ * funcionaba como target de ON CONFLICT desde supabase-js) — el `upsert`
+ * con `ignoreDuplicates` hace que un reintento de webhook de Stripe para
+ * el mismo invoice no duplique la fila, sin necesitar una tabla de dedup
+ * aparte.
+ */
+export async function registrarCobroDeCupon(invoice: Stripe.Invoice): Promise<void> {
+  const stripe = getStripe()
+  if (!stripe) return
+
+  const subscriptionDetails = invoice.parent?.subscription_details
+  const subscriptionRef = subscriptionDetails?.subscription
+  const subscriptionId = typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef?.id
+  if (!subscriptionId) return
+
+  const admin = getSupabaseAdmin()
+  if (!admin) {
+    throw new Error("Supabase admin no disponible: falta SUPABASE_SERVICE_ROLE_KEY.")
+  }
+
+  let { data: suscripcion } = await admin
+    .from("suscripciones")
+    .select("id, tarjeta_id, precio_base, cupon_codigo")
+    .eq("stripe_subscription_id", subscriptionId)
+    .maybeSingle()
+
+  // Los webhooks de Stripe no garantizan orden: `invoice.paid` puede llegar
+  // antes de que `checkout.session.completed` (vincularCheckoutSession)
+  // termine de escribir `stripe_subscription_id` — confirmado en la
+  // verificación en vivo, no una hipótesis (el primer intento real de este
+  // handler no encontró la suscripción por esa razón exacta). Mismo
+  // fallback que ya usa procesarSuscripcionStripe: caer al
+  // `suscripcion_id` que viaja en los metadata de la suscripción — acá ya
+  // llega snapshotteado en el propio invoice
+  // (`subscription_details.metadata`, poblado desde el 29 de junio de
+  // 2023), sin necesitar una llamada extra a la API de Stripe.
+  if (!suscripcion) {
+    const suscripcionIdMeta = subscriptionDetails?.metadata?.suscripcion_id
+    if (!suscripcionIdMeta) return
+
+    const { data: porMetadata } = await admin
+      .from("suscripciones")
+      .select("id, tarjeta_id, precio_base, cupon_codigo")
+      .eq("id", suscripcionIdMeta)
+      .maybeSingle()
+    suscripcion = porMetadata
+  }
+
+  if (!suscripcion?.cupon_codigo) return // no hay afiliado/cupón que atribuir a este cobro
+
+  const precioFinal = invoice.amount_paid / 100
+  const montoDescontado = suscripcion.precio_base - precioFinal
+  const { comisionStripe, montoNeto } = await intentarObtenerFeeReal(stripe, invoice)
+
+  const { data: cupon } = await admin
+    .from("cupones")
+    .select("id, afiliado_id, afiliado_nombre")
+    .eq("codigo", suscripcion.cupon_codigo)
+    .maybeSingle()
+
+  const { error: errorUso } = await admin.from("cupon_usos").upsert(
+    {
+      cupon_id: cupon?.id ?? null,
+      afiliado_id: cupon?.afiliado_id ?? null,
+      tarjeta_id: suscripcion.tarjeta_id,
+      suscripcion_id: suscripcion.id,
+      stripe_invoice_id: invoice.id,
+      codigo: suscripcion.cupon_codigo,
+      afiliado_nombre: cupon?.afiliado_nombre ?? null,
+      monto_descontado: montoDescontado,
+      precio_final: precioFinal,
+      comision_stripe: comisionStripe,
+      monto_neto: montoNeto,
+    },
+    { onConflict: "stripe_invoice_id", ignoreDuplicates: true }
+  )
+
+  if (errorUso) {
+    // No se relanza: el pago ya está confirmado (esto corre independiente
+    // de la sincronización de plan_id/estado, que ya pasó por su propio
+    // camino en procesarSuscripcionStripe) — perder el registro de
+    // auditoría del cupón no debe hacer fallar la confirmación del pago.
+    console.error(
+      `[confirmar-suscripcion-stripe] No se pudo registrar el cobro del cupón (invoice=${invoice.id}, suscripcion_id=${suscripcion.id}):`,
+      errorUso
+    )
+  }
+}

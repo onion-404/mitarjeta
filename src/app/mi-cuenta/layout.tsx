@@ -4,10 +4,11 @@ import type { Session } from "@supabase/supabase-js"
 import { Loader2 } from "lucide-react"
 import * as React from "react"
 
+import { getAfiliadoPropio } from "@/lib/afiliados"
 import { AuthMethods } from "@/components/auth/auth-methods"
 import { HeaderGlobal } from "@/components/header-global"
 import { PanelShell } from "@/components/panel/panel-shell"
-import { MI_CUENTA_TABS } from "@/components/panel/panel-tabs"
+import { GANANCIAS_TAB, MI_CUENTA_TABS } from "@/components/panel/panel-tabs"
 import { supabase } from "@/lib/supabase"
 
 // Auth-gate único para toda la sección /mi-cuenta/* — antes vivía inline en
@@ -16,6 +17,7 @@ import { supabase } from "@/lib/supabase"
 // acceso admin). El PanelShell recién se monta con sesión confirmada.
 export default function MiCuentaLayout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = React.useState<Session | null | undefined>(undefined)
+  const [esAfiliado, setEsAfiliado] = React.useState(false)
 
   React.useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -24,6 +26,17 @@ export default function MiCuentaLayout({ children }: { children: React.ReactNode
     )
     return () => subscription.subscription.unsubscribe()
   }, [])
+
+  // Pestaña "Ganancias" condicional: solo si el email de la sesión matchea
+  // un afiliado activo (RLS de afiliados_select_propio ya escopea esto,
+  // ver CLAUDE.md). No es el único gate — /mi-cuenta/ganancias revalida
+  // por su cuenta, fail-closed, para alguien que navegue directo a la URL.
+  React.useEffect(() => {
+    if (!session) return
+    getAfiliadoPropio().then((afiliado) => setEsAfiliado(Boolean(afiliado)))
+  }, [session])
+
+  const tabs = esAfiliado ? [...MI_CUENTA_TABS, GANANCIAS_TAB] : MI_CUENTA_TABS
 
   return (
     <div className="flex flex-1 flex-col">
@@ -46,7 +59,7 @@ export default function MiCuentaLayout({ children }: { children: React.ReactNode
       )}
 
       {session && (
-        <PanelShell titulo="Mi cuenta" tabs={MI_CUENTA_TABS}>
+        <PanelShell titulo="Mi cuenta" tabs={tabs}>
           {children}
         </PanelShell>
       )}
