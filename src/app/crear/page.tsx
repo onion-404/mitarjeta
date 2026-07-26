@@ -7,6 +7,7 @@ import { use } from "react"
 import * as React from "react"
 
 import { AuthMethods } from "@/components/auth/auth-methods"
+import { HeaderGlobal } from "@/components/header-global"
 import { TarjetaForm } from "@/components/tarjeta/tarjeta-form"
 import { getPlanPorSlug } from "@/lib/planes"
 import { supabase } from "@/lib/supabase"
@@ -55,20 +56,19 @@ export default function CrearTarjetaPage({ searchParams }: CrearTarjetaPageProps
     resolverPlan()
   }, [planSlug, router])
 
+  let contenido: React.ReactNode
   if (session === undefined || plan === undefined) {
-    return (
+    contenido = (
       <div className="flex flex-1 items-center justify-center px-4 py-16">
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </div>
     )
-  }
-
-  // plan === null: slug ausente o inválido, ya redirigiendo a /planes.
-  if (!plan) return null
-
-  if (session === null) {
+  } else if (!plan) {
+    // slug ausente o inválido, ya redirigiendo a /planes.
+    contenido = null
+  } else if (session === null) {
     const redirectTo = `/crear?plan=${encodeURIComponent(plan.slug)}&ciclo=${periodicidad}`
-    return (
+    contenido = (
       <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-4 px-4 py-16 text-center">
         <h1 className="text-2xl font-semibold text-foreground">
           Iniciá sesión para continuar
@@ -81,7 +81,14 @@ export default function CrearTarjetaPage({ searchParams }: CrearTarjetaPageProps
         <AuthMethods redirectTo={redirectTo} />
       </div>
     )
+  } else {
+    contenido = <TarjetaForm plan={plan} periodicidad={periodicidad} />
   }
 
-  return <TarjetaForm plan={plan} periodicidad={periodicidad} />
+  return (
+    <>
+      <HeaderGlobal ocultarLoginSinSesion={session === null} />
+      {contenido}
+    </>
+  )
 }

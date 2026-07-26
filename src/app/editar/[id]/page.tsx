@@ -6,6 +6,7 @@ import { use } from "react"
 import * as React from "react"
 
 import { AuthMethods } from "@/components/auth/auth-methods"
+import { HeaderGlobal } from "@/components/header-global"
 import { TarjetaForm } from "@/components/tarjeta/tarjeta-form"
 import { TarjetaSkeleton } from "@/components/tarjeta/tarjeta-skeleton"
 import { getPlanPorId } from "@/lib/planes"
@@ -51,16 +52,15 @@ export default function EditarTarjetaPage({ params }: EditarTarjetaPageProps) {
     })
   }, [tarjeta])
 
+  let contenido: React.ReactNode
   if (session === undefined || (session && tarjeta === undefined)) {
-    return (
+    contenido = (
       <div className="flex flex-1 items-center justify-center px-4 py-16">
         <TarjetaSkeleton />
       </div>
     )
-  }
-
-  if (session === null) {
-    return (
+  } else if (session === null) {
+    contenido = (
       <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-4 px-4 py-16 text-center">
         <p className="text-sm text-muted-foreground">
           Iniciá sesión para editar esta tarjeta.
@@ -68,10 +68,8 @@ export default function EditarTarjetaPage({ params }: EditarTarjetaPageProps) {
         <AuthMethods redirectTo={`/editar/${id}`} />
       </div>
     )
-  }
-
-  if (!tarjeta || tarjeta.user_id !== session.user.id) {
-    return (
+  } else if (!tarjeta || tarjeta.user_id !== session.user.id) {
+    contenido = (
       <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 px-4 py-16 text-center">
         <p className="text-sm text-muted-foreground">
           No encontramos esa tarjeta o no tenés permiso para editarla.
@@ -81,13 +79,20 @@ export default function EditarTarjetaPage({ params }: EditarTarjetaPageProps) {
         </Link>
       </div>
     )
+  } else {
+    contenido = (
+      <TarjetaForm
+        tarjeta={tarjeta}
+        plan={planPendiente?.plan}
+        periodicidad={planPendiente?.periodicidad}
+      />
+    )
   }
 
   return (
-    <TarjetaForm
-      tarjeta={tarjeta}
-      plan={planPendiente?.plan}
-      periodicidad={planPendiente?.periodicidad}
-    />
+    <>
+      <HeaderGlobal ocultarLoginSinSesion={session === null} />
+      {contenido}
+    </>
   )
 }

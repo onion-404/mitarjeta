@@ -12,9 +12,9 @@ import {
 import Link from "next/link"
 
 import { AdminShortcut } from "@/components/admin/admin-shortcut"
+import { HeaderGlobal } from "@/components/header-global"
 import { PromoCountdown } from "@/components/landing/promo-countdown"
 import { buttonVariants } from "@/components/ui/button"
-import { Logo } from "@/components/logo"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { getConfiguracionActiva } from "@/lib/configuracion"
 
@@ -99,9 +99,7 @@ export default async function Home() {
     <div className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-black">
       <AdminShortcut />
 
-      <header className="relative mx-auto w-full max-w-6xl px-6 pt-6">
-        <Logo />
-      </header>
+      <HeaderGlobal />
 
       {/* Hero */}
       <section className="relative overflow-hidden">

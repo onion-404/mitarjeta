@@ -1179,6 +1179,97 @@
   mientras se resuelve el TXT record, en vez de bloquear todo el flujo de
   autenticación hasta que Google apruebe.
 
+## Header global + /mi-cuenta (2026-07-26)
+- Alcance acotado a propósito — **no** es el rediseño completo de "Mi Cuenta"
+  (viene después). Solo `<HeaderGlobal />` + una página `/mi-cuenta` básica.
+- `src/components/header-global.tsx` (nuevo, client): logo a la izquierda
+  (`<Logo />`, enlaza a `/`); sin sesión, botón "Iniciar sesión" que abre un
+  `Dialog` (Base UI, mismo patrón de `reservar-servicio.tsx`) con
+  `<AuthMethods redirectTo={pathname}>` adentro — no existe una ruta
+  genérica de login reusable (`/login` está hardcodeada al acceso admin,
+  `redirectTo="/admin/dashboard"`), así que el modal es la única forma de
+  ofrecer login "desde cualquier lado" sin crear una ruta nueva. Con
+  sesión: avatar circular (`identidad_visual.avatarUrl` de la tarjeta más
+  reciente del usuario — `getTarjetasDeUsuario()`, ya devuelve ordenado por
+  `created_at desc`, así que `data[0]` alcanza; si esa tarjeta no tiene
+  foto, iniciales de `nombrePrincipalDeTarjeta()`; si el usuario no tiene
+  ninguna tarjeta todavía, iniciales del email de la sesión) con un
+  `Menu` (Base UI, mismo patrón que `compartir-tarjeta.tsx`) → "Mi Cuenta"
+  (`/mi-cuenta`) / "Cerrar sesión" (`supabase.auth.signOut()` +
+  `router.push("/")`).
+- **Convivencia con el auth-gate inline que ya usan `/crear` y
+  `/editar/[id]`** (decisión explícita, confirmada con el cliente antes de
+  programar): sin esto, al estar deslogueado se verían DOS controles de
+  login redundantes en pantalla (el botón compacto del header + la tarjeta
+  grande de `<AuthMethods>` que la propia página ya muestra). Fix: prop
+  `ocultarLoginSinSesion` en `HeaderGlobal`, que esas dos páginas pasan como
+  `session === null` (su propio estado de sesión, chequeado con el mismo
+  patrón `useEffect` + `getSession()`/`onAuthStateChange` que ya usaban) —
+  el header sigue mostrando el logo siempre, pero suprime su propio botón
+  de login mientras la página ya está mostrando el suyo. Con sesión activa
+  (en cualquier estado de esas dos páginas) el header vuelve a mostrar el
+  avatar normal, sin condición especial.
+- Ambas páginas (`crear/page.tsx`, `editar/[id]/page.tsx`) se refactorizaron
+  de "return temprano por rama" a una variable `contenido` armada por
+  rama + un único `return` final que monta `<HeaderGlobal
+  ocultarLoginSinSesion={session === null} />` una sola vez — mismo
+  comportamiento exacto en cada rama (loading/sin sesión/sin permiso/
+  formulario), solo cambia dónde vive el `HeaderGlobal`.
+- **`src/app/mi-cuenta/page.tsx` (nuevo)**: el pedido original decía
+  "redirige a login si no hay sesión, mismo patrón ya usado en
+  `/editar/[id]`" — pero el patrón real de `/editar/[id]` es `<AuthMethods>`
+  inline, no un redirect, y `/login` no sirve para esto (ver arriba).
+  Se implementó con el patrón inline real (`redirectTo="/mi-cuenta"`),
+  confirmado explícitamente con el cliente antes de programar. Contenido:
+  email de la sesión, lista de tarjetas (`getTarjetasDeUsuario`, mismo
+  patrón visual que la página `/editar` ya existente — "mis tarjetas" — que
+  ya hacía casi exactamente esto; `/mi-cuenta` es un archivo nuevo, no se
+  tocó `/editar/page.tsx`), cada una con link a `/editar/{id}`, botón
+  "Crear nueva tarjeta" → `/planes` (no `/crear` directo, el flujo real
+  arranca eligiendo plan) y botón "Cerrar sesión".
+- **Integración**: `<HeaderGlobal />` agregado a `/` (home, reemplaza el
+  `<Logo />` suelto que tenía el `<header>`), `/planes` (no tenía ningún
+  header antes), `/crear` y `/editar/[id]` (con la prop de arriba).
+  **`/[slug]` (tarjeta pública) deliberadamente sin tocar** — no debe
+  aparecer ahí, confirmado explícitamente en el pedido original.
+  `layout.tsx` (server component, sin chrome global hoy) se dejó sin
+  tocar a propósito: si `HeaderGlobal` viviera ahí aparecería también en
+  `/[slug]`, que está fuera del layout raíz compartido por las 4 páginas
+  pedidas pero NO puede excluirse de un `layout.tsx` a nivel de toda la
+  app sin un route group nuevo — se prefirió agregarlo página por página
+  (4 líneas, cero riesgo para `/[slug]`) en vez de reestructurar rutas.
+- **Verificado con datos reales, no mocks**: 2 usuarios de prueba — uno con
+  2 tarjetas (la más vieja sin foto, la más nueva con `avatarUrl` real de
+  Cloudinary) para probar tanto "la más reciente por `created_at`" como el
+  avatar con foto real; otro sin ninguna tarjeta, para probar el fallback
+  de iniciales por email. Confirmado en el navegador real (sesión inyectada
+  vía localStorage, mismo mecanismo ya usado en sesiones anteriores):
+  header sin sesión correcto en las 4 páginas (con el modal de login
+  funcionando en `/` y `/planes`, y correctamente ausente — sin duplicar el
+  `<AuthMethods>` de la página — en `/crear` y `/editar/[id]`); avatar con
+  foto real de la tarjeta más reciente; dropdown "Mi Cuenta"/"Cerrar
+  sesión" funcional; `/mi-cuenta` listando ambas tarjetas reales con links
+  correctos a `/editar/{id}`; fallback de iniciales por email para el
+  usuario sin tarjetas; logout real confirmado (token de sesión en
+  `localStorage` queda `null` después, no solo la UI cambiando). Cero
+  errores de consola en todo el flujo. Limpieza completa después (2
+  usuarios + 2 tarjetas de prueba borrados).
+- **Limitación de esta verificación, honesta**: no se pudo confirmar
+  visualmente en un viewport mobile real — la herramienta de resize de
+  ventana del navegador de esta sesión no cambió el viewport real de
+  renderizado (`window.innerWidth` siguió en ~1470px pese al resize).
+  Se verificó en su lugar por análisis estático del CSS: en mobile,
+  `TarjetaForm` renderiza su preview a pantalla completa con `fixed inset-0
+  z-0` (línea ~2013 de `tarjeta-form.tsx`) y la barra de controles inferior
+  con `fixed inset-x-0 bottom-0 z-40` (línea ~2107) — `HeaderGlobal` usa
+  `z-30`, así que en mobile quedaría **por encima** del preview a pantalla
+  completa (z-0) pero por debajo de la barra inferior (z-40): el header
+  flotaría como una franja angosta arriba del preview en vez de quedar
+  oculto detrás — funcional (logo/avatar clickeables) pero no
+  necesariamente el look pulido que tiene hoy el modo mobile inmersivo de
+  `TarjetaForm`. No es un bug (nada queda invisible ni rompe), pero vale
+  una revisión visual real en un dispositivo/emulador cuando se pueda.
+
 ## Pendiente técnico sin resolver
 - `eventos_metricas` no permite insert desde authenticated/anon a propósito (por
   diseño, evita inflar métricas). Falta crear el endpoint server-side con
