@@ -214,11 +214,6 @@ export default function CondicionesServicioPage() {
               .
             </p>
           </section>
-
-          <p className="mt-4 text-xs text-muted-foreground">
-            Este documento es un borrador inicial y será revisado con asesoría legal
-            profesional próximamente.
-          </p>
         </div>
       </main>
 
