@@ -18,6 +18,20 @@ export async function getSuscripcionesAutorizadas(): Promise<SuscripcionAutoriza
   return (data ?? []) as SuscripcionAutorizada[]
 }
 
+// Cuántas suscripciones quedaron a medias (Checkout Session creada, nunca
+// confirmada por el webhook) — para el tile "Suscripciones pendientes" del
+// Resumen admin, la señal de "algo necesita atención" real y vigente que
+// reemplaza al viejo "Pagos pendientes" (estado_pago, huérfano del modelo
+// de pago único). Solo el conteo (head:true + count:"exact"), no las filas.
+export async function getConteoSuscripcionesPendientes(): Promise<number> {
+  const { count } = await supabase
+    .from("suscripciones")
+    .select("id", { count: "exact", head: true })
+    .eq("estado", "pendiente")
+
+  return count ?? 0
+}
+
 // Set de tarjeta_id con al menos un servicio agendable activo — para "uso de
 // features por plan" (agenda activa vs. solo perfil). No filtra por plan acá
 // a propósito: cruzar con `tarjetas.plan_id` es responsabilidad del caller.

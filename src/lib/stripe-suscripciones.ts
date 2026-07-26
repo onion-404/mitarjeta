@@ -93,3 +93,39 @@ export async function crearCheckoutSession({
     return null
   }
 }
+
+interface CrearPortalSessionParams {
+  customerId: string
+  returnUrl: string
+}
+
+/**
+ * Portal de facturación hosteado por Stripe (cancelar, cambiar método de
+ * pago, ver facturas) para UN Customer puntual. El plan vive en la tarjeta,
+ * no en el usuario, y cada suscripción tiene su propio Customer (ver
+ * crearCheckoutSession) — no existe "un portal de la cuenta", cada tarjeta
+ * necesita su propia sesión de portal con SU `stripe_customer_id`.
+ *
+ * Requiere que el usuario haya configurado un "Customer portal" default en
+ * el Dashboard de Stripe (Settings → Billing → Customer portal) — sin eso,
+ * `billingPortal.sessions.create()` falla con "No configuration provided".
+ * No es algo configurable desde acá.
+ */
+export async function crearPortalSession({
+  customerId,
+  returnUrl,
+}: CrearPortalSessionParams): Promise<string | null> {
+  const stripe = getStripe()
+  if (!stripe) return null
+
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: returnUrl,
+    })
+    return session.url
+  } catch (error) {
+    logErrorStripe("Error al crear la Customer Portal Session de Stripe:", error)
+    return null
+  }
+}

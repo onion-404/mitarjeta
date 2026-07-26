@@ -13,10 +13,8 @@ import Link from "next/link"
 
 import { AdminShortcut } from "@/components/admin/admin-shortcut"
 import { HeaderGlobal } from "@/components/header-global"
-import { PromoCountdown } from "@/components/landing/promo-countdown"
 import { buttonVariants } from "@/components/ui/button"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
-import { getConfiguracionActiva } from "@/lib/configuracion"
 
 export const dynamic = "force-dynamic"
 
@@ -72,29 +70,7 @@ const PASOS = [
   },
 ]
 
-const BENEFICIOS_PERSONAL = [
-  "Nunca más te quedas sin tarjetas que repartir",
-  "Comparte tu contacto con un solo toque: WhatsApp, QR o link",
-  "Se ve profesional desde el primer segundo",
-  "El cliente guarda tu contacto en su celular con un toque (.vcf)",
-  "Actualiza tus datos cuando quieras, sin reimprimir nada",
-]
-
-const BENEFICIOS_EMPRESARIAL = [
-  "Todo lo de Personal, más herramientas para vender",
-  "Catálogo de productos con fotos y precio",
-  "Ubicación con botón directo a Google Maps",
-  "Folleto o catálogo en PDF descargable",
-  "Identidad de marca: tus colores, tu logo, tu estilo",
-]
-
 export default async function Home() {
-  const config = await getConfiguracionActiva()
-  const precioActivo = config.promocion_activa
-    ? config.precio_lanzamiento
-    : config.precio_regular
-  const hayPromo = config.promocion_activa && config.precio_lanzamiento < config.precio_regular
-
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-black">
       <AdminShortcut />
@@ -139,8 +115,8 @@ export default async function Home() {
               >
                 Crea tu tarjeta <ArrowRight className="size-4" />
               </Link>
-              <a
-                href="#precios"
+              <Link
+                href="/planes"
                 className={buttonVariants({
                   variant: "outline",
                   size: "lg",
@@ -148,7 +124,7 @@ export default async function Home() {
                 })}
               >
                 Da clic para ver precios
-              </a>
+              </Link>
             </div>
 
             <Link
@@ -279,11 +255,10 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Precios */}
-      <section
-        id="precios"
-        className="relative overflow-hidden border-t border-border/60 bg-zinc-950 py-20 text-white"
-      >
+      {/* Precios — teaser liviano, sin números propios a propósito: /planes
+          ya es la única fuente de verdad de precios (100% DB-driven vía
+          getPlanesActivos()), duplicar montos acá los desincronizaría. */}
+      <section className="relative overflow-hidden border-t border-border/60 bg-zinc-950 py-20 text-white">
         <div
           aria-hidden
           className="pointer-events-none absolute -left-32 top-0 size-96 rounded-full bg-indigo-600 opacity-30 blur-3xl"
@@ -293,74 +268,21 @@ export default async function Home() {
           className="pointer-events-none absolute -right-32 bottom-0 size-96 rounded-full bg-fuchsia-600 opacity-30 blur-3xl"
         />
 
-        <div className="relative mx-auto w-full max-w-4xl px-6 text-center">
-          {hayPromo && (
-            <div className="mb-6 inline-flex flex-wrap items-center justify-center gap-2 rounded-full bg-amber-400/15 px-4 py-1.5 text-xs font-semibold text-amber-300">
-              🔥 Promoción de lanzamiento: válida por tiempo limitado
-              <PromoCountdown fin={config.promocion_fin} />
-            </div>
-          )}
-
+        <div className="relative mx-auto w-full max-w-2xl px-6 text-center">
           <h2 className="text-3xl font-semibold text-balance sm:text-4xl">
-            Un solo pago, todo un año
+            Un plan para cada etapa de tu negocio
           </h2>
           <p className="mt-2 text-zinc-400">
-            Sin mensualidades ni sorpresas: tu tarjeta activa, publicada y con
-            soporte durante 12 meses.
+            Presencia, Alcance o Poder — elegí el que se ajuste a vos hoy.
+            Cada tarjeta tiene su propio plan y su propia suscripción.
           </p>
-
-          <div className="mt-6 flex items-center justify-center gap-3">
-            {hayPromo && (
-              <span className="text-2xl font-medium text-zinc-500 line-through">
-                ${config.precio_regular.toLocaleString("es-MX")}
-              </span>
-            )}
-            <span className="text-5xl font-bold">
-              ${precioActivo.toLocaleString("es-MX")}
-              <span className="text-lg font-normal text-zinc-400"> MXN/año</span>
-            </span>
-          </div>
-
-          <div className="mt-12 grid grid-cols-1 gap-6 text-left sm:grid-cols-2">
-            {[
-              { nombre: "Personal", destacado: false, lista: BENEFICIOS_PERSONAL },
-              { nombre: "Empresarial", destacado: true, lista: BENEFICIOS_EMPRESARIAL },
-            ].map((plan) => (
-              <div
-                key={plan.nombre}
-                className={`relative flex flex-col gap-4 rounded-3xl border p-8 shadow-xl ${
-                  plan.destacado
-                    ? "border-transparent bg-gradient-to-br from-indigo-500 to-fuchsia-600"
-                    : "border-white/10 bg-white/5 backdrop-blur"
-                }`}
-              >
-                {plan.destacado && (
-                  <span className="absolute -top-3 right-8 rounded-full bg-amber-400 px-3 py-1 text-xs font-semibold text-zinc-900">
-                    Más elegido
-                  </span>
-                )}
-                <h3 className="text-lg font-semibold">{plan.nombre}</h3>
-                <p className="text-sm text-white/70">
-                  ${precioActivo.toLocaleString("es-MX")} MXN al año
-                </p>
-                <ul className="flex flex-col gap-2.5 text-sm">
-                  {plan.lista.map((item) => (
-                    <li key={item} className="flex items-start gap-2">
-                      <Check className="mt-0.5 size-4 shrink-0" /> {item}
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  href="/crear"
-                  className={buttonVariants({
-                    variant: plan.destacado ? "secondary" : "default",
-                    className: "mt-2 w-full",
-                  })}
-                >
-                  Crea tu tarjeta
-                </Link>
-              </div>
-            ))}
+          <div className="mt-8">
+            <Link
+              href="/planes"
+              className={buttonVariants({ size: "lg", className: "px-8 text-base" })}
+            >
+              Ver planes y precios <ArrowRight className="size-4" />
+            </Link>
           </div>
         </div>
       </section>

@@ -8,7 +8,7 @@
 -- `IP + user-agent + fecha-UTC-del-día` con una sal que rota diariamente
 -- (nunca la IP/user-agent en sí, y el hash de un mismo visitante cambia de
 -- un día a otro — no es un identificador estable de largo plazo, a
--- propósito, para minimizar cualquier riesgo de tracking). "Recurrente" se
+-- propósito, para minimizar cualquxier riesgo de tracking). "Recurrente" se
 -- define como: el mismo `visitante_hash` aparece en más de una `fecha`
 -- distinta (columna `created_at::date`) para la misma `tarjeta_id` — como
 -- el hash rota por día, esto solo funciona comparando por tarjeta, nunca

@@ -1,7 +1,14 @@
 import { cache } from "react"
 
 import { supabase } from "@/lib/supabase"
-import type { PeriodicidadSuscripcion, ServicioAgendable, Tarjeta } from "@/lib/types"
+import type {
+  EstadoSuscripcion,
+  PeriodicidadSuscripcion,
+  ProveedorSuscripcion,
+  ServicioAgendable,
+  Tarjeta,
+  TarjetaConPlan,
+} from "@/lib/types"
 
 export const getTarjetaPublicada = cache(async (slug: string) => {
   const { data } = await supabase
@@ -87,14 +94,58 @@ export async function getSuscripcionPendientePorTarjeta(tarjetaId: string) {
   return data as { plan_id: string; periodicidad: PeriodicidadSuscripcion } | null
 }
 
-export async function getTarjetasDeUsuario(userId: string) {
+// Con el plan embebido (join por plan_id) — lo necesitan tanto el avatar/
+// nombre de HeaderGlobal (no usa `planes`, pero el campo extra no le
+// afecta) como el listado filtrable de /mi-cuenta/tarjetas.
+export async function getTarjetasDeUsuario(userId: string): Promise<TarjetaConPlan[]> {
   const { data } = await supabase
     .from("tarjetas")
-    .select("*")
+    .select("*, planes(nombre_display, slug)")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
 
-  return (data ?? []) as Tarjeta[]
+  return (data ?? []) as TarjetaConPlan[]
+}
+
+export interface SuscripcionResumen {
+  id: string
+  tarjeta_id: string
+  estado: EstadoSuscripcion
+  proveedor: ProveedorSuscripcion
+  stripe_customer_id: string | null
+  plan_id: string
+  periodicidad: PeriodicidadSuscripcion
+  precio_final: number
+  created_at: string
+}
+
+/**
+ * La suscripción MÁS RECIENTE de cada tarjeta (no solo las activas — una
+ * tarjeta puede tener una fila `cancelada`/`vencida` vieja seguida de una
+ * `pendiente` nueva por un reintento) — para /mi-cuenta/suscripcion, que
+ * necesita saber si ya existe `stripe_customer_id` para habilitar el botón
+ * "Administrar pago" de cada tarjeta. La policy `suscripciones_select_propia`
+ * ya le da al dueño acceso vía su propio JWT, mismo patrón que el resto de
+ * este archivo.
+ */
+export async function getSuscripcionesDeUsuario(
+  tarjetaIds: string[]
+): Promise<Record<string, SuscripcionResumen>> {
+  if (tarjetaIds.length === 0) return {}
+
+  const { data } = await supabase
+    .from("suscripciones")
+    .select(
+      "id, tarjeta_id, estado, proveedor, stripe_customer_id, plan_id, periodicidad, precio_final, created_at"
+    )
+    .in("tarjeta_id", tarjetaIds)
+    .order("created_at", { ascending: false })
+
+  const porTarjeta: Record<string, SuscripcionResumen> = {}
+  for (const fila of (data ?? []) as SuscripcionResumen[]) {
+    if (!porTarjeta[fila.tarjeta_id]) porTarjeta[fila.tarjeta_id] = fila
+  }
+  return porTarjeta
 }
 
 export function nombrePrincipalDeTarjeta(tarjeta: Tarjeta) {

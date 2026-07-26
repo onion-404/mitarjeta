@@ -89,6 +89,14 @@ export interface Tarjeta {
   created_at: string
 }
 
+// Tarjeta + su plan embebido (join vía plan_id) — usada por cualquier
+// listado que necesite mostrar el nombre del plan sin una consulta aparte
+// (admin/tarjetas global, mi-cuenta/tarjetas personal). `planes` es null
+// cuando `plan_id` es null (nunca pagó, o se le canceló la suscripción).
+export interface TarjetaConPlan extends Tarjeta {
+  planes: { nombre_display: string; slug: string } | null
+}
+
 export interface ServicioAgendable {
   id: string
   tarjeta_id: string

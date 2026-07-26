@@ -1,22 +1,17 @@
 "use client"
 
-import type { Session } from "@supabase/supabase-js"
-import { ArrowLeft, Check, Copy, ExternalLink, Loader2 } from "lucide-react"
-import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { Check, Copy, ExternalLink, Loader2 } from "lucide-react"
 import * as React from "react"
 
 import { Button } from "@/components/ui/button"
-import { ADMIN_EMAIL } from "@/lib/admin"
 import { supabase } from "@/lib/supabase"
 
 const inputClase =
   "w-full rounded-xl border border-border bg-background/50 px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 
+// Auth-gate y header propios ya los da /admin/layout.tsx — esta página solo
+// necesita el formulario.
 export default function CobroManualPage() {
-  const router = useRouter()
-  const [session, setSession] = React.useState<Session | null | undefined>(undefined)
-
   const [monto, setMonto] = React.useState("")
   const [descripcion, setDescripcion] = React.useState("")
   const [payerEmail, setPayerEmail] = React.useState("")
@@ -24,21 +19,6 @@ export default function CobroManualPage() {
   const [error, setError] = React.useState<string | null>(null)
   const [initPoint, setInitPoint] = React.useState<string | null>(null)
   const [copiado, setCopiado] = React.useState(false)
-
-  const esAdmin = session?.user.email === ADMIN_EMAIL
-
-  React.useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: subscription } = supabase.auth.onAuthStateChange(
-      (_event, nuevaSession) => setSession(nuevaSession)
-    )
-    return () => subscription.subscription.unsubscribe()
-  }, [])
-
-  React.useEffect(() => {
-    if (session === undefined) return
-    if (!esAdmin) router.replace("/")
-  }, [session, esAdmin, router])
 
   async function handleGenerar(event: React.FormEvent) {
     event.preventDefault()
@@ -82,24 +62,9 @@ export default function CobroManualPage() {
     setTimeout(() => setCopiado(false), 2000)
   }
 
-  if (session === undefined || !esAdmin) {
-    return (
-      <div className="flex flex-1 items-center justify-center py-24">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
   return (
-    <div className="mx-auto w-full max-w-lg flex-1 px-4 py-10 sm:px-6">
-      <Link
-        href="/admin/dashboard"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" /> Volver al panel
-      </Link>
-
-      <h1 className="mt-4 text-2xl font-semibold text-foreground">Cobro manual</h1>
+    <div className="max-w-lg">
+      <h1 className="text-2xl font-semibold text-foreground">Cobro manual</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Genera un link de pago puntual (Checkout Pro) para compartir por WhatsApp u otro
         medio. No queda registrado en ningún lugar del sistema, solo es un link de Mercado

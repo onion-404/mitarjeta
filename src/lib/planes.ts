@@ -31,3 +31,16 @@ export async function getPlanPorId(id: string): Promise<Plan | null> {
 
   return data as Plan | null
 }
+
+// Edición real de precios vigentes (admin/configuracion) — solo
+// precio_mensual/anual, no toca slug/orden/features/activo, que no tienen
+// UI de edición todavía. El Price que ya usan las suscripciones activas NO
+// se recalcula retroactivamente (Stripe usa price_data inline al momento
+// de cada checkout, ver CLAUDE.md) — un cambio acá solo afecta a
+// suscripciones NUEVAS creadas después del cambio.
+export async function actualizarPlan(
+  id: string,
+  cambios: Partial<Pick<Plan, "precio_mensual" | "precio_anual">>
+) {
+  return supabase.from("planes").update(cambios).eq("id", id)
+}
