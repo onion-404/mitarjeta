@@ -29,7 +29,7 @@ import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
 import { BANNER_PRESETS } from "@/lib/banner-presets"
 import { validarCupon } from "@/lib/cupones"
 import { PLATAFORMAS, obtenerPlataforma } from "@/lib/redes"
-import { subirImagenCloudinary } from "@/lib/subir-imagen"
+import { subirImagenCloudinary, validarImagen } from "@/lib/subir-imagen"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import type {
@@ -85,17 +85,6 @@ function redesValidas(redes: RedSocial[]) {
 
 const TAMANO_MAXIMO_ARCHIVO_MB = 5
 const TAMANO_MAXIMO_ARCHIVO = TAMANO_MAXIMO_ARCHIVO_MB * 1024 * 1024
-
-/** Valida tipo y peso antes de aceptar una imagen (avatar, banner o producto). */
-function validarImagen(file: File): string | null {
-  if (!file.type.startsWith("image/")) {
-    return `"${file.name}" no es una imagen válida.`
-  }
-  if (file.size > TAMANO_MAXIMO_ARCHIVO) {
-    return `"${file.name}" pesa más de ${TAMANO_MAXIMO_ARCHIVO_MB}MB. Elegí una imagen más liviana para que tu tarjeta cargue rápido.`
-  }
-  return null
-}
 
 /** Valida tipo y peso antes de aceptar el folleto PDF. */
 function validarPdf(file: File): string | null {

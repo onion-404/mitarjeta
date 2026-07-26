@@ -206,6 +206,20 @@ export interface AfiliadoPago {
   created_at: string
 }
 
+// Gestionado 100% desde /admin/testimonios. `orden` controla el despliegue
+// en el home (asc); `calificacion` null = sin estrellas para ese testimonio.
+export interface Testimonio {
+  id: string
+  nombre: string
+  rol_o_negocio: string
+  cita: string
+  avatar_url: string | null
+  calificacion: number | null
+  activo: boolean
+  orden: number
+  created_at: string
+}
+
 export type PlanSlug = "presencia" | "alcance" | "poder"
 
 export interface Plan {

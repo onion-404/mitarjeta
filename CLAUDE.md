@@ -749,10 +749,6 @@
 - Integración con Google Calendar (OAuth + sync) — candidato a feature de plan "poder".
 - Billetera nativa con ledger de comisión acumulada y solicitud de retiro de fondos.
 - Migración del modelo de pago único actual de `tarjetas` a algo distinto (coexisten).
-- CRUD de testimonios en admin dashboard (tabla `testimonios` ya diseñada, seed con 2
-  placeholders, pendiente de construir la UI).
-- Refactor del home público (secciones inspiradas en landing de Linktree, testimonios
-  reales ya confirmados por el cliente aunque aún no compartidos).
 - Dashboard de usuario con métricas (tablas `metricas_diarias`/`eventos_metricas` ya
   existen).
 
@@ -1748,6 +1744,122 @@ el acceso correcto a cada rol.
 - Ver el punto ya marcado 🔴 más arriba (sección de Stripe): agregar
   `invoice.paid` al webhook LIVE del dashboard de Stripe — sin esto el
   sistema de afiliados no registra nada en producción real todavía.
+
+## Rediseño del home + sistema de testimonios real (2026-07-26/27)
+- **Dirección visual**: vibrante/creativa (referencias Notion/Framer, no
+  SaaS corporativo genérico), pensada para negocios pequeños y creadores
+  de contenido por igual. Guiada por el contenido de la skill
+  `frontend-design` (no instalada como plugin en este entorno — se trajo
+  su `SKILL.md` directo con `curl` desde el repo de Claude Code y se usó
+  igual como guía).
+- **Paleta y tipografía derivadas del producto mismo, no inventadas**: la
+  paleta de la landing son los banner presets reales que ya existían en
+  `lib/banner-presets.ts` (Aurora/Atardecer/Cítrico) — nada de un
+  gradiente índigo-fucsia nuevo. La tipografía de titulares es **Baloo 2**
+  (`--font-creativa`, ya cargada en `layout.tsx` para el estilo
+  "creativa" de `TarjetaCard`, sin usarse en ningún otro lado hasta
+  ahora) — cuerpo en Geist Sans (ya default del sitio), números/eyebrow
+  en Geist Mono. Mismo criterio que ya se documentó para el logo/OG image:
+  reusar lo que el producto ya trae en vez de inventar un sistema nuevo.
+- **Firma visual del hero**: abanico de 3 `<TarjetaCard>` reales (no un
+  mockup de teléfono único con globos flotantes, que era el patrón
+  anterior) — una creadora de contenido (preset Aurora, ya existía como
+  demo) + una peluquería (preset Atardecer, tipografía "elegante") + un
+  puesto de antojitos (preset Cítrico, tipografía "creativa"), mostrando
+  personalización real y las dos audiencias sin necesitar texto. Las 3
+  comparten un mismo punto de anclaje (`left-1/2` + `bottom` +
+  `origin-bottom`) y solo se diferencian por `rotate`, igual que una mano
+  de cartas — **primer intento real que no funcionó**: centrar cada
+  carta con `-translate-x-1/2 -translate-y-X%` y rotarla dejaba las dos
+  de atrás casi 100% ocultas detrás de la de enfrente (sin spread real);
+  se corrigió anclando las 3 al mismo pivote inferior, donde la rotación
+  sola ya las abre en abanico.
+- **Bug real de Tailwind v4 encontrado en el camino**: no se puede aplicar
+  una utilidad estática (`scale-*`, `translate-*`) Y una animación de
+  keyframes que anime esa MISMA propiedad (`scale`/`translate` como
+  propiedades independientes, no `transform`) sobre el mismo elemento —
+  la que corre al final (la keyframe, al reproducirse) pisa el valor
+  estático. Se resolvió separando cada responsabilidad (escala responsiva
+  estática / entrada `fan-in` una sola vez al cargar / bobbing continuo
+  del `float` en la carta de enfrente) en 3 niveles de wrapper anidados,
+  cada uno tocando una única propiedad. `--animate-fan-in` nuevo en
+  `globals.css`, junto a `float`/`glow` ya existentes — usa `translate`/
+  `scale` como propiedades independientes (no `transform`), mismo
+  criterio que ya usaba `float`.
+- **Secciones**: hero (con la explicación explícita de "¿Qué es Linkard?"
+  fundida en el subtítulo del hero en vez de vivir como bloque aislado —
+  sigue siendo texto real, sigue cumpliendo el requisito de la
+  verificación de marca de Google) → "Para quién es" (2 columnas, negocio/
+  contenido, con la agitación de dolor fusionada como una línea breve en
+  vez de una sección oscura propia) → "Lista en 3 pasos" (se mantiene) →
+  "Tu panel, sin adivinar" (mockup ilustrativo de métricas, marcado
+  explícitamente "Ejemplo ilustrativo" — vocabulario idéntico al de
+  `/mi-cuenta/estadisticas`: Vistas/Clicks en enlaces/Agendamientos, **no**
+  "ventas": `compra_completada` sigue sin instrumentarse a propósito) →
+  testimonios (condicional) → planes (teaser, sin precios propios,
+  igual que antes) → CTA final.
+- **Sistema de testimonios, de verdad esta vez**: `CLAUDE.md` decía que la
+  tabla `testimonios` "ya existía, seed con 2 placeholders" — se confirmó
+  contra producción que nunca se creó (`PGRST205`). Migración
+  `20260727020000_add_testimonios.sql` (aplicada y verificada por el
+  usuario) la crea de cero: `nombre`, `rol_o_negocio`, `cita`,
+  `avatar_url` (nullable), `calificacion` (smallint 1-5, nullable),
+  `activo`, `orden`, `created_at`. RLS: select público sin filtrar
+  `activo` (mismo criterio que `planes_select_publica` — el filtro real
+  vive en la query de `getTestimoniosActivos()`), CRUD solo admin.
+- **`src/lib/testimonios.ts`**: `getTestimonios`/`getTestimoniosActivos`/
+  `crearTestimonio`/`actualizarTestimonio`/`eliminarTestimonio`/
+  `guardarOrden` (reordena intercambiando `orden` con el vecino, sin
+  librería de drag-and-drop) + `inicialesDeNombre` (compartida entre admin
+  y home). `validarImagen` (antes vivía solo dentro de `tarjeta-form.tsx`)
+  se extrajo a `lib/subir-imagen.ts` para que el admin de testimonios
+  pudiera reusarla sin duplicar la validación de tipo/peso de imagen.
+- **`/admin/testimonios`** (nuevo, agregado a `ADMIN_TABS`): mismo patrón
+  visual/UX que `/admin/cupones` (fila expandible, form de creación
+  arriba) + upload de avatar vía Cloudinary (carpeta nueva
+  `mitarjeta/testimonios`, agregada a la whitelist `CARPETAS_PERMITIDAS`
+  de `cloudinary-sign/route.ts` — sin esto la subida se rechaza con 400
+  aunque el resto funcione) + reordenar con flechas ↑/↓ + toggle activo/
+  inactivo + eliminar con confirmación. **Bug real encontrado y corregido
+  en la verificación en vivo**: el `<input type="file">` no se limpiaba
+  visualmente después de crear/guardar (el estado sí se reseteaba, pero
+  el input nativo retenía el nombre del archivo ya subido) — corregido
+  con un `inputKey` que fuerza remount del input (mismo patrón
+  `avatarInputKey` que ya usaba `TarjetaForm`).
+- **`src/components/landing/testimonios-destacados.tsx`**: grid de 1-3+
+  columnas (se acomoda solo según cantidad), ícono `Quote` + acento de
+  color rotando entre los 3 tonos de los banner presets del hero (mismo
+  sistema, no un color nuevo), estrellas solo si `calificacion` no es
+  null, avatar o iniciales. `page.tsx` no monta la sección en absoluto si
+  `getTestimoniosActivos()` devuelve un array vacío — nada de placeholder.
+- **Verificado de punta a punta con datos reales, sesión real de admin**
+  (magic link real vía `auth.admin.generateLink` + navegación directa al
+  `action_link`, mismo patrón no-destructivo ya usado en sesiones
+  anteriores — no cambia contraseña ni vínculo de Google): 3 testimonios
+  creados desde la UI real de `/admin/testimonios` (con foto + 5
+  estrellas, sin foto + sin calificación, con foto + 4 estrellas) →
+  aparecieron en el home en el orden correcto, con fallback de iniciales
+  y estrellas condicionales exactos. Reordenar (flecha arriba) confirmado
+  con el efecto correcto tanto en el admin como en el home. Toggle a
+  "Inactivo" confirmado: desaparece del home, se mantiene visible en el
+  admin. Eliminar confirmado (con `window.confirm` stubbeado en la
+  sesión de automatización, nunca clickeado un diálogo nativo real).
+  Limpieza completa después: los 3 testimonios de prueba borrados,
+  confirmado con una lectura real (service role) que la tabla quedó en
+  `[]`, y el home confirmado sin la sección de nuevo. Cero errores de
+  consola en todo el flujo. `npm run build` + `tsc --noEmit` + `eslint`
+  limpios.
+- **Limitación honesta de esta verificación**: no se pudo confirmar el
+  hero en un viewport mobile real — `resize_window` no cambia
+  `window.innerWidth` en este entorno (mismo límite ya documentado para
+  el header global) — el tamaño responsivo del abanico
+  (`scale-[0.72] sm:scale-[0.85] lg:scale-100`) se verificó leyendo el
+  CSS, no visualmente.
+- **Migración aplicada por el usuario, no por esta sesión** (mismo
+  protocolo que toda migración desde `20260725000000`: sin `DATABASE_URL`
+  ni `supabase` CLI vinculado en este entorno, no hay forma de correr
+  `pg_dump` ni DDL directo — el usuario la corrió con su propio backup
+  primero).
 
 ## Pendiente técnico sin resolver
 - `eventos_metricas` no permite insert desde authenticated/anon a propósito (por

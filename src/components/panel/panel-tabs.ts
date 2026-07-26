@@ -5,6 +5,7 @@ import {
   HandCoins,
   LayoutDashboard,
   Layers,
+  Quote,
   Settings,
   Tag,
   User,
@@ -19,6 +20,7 @@ export const ADMIN_TABS: PanelTab[] = [
   { href: "/admin/suscripciones", label: "Suscripciones", icon: CreditCard },
   { href: "/admin/cupones", label: "Cupones y Precios", icon: Tag },
   { href: "/admin/afiliados", label: "Afiliados", icon: Users },
+  { href: "/admin/testimonios", label: "Testimonios", icon: Quote },
   { href: "/admin/cobro-manual", label: "Cobro Manual", icon: Banknote },
   { href: "/admin/configuracion", label: "Configuración", icon: Settings },
 ]

@@ -1,3 +1,17 @@
+const TAMANO_MAXIMO_ARCHIVO_MB = 5
+const TAMANO_MAXIMO_ARCHIVO = TAMANO_MAXIMO_ARCHIVO_MB * 1024 * 1024
+
+/** Valida tipo y peso antes de aceptar una imagen (avatar, banner, producto o testimonio). */
+export function validarImagen(file: File): string | null {
+  if (!file.type.startsWith("image/")) {
+    return `"${file.name}" no es una imagen válida.`
+  }
+  if (file.size > TAMANO_MAXIMO_ARCHIVO) {
+    return `"${file.name}" pesa más de ${TAMANO_MAXIMO_ARCHIVO_MB}MB. Elegí una imagen más liviana.`
+  }
+  return null
+}
+
 export async function subirImagenCloudinary(
   file: File,
   folder: string,
