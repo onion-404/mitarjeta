@@ -759,7 +759,7 @@
   corrida y verificada manualmente por el usuario contra producción, mismo
   protocolo que las anteriores).
 
-## Dashboards de métricas (vistas/clicks/conversión + MRR/churn admin) — EN PROGRESO (falta solo el dashboard admin)
+## Dashboards de métricas (vistas/clicks/conversión + MRR/churn admin) — COMPLETO
 - Motivación: `eventos_metricas`/`metricas_diarias` existían desde
   `20260716120000_add_planes_suscripciones_metricas.sql` (con el rollup ya
   armado) pero sin ningún endpoint que insertara en `eventos_metricas` (sin
@@ -1013,9 +1013,84 @@
   errores de consola en todo el flujo. Limpieza completa después: ambas
   tarjetas de prueba y sus 2 usuarios de prueba borrados (cascada
   confirmada, cero filas huérfanas).
-- Falta todavía (no es parte de esta tarea): dashboard admin (MRR, churn,
-  distribución de tarjetas por plan, uso de features) — es el siguiente
-  paso del plan original.
+- Dashboard admin (MRR, churn, distribución por plan, uso de features):
+  **implementado, ver sección dedicada más abajo.** Con esto, el plan
+  original de dashboards de métricas queda completo (los 4 pasos).
+
+## Dashboard admin — MRR, churn, distribución y uso de features (2026-07-25/26)
+- Extiende `src/app/admin/dashboard/page.tsx` (no crea página nueva) con una
+  sección nueva "Suscripciones y planes", entre los 4 stat tiles existentes
+  (Ventas totales/Tarjetas creadas/Pagos aprobados/Pagos pendientes, sin
+  tocar) y "Precios y promoción" — mismo patrón visual de stat tile
+  (`rounded-3xl`, blob de gradiente, ícono) y de card de sección
+  (`rounded-3xl border border-black/5 bg-white p-6 shadow-sm`) ya usados en
+  el resto del archivo, cero componentes ni librerías de UI nuevas.
+- `src/lib/admin-metricas.ts` (nuevo): `getSuscripcionesAutorizadas()`,
+  `getTarjetaIdsConAgendaActiva()`, `getSuscripcionesHistorial()` — las
+  tres con el cliente `supabase` plain (no service role), mismo criterio
+  que el resto del archivo: las policies `_admin_todo` ya le dan acceso
+  completo al admin vía su propio JWT. `calcularChurn(historial, desde,
+  hasta)` es una función pura (sin I/O) que reconstruye, para cada
+  `suscripcion_id`, cuál era su estado en `desde` (última fila de
+  `suscripciones_historial` con `created_at <= desde`) y si transicionó a
+  un estado terminal (`cancelada`/`vencida`) dentro de `(desde, hasta]`.
+  Churn = solo cuenta suscripciones que estaban `autorizada` en `desde` —
+  mirar el `estado` actual de `suscripciones` no alcanza (last-write-wins,
+  no dice nada del pasado), por eso hace falta reconstruir desde el
+  historial fila por fila. Período fijo usado: últimos 30 días (sin
+  selector de rango en el admin, a diferencia del dashboard del dueño — no
+  se pidió, se puede agregar después si hace falta).
+- **Cálculos, todos derivados en el cuerpo del render** (mismo estilo que
+  `aprobadas`/`pendientes`/`totalVentas` ya existentes, sin `useMemo` —
+  consistente con el resto del archivo):
+  - **MRR**: normaliza `periodicidad === "anual"` dividiendo `precio_final`
+    entre 12 antes de sumar — así todas las suscripciones autorizadas
+    (mensuales y anuales mezcladas) quedan en la misma unidad. `mrrTotal` +
+    `mrrPorPlan` (agrupado por `plan_id`).
+  - **Distribución de tarjetas por plan**: agrupa `tarjetas.plan_id`,
+    incluye una categoría **"Sin plan"** (nunca pagó, o se le canceló/
+    pausó la suscripción) para dar el panorama completo, no solo las
+    monetizadas — sin esto, tarjetas realmente en su mayoría no
+    monetizadas hoy (confirmado: 0 de 23 tarjetas reales tienen `plan_id`
+    activo, ver el bug de `estado_pago` de más arriba) se verían invisibles
+    en el gráfico.
+  - **Uso de agenda por plan**: cruza el `Set` de `getTarjetaIdsConAgendaActiva()`
+    con `tarjetas.plan_id` — **solo para tarjetas CON plan** (sin plan la
+    agenda ya está bloqueada por completo, cruzarlas no aporta nada).
+- **Visualizaciones con recharts**, reusando los mismos tokens
+  `var(--chart-1)`...`var(--chart-4)` ya validados y repurificados para el
+  dashboard del dueño (ver sección de arriba) — ninguna paleta nueva:
+  - Distribución de tarjetas por plan → donut (`PieChart`, hasta 4
+    categorías: 3 planes + "Sin plan" — dentro del cap de "primeros 3-4
+    slots validan all-pairs" que documenta la skill `dataviz`), leyenda de
+    texto al lado (mismo patrón que el donut único/recurrente del
+    dashboard del dueño, con el fix de `flex-wrap` + `min-w-0` ya aplicado
+    desde el vamos para no repetir el bug de overflow encontrado ahí).
+  - MRR por plan → `BarChart` de una sola serie (magnitud, no identidad —
+    todas las barras del mismo color `chart-1`, mismo criterio que
+    `BloqueTopN` del dashboard del dueño), eje Y formateado en MXN.
+  - Uso de agenda por plan → `BarChart` agrupado de 2 series ("Con agenda
+    activa" `chart-1` / "Solo perfil" `chart-2`) con `Legend` (regla de la
+    skill: ≥2 series siempre necesitan leyenda).
+- **Verificado con datos de prueba reales, no simulados**: se sembraron 6
+  tarjetas + 5 suscripciones (4 `autorizada` con precios/periodicidades
+  mixtas + 1 `cancelada` con su transición real en `suscripciones_historial`
+  fechada retroactivamente para caer dentro de la ventana de 30 días) +
+  servicios agendables activos en 2 de ellas, vía service role — sesión
+  real del admin (`emuna.interno@gmail.com`) inyectada en el navegador sin
+  tocar su contraseña (`admin.auth.admin.generateLink` + `verifyOtp` con
+  `token_hash`, 100% no destructivo). **Cada número mostrado coincidió
+  exactamente con el cálculo hecho a mano antes de sembrar los datos**: MRR
+  total $1,296 (149 + 299 + 2990/12 + 599), churn 20.0% ("1 de 5 canceló"),
+  4 tarjetas con plan activo, 25 sin plan, distribución 1/2/1/25 por plan,
+  MRR por plan y uso de agenda por plan (Presencia 1 con agenda/0 sin,
+  Alcance 1/1, Poder 0/1) todos exactos. Cero errores de consola. Las
+  secciones ya existentes (Ventas totales, Precios y promoción, Ventas
+  recientes) siguieron funcionando sin cambios. Limpieza completa después:
+  las 6 tarjetas de prueba se borraron (cascada confirmada hasta
+  suscripciones/historial/servicios) y se verificó que la base volvió
+  exactamente al baseline previo (23 tarjetas, 0 con plan, 0 autorizadas,
+  13 filas de historial — mismos números que antes de sembrar).
 
 ## Páginas legales (privacidad / condiciones de servicio) — 2026-07-25
 - Creadas para cumplir el requisito mínimo de operar cobrando dinero real y

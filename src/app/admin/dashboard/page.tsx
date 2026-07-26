@@ -3,6 +3,7 @@
 import type { Session } from "@supabase/supabase-js"
 import {
   ArrowLeft,
+  CalendarClock,
   CheckCircle2,
   ChevronDown,
   Clock,
@@ -12,14 +13,35 @@ import {
   Loader2,
   Pencil,
   Plus,
+  TrendingDown,
   Trash2,
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import * as React from "react"
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
 
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Logo } from "@/components/logo"
+import {
+  calcularChurn,
+  getSuscripcionesAutorizadas,
+  getSuscripcionesHistorial,
+  getTarjetaIdsConAgendaActiva,
+  type SuscripcionAutorizada,
+} from "@/lib/admin-metricas"
 import { ADMIN_EMAIL } from "@/lib/admin"
 import {
   actualizarConfiguracion,
@@ -28,9 +50,10 @@ import {
   getConfiguracionActiva,
   getCupones,
 } from "@/lib/configuracion"
+import { getPlanesActivos } from "@/lib/planes"
 import { supabase } from "@/lib/supabase"
 import { nombrePrincipalDeTarjeta } from "@/lib/tarjetas"
-import type { Cupon, EstadoPago, Tarjeta } from "@/lib/types"
+import type { Cupon, EstadoPago, Plan, Tarjeta } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const formatoMXN = new Intl.NumberFormat("es-MX", {
@@ -87,6 +110,15 @@ export default function AdminDashboardPage() {
   const [creandoCupon, setCreandoCupon] = React.useState(false)
   const [cuponFormError, setCuponFormError] = React.useState<string | null>(null)
 
+  const [planes, setPlanes] = React.useState<Plan[] | null>(null)
+  const [suscripcionesAutorizadas, setSuscripcionesAutorizadas] = React.useState<
+    SuscripcionAutorizada[] | null
+  >(null)
+  const [tarjetaIdsConAgenda, setTarjetaIdsConAgenda] = React.useState<Set<string> | null>(
+    null
+  )
+  const [churn, setChurn] = React.useState<ReturnType<typeof calcularChurn> | null>(null)
+
   const esAdmin = session?.user.email === ADMIN_EMAIL
 
   React.useEffect(() => {
@@ -117,6 +149,16 @@ export default function AdminDashboardPage() {
     })
 
     getCupones().then(setCupones)
+
+    getPlanesActivos().then(setPlanes)
+    getSuscripcionesAutorizadas().then(setSuscripcionesAutorizadas)
+    getTarjetaIdsConAgendaActiva().then(setTarjetaIdsConAgenda)
+    getSuscripcionesHistorial().then((historial) => {
+      const hasta = new Date()
+      const desde = new Date(hasta)
+      desde.setUTCDate(desde.getUTCDate() - 30)
+      setChurn(calcularChurn(historial, desde, hasta))
+    })
   }, [session, esAdmin, router])
 
   async function cambiarEstado(tarjeta: Tarjeta, nuevoEstado: EstadoPago) {
@@ -202,6 +244,73 @@ export default function AdminDashboardPage() {
   const totalVentas = aprobadas.reduce((acc, t) => acc + (t.precio_pagado ?? 0), 0)
   const recientes = tarjetas.slice(0, 20)
 
+  // MRR: normaliza anual a su equivalente mensual (/12) para poder sumarlo
+  // con suscripciones mensuales — mismo criterio que "MRR" siempre implica
+  // en SaaS, sin importar el ciclo real de facturación de cada una.
+  const planesConDatos = planes ?? []
+  const mrrPorPlanId = new Map<string, number>()
+  let mrrTotal = 0
+  for (const s of suscripcionesAutorizadas ?? []) {
+    const mrr = s.periodicidad === "anual" ? s.precio_final / 12 : s.precio_final
+    mrrTotal += mrr
+    mrrPorPlanId.set(s.plan_id, (mrrPorPlanId.get(s.plan_id) ?? 0) + mrr)
+  }
+
+  // Distribución de tarjetas por plan — incluye "Sin plan" (nunca pagó, o se
+  // le pausó/canceló la suscripción) para dar el panorama completo, no solo
+  // las monetizadas.
+  const tarjetasPorPlanId = new Map<string, number>()
+  let tarjetasSinPlan = 0
+  for (const t of tarjetas) {
+    if (!t.plan_id) {
+      tarjetasSinPlan += 1
+      continue
+    }
+    tarjetasPorPlanId.set(t.plan_id, (tarjetasPorPlanId.get(t.plan_id) ?? 0) + 1)
+  }
+
+  // Uso de agenda por plan — solo tiene sentido para tarjetas CON plan (sin
+  // plan, la agenda ya está bloqueada por completo, ver CLAUDE.md).
+  const conAgendaPorPlanId = new Map<string, number>()
+  const sinAgendaPorPlanId = new Map<string, number>()
+  if (tarjetaIdsConAgenda) {
+    for (const t of tarjetas) {
+      if (!t.plan_id) continue
+      const mapa = tarjetaIdsConAgenda.has(t.id) ? conAgendaPorPlanId : sinAgendaPorPlanId
+      mapa.set(t.plan_id, (mapa.get(t.plan_id) ?? 0) + 1)
+    }
+  }
+
+  const distribucionPlanes = [
+    ...planesConDatos.map((p) => ({
+      nombre: p.nombre_display,
+      tarjetas: tarjetasPorPlanId.get(p.id) ?? 0,
+    })),
+    ...(tarjetasSinPlan > 0 ? [{ nombre: "Sin plan", tarjetas: tarjetasSinPlan }] : []),
+  ]
+  const totalDistribucion = distribucionPlanes.reduce((acc, d) => acc + d.tarjetas, 0)
+
+  const mrrPorPlan = planesConDatos.map((p) => ({
+    nombre: p.nombre_display,
+    mrr: Math.round((mrrPorPlanId.get(p.id) ?? 0) * 100) / 100,
+  }))
+
+  const usoAgendaPorPlan = planesConDatos.map((p) => ({
+    nombre: p.nombre_display,
+    "Con agenda activa": conAgendaPorPlanId.get(p.id) ?? 0,
+    "Solo perfil": sinAgendaPorPlanId.get(p.id) ?? 0,
+  }))
+
+  const cargandoMetricasPlan =
+    planes === null || suscripcionesAutorizadas === null || tarjetaIdsConAgenda === null || !churn
+
+  const PALETA_DISTRIBUCION = [
+    "var(--chart-1)",
+    "var(--chart-2)",
+    "var(--chart-3)",
+    "var(--chart-4)",
+  ]
+
   const stats = [
     {
       etiqueta: "Ventas totales",
@@ -280,6 +389,217 @@ export default function AdminDashboardPage() {
             <p className="relative text-xs text-muted-foreground">{stat.etiqueta}</p>
           </div>
         ))}
+      </div>
+
+      {/* Suscripciones y planes */}
+      <div className="mt-10">
+        <h2 className="text-lg font-semibold text-foreground">Suscripciones y planes</h2>
+        {cargandoMetricasPlan ? (
+          <div className="mt-4 flex items-center justify-center py-10">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <>
+            <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <div className="relative overflow-hidden rounded-3xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute -right-6 -top-6 size-24 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 opacity-20 blur-2xl"
+                />
+                <span className="relative flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 text-white">
+                  <CreditCard className="size-4" />
+                </span>
+                <p className="relative mt-3 text-2xl font-semibold text-foreground">
+                  {formatoMXN.format(mrrTotal)}
+                </p>
+                <p className="relative text-xs text-muted-foreground">MRR total</p>
+              </div>
+
+              <div className="relative overflow-hidden rounded-3xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute -right-6 -top-6 size-24 rounded-full bg-gradient-to-br from-red-500 to-rose-500 opacity-20 blur-2xl"
+                />
+                <span className="relative flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-rose-500 text-white">
+                  <TrendingDown className="size-4" />
+                </span>
+                <p className="relative mt-3 text-2xl font-semibold text-foreground">
+                  {churn?.churnPct === null
+                    ? "Sin datos"
+                    : `${churn?.churnPct.toFixed(1)}%`}
+                </p>
+                <p className="relative text-xs text-muted-foreground">Churn (30 días)</p>
+                {churn && churn.autorizadasAlInicio > 0 && (
+                  <p className="relative mt-0.5 text-[11px] text-muted-foreground/80">
+                    {churn.canceladasEnPeriodo} de {churn.autorizadasAlInicio} canceló
+                  </p>
+                )}
+              </div>
+
+              <div className="relative overflow-hidden rounded-3xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute -right-6 -top-6 size-24 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 opacity-20 blur-2xl"
+                />
+                <span className="relative flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
+                  <Layers className="size-4" />
+                </span>
+                <p className="relative mt-3 text-2xl font-semibold text-foreground">
+                  {tarjetas.length - tarjetasSinPlan}
+                </p>
+                <p className="relative text-xs text-muted-foreground">Tarjetas con plan activo</p>
+              </div>
+
+              <div className="relative overflow-hidden rounded-3xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute -right-6 -top-6 size-24 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 opacity-20 blur-2xl"
+                />
+                <span className="relative flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-500 text-white">
+                  <CalendarClock className="size-4" />
+                </span>
+                <p className="relative mt-3 text-2xl font-semibold text-foreground">
+                  {tarjetasSinPlan}
+                </p>
+                <p className="relative text-xs text-muted-foreground">Tarjetas sin plan</p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Distribución de tarjetas por plan
+                </h3>
+                {totalDistribucion === 0 ? (
+                  <p className="mt-3 text-sm text-muted-foreground">Todavía no hay tarjetas.</p>
+                ) : (
+                  <div className="mt-2 flex flex-wrap items-center gap-4">
+                    <div className="h-40 w-40 shrink-0">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={distribucionPlanes}
+                            dataKey="tarjetas"
+                            nameKey="nombre"
+                            innerRadius={42}
+                            outerRadius={68}
+                            paddingAngle={2}
+                            stroke="var(--card)"
+                            strokeWidth={2}
+                          >
+                            {distribucionPlanes.map((entrada, index) => (
+                              <Cell
+                                key={entrada.nombre}
+                                fill={PALETA_DISTRIBUCION[index % PALETA_DISTRIBUCION.length]}
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            contentStyle={{
+                              borderRadius: 12,
+                              border: "1px solid var(--border)",
+                              background: "var(--popover)",
+                              color: "var(--popover-foreground)",
+                              fontSize: 12,
+                            }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-2 text-sm">
+                      {distribucionPlanes.map((entrada, index) => (
+                        <span key={entrada.nombre} className="flex items-center gap-1.5">
+                          <span
+                            className="size-2.5 shrink-0 rounded-full"
+                            style={{
+                              background: PALETA_DISTRIBUCION[index % PALETA_DISTRIBUCION.length],
+                            }}
+                          />
+                          {entrada.nombre}:{" "}
+                          <strong className="text-foreground">{entrada.tarjetas}</strong>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+                <h3 className="text-sm font-semibold text-foreground">MRR por plan</h3>
+                <div className="mt-3 h-48 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={mrrPorPlan} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                      <XAxis
+                        dataKey="nombre"
+                        tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+                        axisLine={{ stroke: "var(--border)" }}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={56}
+                        tickFormatter={(valor) => formatoMXN.format(Number(valor))}
+                      />
+                      <Tooltip
+                        formatter={(valor) => formatoMXN.format(Number(valor))}
+                        contentStyle={{
+                          borderRadius: 12,
+                          border: "1px solid var(--border)",
+                          background: "var(--popover)",
+                          color: "var(--popover-foreground)",
+                          fontSize: 12,
+                        }}
+                      />
+                      <Bar dataKey="mrr" fill="var(--chart-1)" radius={[4, 4, 0, 0]} maxBarSize={48} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-3xl border border-black/5 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+              <h3 className="text-sm font-semibold text-foreground">
+                Uso de agenda por plan (tarjetas con plan activo)
+              </h3>
+              <div className="mt-3 h-56 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={usoAgendaPorPlan} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="nombre"
+                      tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+                      axisLine={{ stroke: "var(--border)" }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={28}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "var(--muted)" }}
+                      contentStyle={{
+                        borderRadius: 12,
+                        border: "1px solid var(--border)",
+                        background: "var(--popover)",
+                        color: "var(--popover-foreground)",
+                        fontSize: 12,
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Bar dataKey="Con agenda activa" fill="var(--chart-1)" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                    <Bar dataKey="Solo perfil" fill="var(--chart-2)" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Configuración de precios y cupones */}
