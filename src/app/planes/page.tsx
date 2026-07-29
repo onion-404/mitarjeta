@@ -4,8 +4,15 @@ import { getPlanesActivos } from "@/lib/planes"
 
 export const dynamic = "force-dynamic"
 
-export default async function PlanesPage() {
-  const planes = await getPlanesActivos()
+interface PlanesPageProps {
+  // "cupon" llega desde el botón "Obtener mi descuento" del home
+  // (/planes?cupon=LINKARD15) — se reenvía a /crear al elegir un plan, ver
+  // ComparativaPlanes. Solo viaja en la URL, ver CLAUDE.md.
+  searchParams: Promise<{ cupon?: string }>
+}
+
+export default async function PlanesPage({ searchParams }: PlanesPageProps) {
+  const [planes, { cupon }] = await Promise.all([getPlanesActivos(), searchParams])
 
   return (
     <div className="flex flex-1 flex-col">
@@ -18,8 +25,13 @@ export default async function PlanesPage() {
           Cada tarjeta tiene su propio plan y su propia suscripción — podés elegir uno
           distinto para cada una.
         </p>
+        {cupon && (
+          <p className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+            Código {cupon.toUpperCase()} listo para aplicarse al crear tu tarjeta
+          </p>
+        )}
         <div className="mt-6 w-full">
-          <ComparativaPlanes planes={planes} />
+          <ComparativaPlanes planes={planes} cuponCodigo={cupon} />
         </div>
       </div>
     </div>

@@ -10,6 +10,9 @@ import type { PeriodicidadSuscripcion, Plan } from "@/lib/types"
 
 interface ComparativaPlanesProps {
   planes: Plan[]
+  /** Viaja desde /planes?cupon=... (botón "Obtener mi descuento" del home) —
+   *  se reenvía tal cual a /crear para que TarjetaForm lo pre-llene. */
+  cuponCodigo?: string
 }
 
 function renderBooleano(valor: unknown) {
@@ -49,7 +52,7 @@ const FEATURES: { clave: string; etiqueta: string; render: (valor: unknown) => R
   },
 ]
 
-export function ComparativaPlanes({ planes }: ComparativaPlanesProps) {
+export function ComparativaPlanes({ planes, cuponCodigo }: ComparativaPlanesProps) {
   const router = useRouter()
   const [ciclo, setCiclo] = React.useState<PeriodicidadSuscripcion>("anual")
 
@@ -58,7 +61,8 @@ export function ComparativaPlanes({ planes }: ComparativaPlanesProps) {
   const indiceRecomendado = planes.length >= 3 ? Math.floor(planes.length / 2) : -1
 
   function continuar(slug: string) {
-    router.push(`/crear?plan=${encodeURIComponent(slug)}&ciclo=${ciclo}`)
+    const cupon = cuponCodigo ? `&cupon=${encodeURIComponent(cuponCodigo)}` : ""
+    router.push(`/crear?plan=${encodeURIComponent(slug)}&ciclo=${ciclo}${cupon}`)
   }
 
   return (

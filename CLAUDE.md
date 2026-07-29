@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-07-26. Este documento es la fuente de verdad para que
+> Última actualización: 2026-07-29. Este documento es la fuente de verdad para que
 > cualquier sesión nueva entienda el estado real del proyecto sin releer el historial
 > de chat. Actualizarlo cuando cambie algo de lo que describe.
 
@@ -1992,6 +1992,146 @@ el acceso correcto a cada rol.
   confirmación propia). El filtro de aplicación en `getServiciosAgendablesActivos()`
   sigue existiendo igual (no se quitó, es defensa en profundidad), ya no es
   la única protección.
+
+## Fusión visual del home + cupón de lanzamiento real (2026-07-29)
+- Objetivo del cliente, explícito: fusionar el rediseño del home ya existente
+  con la dirección visual de un mockup externo (violeta, glassmorfismo,
+  premium) que compartió, y conectar un cupón de lanzamiento real — "que sea
+  una máquina de leads, visualmente premium". Todo el copy en español de
+  México. Producto tratado como **plataforma**, no "app".
+- **`src/app/page.tsx` reescrito por completo** (antes: rediseño más simple
+  del mismo día 2026-07-26). Estructura nueva, de arriba a abajo: header
+  flotante (`<HeaderGlobal variant="flotante" nav={NAV_HOME}>`) → hero con
+  tilt 3D sobre el abanico REAL de `<TarjetaCard>` (no una tarjeta genérica
+  del mockup) → banner de cupón real → "Sin Linkard vs. con Linkard"
+  (cualitativo, sin stats inventadas) → "Todo lo que incluye tu tarjeta" (4
+  cards: personalización real, agenda con cobro opcional, venta de
+  productos, panel de métricas real — reescrito para reflejar lo que
+  Linkard ofrece HOY, no una lista de specs) → "Cómo funciona" (3 pasos,
+  ya existía) → sección de métricas con conteo animado (números
+  ilustrativos, **sin ninguna etiqueta "ejemplo"** — decisión explícita y
+  repetida del cliente, no un olvido) → testimonios (reusa
+  `testimonios-destacados.tsx` ya construido, datos reales de DB, oculta si
+  la tabla está vacía — hoy está vacía, confirmado que la sección
+  correctamente no aparece) → precios (`<PreciosDestacados>`, dato real de
+  la tabla `planes`, tratamiento visual oscuro/blur) → "Próximamente en
+  Linkard" (Wallet, Checkout nativo (Linkard Pago), Asistente de IA — como
+  roadmap real confirmado, no relleno) → CTA final → footer.
+- **Tipografía**: se agregó **Plus Jakarta Sans** (`next/font/google`,
+  pesos 700/800, variable `--font-display`) en `layout.tsx` junto a las ya
+  existentes (Geist Sans/Mono, Playfair Display, Baloo 2, Sora) — Baloo 2
+  sigue intacta y en uso (opción "creativa" de personalización de
+  `TarjetaCard`), no se tocó. Plus Jakarta Sans se usa **solo** vía
+  `font-[family-name:var(--font-display)]` en los titulares de marketing
+  del home nuevo — Geist Sans/Mono ya cubrían los roles de Inter/JetBrains
+  Mono del mockup original, así que no hizo falta agregarlas (research
+  hecho antes de implementar, aprobado implícitamente por el cliente al
+  pedir continuar con la Parte 3).
+- **`src/components/landing/tarjeta-tilt.tsx`** (nuevo): wrapper de tilt 3D
+  con mouse move (`perspective(1200px) rotateX() rotateY()`, máx 14°),
+  gateado por `prefers-reduced-motion`. Envuelve el abanico real de 3
+  `<TarjetaCard>` del hero sin tocar su estructura interna (translate/
+  scale/rotate del abanico siguen viviendo en sus propios elementos,
+  ninguno pelea con el `transform` literal del wrapper de tilt — mismo
+  principio de "no mezclar transform-como-propiedad-independiente con
+  transform-literal en el mismo elemento" ya establecido en sesiones
+  anteriores). Verificado con inspección JS directa (no solo visual): los
+  valores de `rotateX/rotateY` cambian en tiempo real proporcionalmente a
+  la posición del cursor.
+- **`src/components/landing/contador-animado.tsx`** (nuevo): conteo de 0 al
+  valor final una sola vez al entrar en viewport (`IntersectionObserver` +
+  `requestAnimationFrame`, easing easeOutCubic), respeta
+  `prefers-reduced-motion` (salta directo al valor final).
+- **Sistema de cupón de lanzamiento real, no simulado**:
+  - Migración `20260729000000_add_fn_cupon_usos_restantes.sql` —
+    **aplicada y verificada** (confirmado con una llamada RPC real antes de
+    cualquier uso: devolvía `33`, igual a `limite_usos` del cupón real
+    `LINKARD15` con `cupon_usos` en cero). `fn_cupon_usos_restantes(p_codigo)`
+    (`security definer`, mismo patrón que `fn_cupon_es_valido`) devuelve
+    `limite_usos - count(cupon_usos)` para ese código, o `null` si el cupón
+    no tiene límite — expone solo el número, sin dar acceso a la tabla.
+  - `src/components/landing/cupon-lanzamiento.tsx` (nuevo): banner con el
+    contador real vía `getCuponUsosRestantes()` (`lib/cupones.ts`, nuevo,
+    llama al RPC de arriba) — "Quedan X cupones con 15% de descuento".
+    Botón "Obtener mi descuento" → confirmación visual inmediata ("¡Cupón
+    guardado!") → `router.push('/planes?cupon=LINKARD15')`.
+  - **El código del cupón viaja por el mismo mecanismo de query params que
+    ya usaban `plan`/`ciclo` a través de todo el embudo de login**:
+    `/planes?cupon=X` (`src/app/planes/page.tsx`, banner de confirmación) →
+    `<ComparativaPlanes cuponCodigo>` (nuevo prop) → `/crear?plan=Y&ciclo=Z&cupon=X`
+    → si no hay sesión, `<AuthMethods redirectTo=>` incluye los 3 params
+    (Google OAuth y magic link vuelven a esa URL completa) →
+    `<TarjetaForm cuponInicial>` (nuevo prop): si llega un cupón por query
+    param, se pre-llena el campo Y se valida de verdad contra
+    `fn_cupon_es_valido` (podría haber vencido/agotado en el camino) antes
+    de mostrarlo como aplicado — nunca se confía ciegamente en el query param.
+  - `src/components/landing/precios-destacados.tsx` (nuevo): cards de
+    precio oscuras/blur con datos reales de `planes` (mismo cálculo de
+    `ahorroPct` que `comparativa-planes.tsx`), badge "Recomendado" en el
+    plan de `orden` intermedio.
+- **Bug real de copy encontrado y corregido**: `TarjetaForm` todavía decía
+  "vas a ir a **Mercado Pago**" en la sección "Tu plan" — texto viejo de
+  antes de la migración a Stripe (2026-07-21), nunca corregido hasta ahora.
+  Corregido a "vas a ir a **Stripe**".
+- **Bug real encontrado y corregido en `HeaderGlobal` variant="flotante"**:
+  el botón "Iniciar sesión" (`buttonVariants({variant:"outline"})`) quedaba
+  con texto blanco sobre fondo blanco invisible — `bg-background` no se
+  sobreescribía (solo se habían redefinido `--foreground`/`--primary`/
+  `--muted`/`--border` para el header oscuro, no `--background`) mientras
+  el texto heredaba blanco del header. Encontrado con captura de pantalla +
+  zoom, no por ningún linter. Corregido con clases explícitas
+  (`border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white`)
+  solo cuando `variant === "flotante"`.
+- **Verificado de punta a punta con un pago real de Stripe en modo test**
+  (mismo protocolo ya usado en sesiones anteriores: `stripe config --list`
+  para las keys de test, `stripe listen --forward-to
+  localhost:3000/api/stripe/webhook` para un webhook secret real, swap
+  temporal de las 3 keys de Stripe en `.env.local`, confirmado que Next.js
+  recarga `.env.local` sin reiniciar el servidor — la Checkout Session
+  resultante usó `cs_test_...`, no `cs_live_...`): flujo completo botón del
+  home → `/planes?cupon=LINKARD15` → `/crear?plan=alcance&ciclo=anual&cupon=LINKARD15`
+  → login real (magic link, usuario de prueba) → vuelta a la misma URL con
+  el cupón intacto → "Tu plan" mostró el cupón ya aplicado (15% off,
+  $935.00 MXN/año) → Checkout real de Stripe (tarjeta de prueba
+  `4242 4242 4242 4242`) → submit real. Confirmado con 3 fuentes
+  independientes:
+  1. Log de `stripe listen`: `checkout.session.completed`,
+     `customer.subscription.created`, e **`invoice.paid`** — los tres en
+     `200`, sin ningún error.
+  2. Query real a Supabase después del pago: `suscripciones.estado =
+     'autorizada'`, `tarjetas.plan_id` sincronizado, `precio_final: 935`
+     (15% off de 1100, correcto) — y una fila real en `cupon_usos` con
+     `comision_stripe: 47.95`/`monto_neto: 887.05` (fee real de Stripe
+     capturado por el sistema de afiliados construido el 2026-07-26,
+     confirma que ambos sistemas — cupón de lanzamiento y afiliados —
+     conviven sin conflicto, ya que `LINKARD15` no tiene afiliado
+     asignado y aun así generó su fila de auditoría correctamente con
+     `afiliado_id: null`).
+  3. **El contador bajó de verdad**: `fn_cupon_usos_restantes('LINKARD15')`
+     pasó de `33` a `32` tras el pago real, confirmado tanto por RPC directo
+     como recargando el home real (`http://localhost:3000/`) y viendo
+     "Quedan 32 cupones con 15% de descuento" en pantalla.
+  - Limpieza completa después: suscripción y customer de Stripe cancelados/
+    borrados (test mode), fila de `cupon_usos`, `suscripciones` y la
+    tarjeta de prueba (`prueba-flujo-cupon-e2e`) borradas de Supabase, el
+    usuario de prueba (`prueba-flujo-cupon@example.com`) borrado de Auth,
+    contador confirmado de vuelta en `33`, `.env.local` restaurado a las
+    keys live (diff byte-a-byte contra el backup, confirmado idéntico),
+    proceso de `stripe listen` detenido.
+- **Mobile**: no se pudo verificar visualmente en un viewport real en esta
+  sesión (limitación ya documentada antes: la herramienta de resize de
+  ventana no cambia `window.innerWidth` real en este entorno). Verificado
+  en su lugar por análisis estático de las clases responsive: el grid del
+  hero es `grid-cols-1 lg:grid-cols-2` (stackea texto arriba, abanico
+  abajo en mobile), el wrapper del abanico/tilt escala hacia abajo
+  (`scale-[0.72]` en mobile → `sm:scale-[0.85]` → `lg:scale-100`) dentro de
+  una columna `w-full` que no puede desbordar, el header flotante limita su
+  ancho a `max-w-[calc(100%-2rem)]` y oculta los links de nav
+  (`hidden sm:flex`, deja solo logo + avatar/login en mobile), y el banner
+  de cupón pasa de `flex-col` a `flex-row` recién en `sm:`. Sin bugs
+  detectables en el CSS estático, pero vale una revisión visual real en
+  dispositivo/emulador cuando se pueda — misma nota de honestidad que ya se
+  dejó para el header global del 2026-07-26.
 
 ## Notas de proceso
 - Proyecto de Supabase: producción única, sin staging. Antes de cualquier migración:

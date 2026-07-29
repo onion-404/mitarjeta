@@ -14,7 +14,7 @@ import { supabase } from "@/lib/supabase"
 import type { PeriodicidadSuscripcion, Plan } from "@/lib/types"
 
 interface CrearTarjetaPageProps {
-  searchParams: Promise<{ plan?: string; ciclo?: string }>
+  searchParams: Promise<{ plan?: string; ciclo?: string; cupon?: string }>
 }
 
 // Sesión requerida ANTES de armar la tarjeta (ya no hay flujo de invitado: los
@@ -24,7 +24,7 @@ interface CrearTarjetaPageProps {
 // página está hardcodeada para el acceso admin.
 export default function CrearTarjetaPage({ searchParams }: CrearTarjetaPageProps) {
   const router = useRouter()
-  const { plan: planSlug, ciclo } = use(searchParams)
+  const { plan: planSlug, ciclo, cupon } = use(searchParams)
   const periodicidad: PeriodicidadSuscripcion = ciclo === "mensual" ? "mensual" : "anual"
 
   const [session, setSession] = React.useState<Session | null | undefined>(undefined)
@@ -67,7 +67,11 @@ export default function CrearTarjetaPage({ searchParams }: CrearTarjetaPageProps
     // slug ausente o inválido, ya redirigiendo a /planes.
     contenido = null
   } else if (session === null) {
-    const redirectTo = `/crear?plan=${encodeURIComponent(plan.slug)}&ciclo=${periodicidad}`
+    // El cupón viaja acá también (mismo hilo de query params que plan/ciclo)
+    // para que sobreviva el login: Google OAuth y el magic link de email
+    // vuelven a esta misma URL completa una vez autenticados.
+    const cuponQuery = cupon ? `&cupon=${encodeURIComponent(cupon)}` : ""
+    const redirectTo = `/crear?plan=${encodeURIComponent(plan.slug)}&ciclo=${periodicidad}${cuponQuery}`
     contenido = (
       <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-4 px-4 py-16 text-center">
         <h1 className="text-2xl font-semibold text-foreground">
@@ -82,7 +86,7 @@ export default function CrearTarjetaPage({ searchParams }: CrearTarjetaPageProps
       </div>
     )
   } else {
-    contenido = <TarjetaForm plan={plan} periodicidad={periodicidad} />
+    contenido = <TarjetaForm plan={plan} periodicidad={periodicidad} cuponInicial={cupon} />
   }
 
   return (

@@ -14,6 +14,7 @@ import { buttonVariants } from "@/components/ui/button"
 import { getTarjetasDeUsuario, nombrePrincipalDeTarjeta } from "@/lib/tarjetas"
 import { supabase } from "@/lib/supabase"
 import type { Tarjeta } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 interface HeaderGlobalProps {
   /** true mientras la propia página ya muestra su gate de auth inline (ej.
@@ -21,6 +22,13 @@ interface HeaderGlobalProps {
    *  segundo control de "Iniciar sesión" redundante acá al lado del que ya
    *  muestra la página. */
   ocultarLoginSinSesion?: boolean
+  /** "flotante" = píldora sticky con blur, exclusiva del home premium
+   *  (mockup del cliente). Default preserva el header de siempre en el
+   *  resto del sitio (editor, panel, /planes, etc.) — cero cambio ahí. */
+  variant?: "default" | "flotante"
+  /** Links de marketing (ej. "Precios", "Cómo funciona") — solo tiene
+   *  sentido junto a variant="flotante", el resto de las páginas no lo pasa. */
+  nav?: { etiqueta: string; href: string }[]
 }
 
 function iniciales(nombre?: string) {
@@ -43,7 +51,11 @@ function esUrlOptimizable(url: string) {
 const menuItemClase =
   "flex cursor-default items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-foreground outline-none select-none data-highlighted:bg-muted"
 
-export function HeaderGlobal({ ocultarLoginSinSesion = false }: HeaderGlobalProps) {
+export function HeaderGlobal({
+  ocultarLoginSinSesion = false,
+  variant = "default",
+  nav,
+}: HeaderGlobalProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [session, setSession] = React.useState<Session | null | undefined>(undefined)
@@ -88,12 +100,47 @@ export function HeaderGlobal({ ocultarLoginSinSesion = false }: HeaderGlobalProp
   const inicialesNombre = iniciales(nombre)
 
   return (
-    <header className="relative z-30 mx-auto flex w-full max-w-6xl items-center justify-between px-6 pt-6">
+    <header
+      className={
+        variant === "flotante"
+          ? // El Logo lee --primary/--foreground (tokens de tema) para el
+            // triángulo y el wordmark — en vez de pelear especificidad con
+            // un selector descendiente, se redefinen esos 2 tokens acá
+            // mismo (arbitrary property de Tailwind), así cualquier
+            // descendiente que los use hereda el blanco automáticamente.
+            "fixed inset-x-0 top-4 z-50 mx-auto flex w-fit max-w-[calc(100%-2rem)] items-center gap-6 rounded-full border border-white/10 bg-black/40 px-5 py-2.5 text-white shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)] backdrop-blur-xl [--border:rgba(255,255,255,0.2)] [--foreground:#ffffff] [--muted:rgba(255,255,255,0.15)] [--primary:#ffffff]"
+          : "relative z-30 mx-auto flex w-full max-w-6xl items-center justify-between px-6 pt-6"
+      }
+    >
       <Logo />
+
+      {variant === "flotante" && nav && nav.length > 0 && (
+        <nav className="hidden items-center gap-5 text-sm font-medium text-white/70 sm:flex">
+          {nav.map((item) => (
+            <a key={item.href} href={item.href} className="transition-colors hover:text-white">
+              {item.etiqueta}
+            </a>
+          ))}
+        </nav>
+      )}
+
+      {variant === "flotante" && <div className="flex-1" />}
 
       {session === null && !ocultarLoginSinSesion && (
         <Dialog.Root open={dialogAbierto} onOpenChange={setDialogAbierto}>
-          <Dialog.Trigger className={buttonVariants({ variant: "outline", size: "sm" })}>
+          <Dialog.Trigger
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              // buttonVariants "outline" es bg-background/sin color de texto
+              // propio — en variant="flotante" bg-background sigue
+              // resolviendo a blanco (no se sobreescribe ese token, a
+              // diferencia de --foreground/--primary/--muted/--border más
+              // arriba) mientras el texto hereda blanco del header: texto
+              // blanco sobre fondo blanco, invisible. Bug real encontrado
+              // renderizado antes de dar esto por terminado.
+              variant === "flotante" && "border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            )}
+          >
             Iniciar sesión
           </Dialog.Trigger>
           <Dialog.Portal>

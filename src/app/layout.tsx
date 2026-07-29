@@ -1,10 +1,22 @@
 import type { Metadata } from "next";
-import { Baloo_2, Geist, Geist_Mono, Playfair_Display, Sora } from "next/font/google";
+import { Baloo_2, Geist, Geist_Mono, Playfair_Display, Plus_Jakarta_Sans, Sora } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+});
+
+// Exclusiva para los titulares de marketing del home (--font-display) — NO
+// reemplaza a Baloo 2, que sigue siendo la opción "creativa" real que
+// cualquier usuario puede elegir para personalizar SU tarjeta (feature ya
+// shippeada, sistema tipográfico aparte). Geométrica/premium en vez de
+// redonda/juguetona, para la dirección "premium llamativo" del rediseño del
+// home — ver CLAUDE.md.
+const plusJakartaSans = Plus_Jakarta_Sans({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["700", "800"],
 });
 
 const sora = Sora({
@@ -58,7 +70,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} ${baloo2.variable} ${sora.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${playfairDisplay.variable} ${baloo2.variable} ${plusJakartaSans.variable} ${sora.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

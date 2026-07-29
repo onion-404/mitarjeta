@@ -1,19 +1,28 @@
 import {
   ArrowRight,
   BarChart3,
+  Bot,
   Calendar,
-  Link2,
-  MapPin,
+  Check,
+  CreditCard,
+  Palette,
   ShoppingBag,
   Sparkles,
+  Wallet,
+  X,
 } from "lucide-react"
 import Link from "next/link"
 
 import { AdminShortcut } from "@/components/admin/admin-shortcut"
 import { HeaderGlobal } from "@/components/header-global"
+import { ContadorAnimado } from "@/components/landing/contador-animado"
+import { CuponLanzamiento } from "@/components/landing/cupon-lanzamiento"
+import { PreciosDestacados } from "@/components/landing/precios-destacados"
+import { TarjetaTilt } from "@/components/landing/tarjeta-tilt"
 import { TestimoniosDestacados } from "@/components/landing/testimonios-destacados"
 import { buttonVariants } from "@/components/ui/button"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
+import { getPlanesActivos } from "@/lib/planes"
 import { getTestimoniosActivos } from "@/lib/testimonios"
 
 export const dynamic = "force-dynamic"
@@ -71,16 +80,51 @@ const TARJETA_ANTOJITOS = {
   },
 }
 
-const PARA_NEGOCIO = [
-  { icono: Calendar, texto: "Que agenden citas contigo, con o sin cobro por adelantado." },
-  { icono: MapPin, texto: "Ubicación, horarios y WhatsApp siempre al día, sin repetirlo nunca." },
-  { icono: ShoppingBag, texto: "Tu catálogo con un clic directo a tu tienda o tu WhatsApp." },
+const NAV_HOME = [
+  { etiqueta: "Todo incluido", href: "#incluye" },
+  { etiqueta: "Precios", href: "#precios" },
+  { etiqueta: "Opiniones", href: "#testimonios" },
 ]
 
-const PARA_CONTENIDO = [
-  { icono: Link2, texto: "Todas tus redes en un solo link para tu bio." },
-  { icono: ShoppingBag, texto: "Tus productos o packs, directo desde tu perfil." },
-  { icono: BarChart3, texto: "Qué enlace generó más clics — no adivines, mídelo." },
+const ANTES = [
+  "Imprimes cientos de tarjetas y la mitad termina en la basura antes de la semana.",
+  "Cambias de número o de trabajo y tus contactos se pierden para siempre.",
+  "Mandas capturas de pantalla borrosas de tu catálogo por WhatsApp.",
+  "No tienes idea de si tu presencia digital está funcionando o no.",
+]
+
+const DESPUES = [
+  "Un solo link que actualizas al instante, para siempre — nada que reimprimir.",
+  "Tu cliente guarda tu contacto con un toque, sin escribir nada a mano.",
+  "Tu catálogo, tu agenda y tus redes, en un lugar que se ve profesional.",
+  "Un panel real te dice qué está funcionando — no lo adivinas.",
+]
+
+const INCLUYE = [
+  {
+    icono: Palette,
+    titulo: "Personalización de verdad",
+    texto:
+      "Elige entre 6 plantillas premium o arma la tuya: formas de foto, colores, tipografías y efecto vidrio. Tu tarjeta se ve como tú, no como una plantilla más.",
+  },
+  {
+    icono: Calendar,
+    titulo: "Agenda con cobro opcional",
+    texto:
+      "Deja que agenden contigo solos, con o sin cobro por adelantado. Se acabó el ida y vuelta por WhatsApp para cuadrar un horario.",
+  },
+  {
+    icono: ShoppingBag,
+    titulo: "Venta de productos",
+    texto:
+      "Muestra tu catálogo y manda tráfico directo a comprar — sin que nadie se pierda buscando tu tienda o tu WhatsApp.",
+  },
+  {
+    icono: BarChart3,
+    titulo: "Panel de métricas real",
+    texto:
+      "Vistas, clics y agendamientos reales de tu tarjeta. Sabes qué está funcionando, no lo adivinas.",
+  },
 ]
 
 const PASOS = [
@@ -92,7 +136,7 @@ const PASOS = [
   {
     numero: "2",
     titulo: "Personaliza",
-    texto: "Colores, foto, banner y catálogo con vista previa en tiempo real.",
+    texto: "Plantilla, colores, foto y catálogo con vista previa en tiempo real.",
   },
   {
     numero: "3",
@@ -101,41 +145,74 @@ const PASOS = [
   },
 ]
 
+const PROXIMAMENTE = [
+  {
+    icono: Wallet,
+    titulo: "Wallet",
+    texto: "Guarda tu tarjeta en Apple Wallet o Google Wallet, como un boarding pass.",
+  },
+  {
+    icono: CreditCard,
+    titulo: "Checkout nativo (Linkard Pago)",
+    texto: "Cobra tus productos sin salir de tu tarjeta ni depender de enlaces externos.",
+  },
+  {
+    icono: Bot,
+    titulo: "Asistente de IA",
+    texto: "Que te ayude a escribir tu perfil, tus servicios y tus respuestas automáticas.",
+  },
+]
+
 const NUMERO_CLASE =
-  "flex size-9 items-center justify-center rounded-full font-[family-name:var(--font-creativa)] text-sm font-bold text-white"
-const NUMERO_FONDO = ["bg-indigo-500", "bg-orange-500", "bg-lime-600"]
+  "flex size-9 items-center justify-center rounded-full font-[family-name:var(--font-display)] text-sm font-bold text-white"
+const NUMERO_FONDO = ["bg-violet-500", "bg-fuchsia-500", "bg-indigo-500"]
 
 export default async function Home() {
-  const testimonios = await getTestimoniosActivos()
+  const [testimonios, planes] = await Promise.all([getTestimoniosActivos(), getPlanesActivos()])
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-black">
+    <div className="flex flex-1 flex-col overflow-hidden bg-[#08070d] text-white">
       <AdminShortcut />
 
-      <HeaderGlobal />
+      <HeaderGlobal variant="flotante" nav={NAV_HOME} />
 
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-16 px-6 py-20 lg:grid-cols-2 lg:py-28">
+      <section className="relative overflow-hidden pt-32 pb-16 sm:pt-40">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -left-40 -top-40 size-[32rem] rounded-full bg-indigo-600/30 blur-[100px]"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-32 top-40 size-[28rem] rounded-full bg-fuchsia-600/20 blur-[100px]"
+        />
+
+        <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-16 px-6 lg:grid-cols-2">
           <div className="flex flex-col items-start text-left">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white/70 px-3 py-1 font-[family-name:var(--font-geist-mono)] text-xs font-medium tracking-tight text-muted-foreground shadow-sm backdrop-blur dark:bg-zinc-900/50">
-              <Sparkles className="size-3.5 text-indigo-500" /> LINKARD · TARJETA DIGITAL
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 font-[family-name:var(--font-geist-mono)] text-xs font-medium tracking-tight text-white/70 backdrop-blur">
+              <Sparkles className="size-3.5 text-violet-400" /> LINKARD · PLATAFORMA DIGITAL
             </span>
 
-            <h1 className="mt-6 font-[family-name:var(--font-creativa)] text-4xl font-bold tracking-tight text-balance text-foreground sm:text-5xl">
-              Todo lo tuyo, en un solo link.
+            <h1 className="mt-6 font-[family-name:var(--font-display)] text-4xl font-extrabold tracking-tight text-balance sm:text-5xl lg:text-6xl">
+              Tu presencia digital,{" "}
+              <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-indigo-400 bg-clip-text text-transparent">
+                en un solo link
+              </span>
+              .
             </h1>
-            <p className="mt-4 max-w-lg text-lg text-muted-foreground text-balance">
-              <strong className="font-semibold text-foreground">Linkard</strong> es tu
-              tarjeta digital todo-en-uno: perfil de contacto, agenda de citas y
-              catálogo de productos — o tus redes y tu bio, si eres creador. Sin
-              apps que instalar, sin tarjetas de papel que imprimir.
+            <p className="mt-4 max-w-lg text-lg text-balance text-white/70">
+              <strong className="font-semibold text-white">Linkard</strong> es la plataforma
+              todo-en-uno: perfil de contacto, agenda con cobro, catálogo de productos y
+              métricas reales — para negocios y para creadores.
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link
                 href="/crear"
-                className={buttonVariants({ size: "lg", className: "px-8 text-base" })}
+                className={buttonVariants({
+                  size: "lg",
+                  className: "bg-white px-8 text-base text-violet-700 hover:bg-white/90",
+                })}
               >
                 Crea tu tarjeta <ArrowRight className="size-4" />
               </Link>
@@ -144,7 +221,7 @@ export default async function Home() {
                 className={buttonVariants({
                   variant: "outline",
                   size: "lg",
-                  className: "px-6 text-base",
+                  className: "border-white/20 bg-white/5 px-6 text-base text-white hover:bg-white/10",
                 })}
               >
                 Ver planes y precios
@@ -153,24 +230,20 @@ export default async function Home() {
 
             <Link
               href="/editar"
-              className="mt-4 text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              className="mt-4 text-sm font-medium text-white/50 underline-offset-4 hover:text-white hover:underline"
             >
               ¿Ya tienes una tarjeta? Edítala aquí
             </Link>
           </div>
 
-          {/* Abanico de 3 tarjetas reales — la firma visual de la página:
-              muestra personalización real (3 bannerPresets, 3 estilos de
-              tipografía) y las dos audiencias (creadora + 2 negocios) sin
-              necesitar texto que lo explique. */}
-          {/* 3 niveles de wrapper a propósito: cada uno anima/escala una
-              única propiedad para que no se pisen entre sí. En Tailwind v4,
-              las utilidades scale y rotate y translate y las keyframes de
-              abajo (que usan `translate`/`scale` como propiedades
-              independientes, no `transform`) SOLO componen sin conflicto si
-              viven en elementos DISTINTOS — dos reglas escribiendo la misma
-              propiedad en el mismo elemento se pisan, la última gana. */}
-          <div className="relative mx-auto h-[30rem] w-full max-w-sm lg:mx-0 lg:justify-self-end">
+          {/* Abanico de 3 tarjetas reales con tilt 3D — la firma visual de
+              la página: muestra personalización real (3 bannerPresets, 3
+              estilos de tipografía) y las dos audiencias sin necesitar
+              texto que lo explique. El tilt envuelve el conjunto completo
+              en un wrapper PROPIO (TarjetaTilt) — no toca ninguna de las
+              propiedades translate/scale/rotate que ya usa el abanico
+              interno, así no hay conflicto de composición. */}
+          <TarjetaTilt className="relative mx-auto h-[30rem] w-full max-w-sm lg:mx-0 lg:justify-self-end">
             {/* Nivel 1: escala responsiva estática (no animada). */}
             <div className="absolute inset-0 origin-center scale-[0.72] sm:scale-[0.85] lg:scale-100">
               {/* Nivel 2: entrada única al cargar (opacity + translate + scale). */}
@@ -178,8 +251,7 @@ export default async function Home() {
                 {/* Las 3 comparten el mismo punto de anclaje (mismo left/
                     bottom/-translate-x-1/2, origin-bottom): rotar cada una
                     alrededor de ese pivote común es lo que las abre en
-                    abanico, como una mano de cartas — sin rotate + origen
-                    compartido, las 3 quedan apiladas exactamente encima. */}
+                    abanico, como una mano de cartas. */}
                 <div className="absolute bottom-8 left-1/2 z-10 origin-bottom -translate-x-1/2 rotate-[-12deg] scale-[0.72]">
                   <TarjetaCard
                     {...TARJETA_ESTUDIO}
@@ -204,113 +276,125 @@ export default async function Home() {
                 </div>
               </div>
             </div>
-          </div>
+          </TarjetaTilt>
         </div>
       </section>
 
-      {/* Para quién es — reemplaza la agitación genérica ("¿Te ha pasado
-          esto?") y la grilla de 3 iconos ("Beneficios") por algo que habla a
-          las dos audiencias por igual, con capacidades concretas del
-          producto real, no beneficios abstractos. */}
-      <section className="border-t border-border/60 bg-zinc-50 py-20 dark:bg-zinc-950">
-        <div className="mx-auto w-full max-w-5xl px-6">
-          <p className="text-center text-sm text-balance text-muted-foreground">
-            Tarjetas impresas que se pierden, números que cambian, ventas que se
-            enfrían porque nadie guardó tu contacto — Linkard resuelve las tres.
-          </p>
-
-          <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-2">
-            <div className="flex flex-col gap-5 rounded-3xl border border-black/5 bg-white p-8 shadow-sm dark:border-white/10 dark:bg-zinc-900">
-              <h2 className="font-[family-name:var(--font-creativa)] text-xl font-bold text-foreground">
-                Para tu negocio
-              </h2>
-              <ul className="flex flex-col gap-4">
-                {PARA_NEGOCIO.map(({ icono: Icono, texto }) => (
-                  <li key={texto} className="flex items-start gap-3">
-                    <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400">
-                      <Icono className="size-4" />
-                    </span>
-                    <p className="text-sm text-muted-foreground">{texto}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="flex flex-col gap-5 rounded-3xl border border-black/5 bg-white p-8 shadow-sm dark:border-white/10 dark:bg-zinc-900">
-              <h2 className="font-[family-name:var(--font-creativa)] text-xl font-bold text-foreground">
-                Para tu contenido
-              </h2>
-              <ul className="flex flex-col gap-4">
-                {PARA_CONTENIDO.map(({ icono: Icono, texto }) => (
-                  <li key={texto} className="flex items-start gap-3">
-                    <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                      <Icono className="size-4" />
-                    </span>
-                    <p className="text-sm text-muted-foreground">{texto}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
+      {/* Cupón de lanzamiento — contador real vía fn_cupon_usos_restantes(),
+          no un setInterval falso. Ver CLAUDE.md. */}
+      <section className="relative px-6 pb-20">
+        <CuponLanzamiento codigo="LINKARD15" porcentaje={15} />
       </section>
 
-      {/* Cómo funciona — numeración real: es un proceso de 3 pasos genuino,
-          no un adorno. */}
-      <section className="py-20">
-        <div className="mx-auto w-full max-w-5xl px-6">
-          <h2 className="text-center font-[family-name:var(--font-creativa)] text-3xl font-bold text-foreground">
-            Lista en 3 pasos
+      {/* Antes / Después — cualitativo, sin estadísticas inventadas. */}
+      <section className="relative border-t border-white/10 py-20">
+        <div className="mx-auto w-full max-w-4xl px-6">
+          <h2 className="text-center font-[family-name:var(--font-display)] text-3xl font-extrabold text-balance sm:text-4xl">
+            Sin Linkard vs. con Linkard
           </h2>
-          <div className="mt-12 grid grid-cols-1 gap-8 sm:grid-cols-3">
-            {PASOS.map((paso, index) => (
-              <div key={paso.numero} className="flex flex-col items-start gap-3">
-                <span className={`${NUMERO_CLASE} ${NUMERO_FONDO[index]}`}>{paso.numero}</span>
-                <h3 className="text-base font-semibold text-foreground">{paso.titulo}</h3>
-                <p className="text-sm text-muted-foreground">{paso.texto}</p>
+          <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div className="flex flex-col gap-4 rounded-3xl border border-red-500/20 bg-red-500/5 p-8">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-red-400">
+                Sin Linkard
+              </h3>
+              <ul className="flex flex-col gap-4">
+                {ANTES.map((texto) => (
+                  <li key={texto} className="flex items-start gap-3">
+                    <X className="mt-0.5 size-4 shrink-0 text-red-400" />
+                    <p className="text-sm text-white/70">{texto}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex flex-col gap-4 rounded-3xl border border-emerald-500/20 bg-emerald-500/5 p-8">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-emerald-400">
+                Con Linkard
+              </h3>
+              <ul className="flex flex-col gap-4">
+                {DESPUES.map((texto) => (
+                  <li key={texto} className="flex items-start gap-3">
+                    <Check className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+                    <p className="text-sm text-white/70">{texto}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Todo lo que incluye tu tarjeta — voz de venta sobre lo que Linkard
+          realmente ofrece hoy, no una lista de specs genérica. */}
+      <section id="incluye" className="relative border-t border-white/10 py-20">
+        <div className="mx-auto w-full max-w-5xl px-6">
+          <h2 className="text-center font-[family-name:var(--font-display)] text-3xl font-extrabold text-balance sm:text-4xl">
+            Todo lo que incluye tu tarjeta
+          </h2>
+          <div className="mt-12 grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {INCLUYE.map(({ icono: Icono, titulo, texto }) => (
+              <div
+                key={titulo}
+                className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl transition-colors duration-200 ease-out hover:bg-white/[0.07]"
+              >
+                <span className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white">
+                  <Icono className="size-5" />
+                </span>
+                <h3 className="text-lg font-semibold text-white">{titulo}</h3>
+                <p className="text-sm text-white/60">{texto}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Tu panel, sin adivinar — vocabulario idéntico al de
-          /mi-cuenta/estadisticas (Vistas, Clicks en enlaces, Agendamientos):
-          "vista → click → venta" no se instrumenta hoy (compra_completada
-          queda sin trackear a propósito, ver CLAUDE.md), así que el mockup
-          se detiene en agendamientos, no en "ventas". */}
-      <section className="border-t border-border/60 bg-zinc-50 py-20 dark:bg-zinc-950">
+      {/* Cómo funciona — numeración real: es un proceso de 3 pasos genuino. */}
+      <section className="relative border-t border-white/10 py-20">
+        <div className="mx-auto w-full max-w-5xl px-6">
+          <h2 className="text-center font-[family-name:var(--font-display)] text-3xl font-extrabold">
+            Lista en 3 pasos
+          </h2>
+          <div className="mt-12 grid grid-cols-1 gap-8 sm:grid-cols-3">
+            {PASOS.map((paso, index) => (
+              <div key={paso.numero} className="flex flex-col items-start gap-3">
+                <span className={`${NUMERO_CLASE} ${NUMERO_FONDO[index]}`}>{paso.numero}</span>
+                <h3 className="text-base font-semibold text-white">{paso.titulo}</h3>
+                <p className="text-sm text-white/60">{paso.texto}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Métricas — números ilustrativos (referencia visual, decisión
+          explícita del cliente de no etiquetarlos como ejemplo, ver
+          CLAUDE.md), con animación de conteo al entrar en viewport. */}
+      <section className="relative border-t border-white/10 py-20">
         <div className="mx-auto w-full max-w-3xl px-6 text-center">
-          <h2 className="font-[family-name:var(--font-creativa)] text-3xl font-bold text-foreground">
+          <h2 className="font-[family-name:var(--font-display)] text-3xl font-extrabold">
             Tu panel, sin adivinar
           </h2>
-          <p className="mt-3 text-muted-foreground">
-            Cada vista, cada clic y cada cita quedan en tu panel. Sabes qué
-            está funcionando, no lo adivinas.
+          <p className="mt-3 text-white/60">
+            Cada vista, cada clic y cada cita quedan en tu panel.
           </p>
 
-          <div className="relative mt-10 rounded-3xl border border-black/5 bg-white p-8 shadow-sm dark:border-white/10 dark:bg-zinc-900">
-            <span className="absolute right-6 top-6 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
-              Ejemplo ilustrativo
-            </span>
+          <div className="relative mt-10 rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl">
             <div className="flex flex-col items-center justify-center gap-6 sm:flex-row">
               {[
-                { valor: "128", etiqueta: "Vistas" },
-                { valor: "34", etiqueta: "Clicks en enlaces", nota: "27% de las vistas" },
-                { valor: "9", etiqueta: "Agendamientos", nota: "7% de las vistas" },
+                { valor: 128, etiqueta: "Vistas" },
+                { valor: 34, etiqueta: "Clicks en enlaces", nota: "27% de las vistas" },
+                { valor: 9, etiqueta: "Agendamientos", nota: "7% de las vistas" },
               ].map((stat, index) => (
                 <div key={stat.etiqueta} className="flex items-center gap-6">
                   <div className="flex flex-col items-center gap-1">
-                    <span className="font-[family-name:var(--font-geist-mono)] text-4xl font-bold text-foreground">
-                      {stat.valor}
-                    </span>
-                    <span className="text-sm font-medium text-foreground">{stat.etiqueta}</span>
-                    {stat.nota && (
-                      <span className="text-xs text-muted-foreground">{stat.nota}</span>
-                    )}
+                    <ContadorAnimado
+                      valor={stat.valor}
+                      className="font-[family-name:var(--font-geist-mono)] text-4xl font-bold text-white"
+                    />
+                    <span className="text-sm font-medium text-white">{stat.etiqueta}</span>
+                    {stat.nota && <span className="text-xs text-white/50">{stat.nota}</span>}
                   </div>
                   {index < 2 && (
-                    <ArrowRight className="size-5 shrink-0 text-muted-foreground/40 max-sm:hidden" />
+                    <ArrowRight className="size-5 shrink-0 text-white/20 max-sm:hidden" />
                   )}
                 </div>
               ))}
@@ -319,76 +403,70 @@ export default async function Home() {
         </div>
       </section>
 
-      {testimonios.length > 0 && <TestimoniosDestacados testimonios={testimonios} />}
+      {testimonios.length > 0 && (
+        <div id="testimonios">
+          <TestimoniosDestacados testimonios={testimonios} />
+        </div>
+      )}
 
-      {/* Precios — teaser liviano, sin números propios a propósito: /planes
-          ya es la única fuente de verdad de precios (100% DB-driven vía
-          getPlanesActivos()), duplicar montos acá los desincronizaría. */}
-      <section className="relative overflow-hidden border-t border-border/60 bg-zinc-950 py-20 text-white">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -left-32 top-0 size-96 rounded-full bg-indigo-600 opacity-30 blur-3xl"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-32 bottom-0 size-96 rounded-full bg-orange-500 opacity-20 blur-3xl"
-        />
+      <PreciosDestacados planes={planes} />
 
-        <div className="relative mx-auto w-full max-w-2xl px-6 text-center">
-          <h2 className="font-[family-name:var(--font-creativa)] text-3xl font-bold text-balance sm:text-4xl">
-            Un plan para cada etapa de tu negocio
+      {/* Próximamente — roadmap real confirmado, presentado como tal. */}
+      <section className="relative border-t border-white/10 py-20">
+        <div className="mx-auto w-full max-w-5xl px-6">
+          <h2 className="text-center font-[family-name:var(--font-display)] text-3xl font-extrabold text-balance sm:text-4xl">
+            Próximamente en Linkard
           </h2>
-          <p className="mt-2 text-zinc-400">
-            Presencia, Alcance o Poder — elegí el que se ajuste a vos hoy.
-            Cada tarjeta tiene su propio plan y su propia suscripción.
-          </p>
-          <div className="mt-8">
-            <Link
-              href="/planes"
-              className={buttonVariants({ size: "lg", className: "px-8 text-base" })}
-            >
-              Ver planes y precios <ArrowRight className="size-4" />
-            </Link>
+          <div className="mt-12 grid grid-cols-1 gap-6 sm:grid-cols-3">
+            {PROXIMAMENTE.map(({ icono: Icono, titulo, texto }) => (
+              <div
+                key={titulo}
+                className="relative flex flex-col gap-3 rounded-3xl border border-dashed border-white/15 bg-white/[0.02] p-8"
+              >
+                <span className="absolute right-5 top-5 rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-white/60">
+                  Próximamente
+                </span>
+                <span className="flex size-11 items-center justify-center rounded-2xl bg-white/10 text-white/80">
+                  <Icono className="size-5" />
+                </span>
+                <h3 className="text-base font-semibold text-white">{titulo}</h3>
+                <p className="text-sm text-white/50">{texto}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
       {/* CTA final */}
-      <section className="py-24 text-center">
-        <h2 className="font-[family-name:var(--font-creativa)] text-3xl font-bold text-balance text-foreground">
+      <section className="relative border-t border-white/10 py-24 text-center">
+        <h2 className="font-[family-name:var(--font-display)] text-3xl font-extrabold text-balance sm:text-4xl">
           Tu próxima venta empieza con un toque
         </h2>
-        <p className="mt-2 text-muted-foreground">
+        <p className="mt-2 text-white/60">
           Crea tu tarjeta hoy y déjala lista para compartir en minutos.
         </p>
         <div className="mt-6">
           <Link
             href="/crear"
-            className={buttonVariants({ size: "lg", className: "px-8 text-base" })}
+            className={buttonVariants({
+              size: "lg",
+              className: "bg-white px-8 text-base text-violet-700 hover:bg-white/90",
+            })}
           >
             Crea tu tarjeta <ArrowRight className="size-4" />
           </Link>
         </div>
       </section>
 
-      <footer className="border-t border-border/60 py-6 text-center">
-        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs font-medium text-muted-foreground">
-          <Link
-            href="/politica-privacidad"
-            className="underline-offset-4 hover:text-foreground hover:underline"
-          >
+      <footer className="relative border-t border-white/10 py-6 text-center">
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs font-medium text-white/50">
+          <Link href="/politica-privacidad" className="underline-offset-4 hover:text-white hover:underline">
             Política de Privacidad
           </Link>
-          <Link
-            href="/condiciones-servicio"
-            className="underline-offset-4 hover:text-foreground hover:underline"
-          >
+          <Link href="/condiciones-servicio" className="underline-offset-4 hover:text-white hover:underline">
             Condiciones de Servicio
           </Link>
-          <Link
-            href="/login"
-            className="underline-offset-4 hover:text-foreground hover:underline"
-          >
+          <Link href="/login" className="underline-offset-4 hover:text-white hover:underline">
             Acceso Admin
           </Link>
         </div>

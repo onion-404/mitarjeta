@@ -122,9 +122,21 @@ interface TarjetaFormProps {
    *  edición es sobre una suscripción pendiente/abandonada) — fuente del
    *  gating de personalización avanzada. Null si nunca pagó. */
   planActivo?: Plan | null
+  /** Código de cupón que llegó por query param (?cupon=...) desde el botón
+   *  "Obtener mi descuento" del home, a través de /planes → /crear (y del
+   *  redirectTo de login si hizo falta). Se pre-llena Y se valida de
+   *  verdad (fn_cupon_es_valido) — no se asume aplicado solo por venir en
+   *  la URL, puede haberse agotado/vencido para cuando la persona llega acá. */
+  cuponInicial?: string
 }
 
-export function TarjetaForm({ tarjeta, plan, periodicidad = "anual", planActivo }: TarjetaFormProps) {
+export function TarjetaForm({
+  tarjeta,
+  plan,
+  periodicidad = "anual",
+  planActivo,
+  cuponInicial,
+}: TarjetaFormProps) {
   const esEdicion = Boolean(tarjeta)
   // Una tarjeta existente puede no tener plan activo todavía: se creó, se
   // llegó a Stripe, pero el pago se canceló o abandonó antes de completarse
@@ -465,6 +477,32 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual", planActivo 
     setCuponInput("")
     setCuponError(null)
   }
+
+  // Pre-llenado desde ?cupon=... (botón "Obtener mi descuento" del home,
+  // ver CLAUDE.md) — se muestra YA aplicado, no como si la persona tuviera
+  // que reingresarlo, pero de todas formas pasa por fn_cupon_es_valido():
+  // puede haberse agotado o vencido entre que lo "guardó" en el home y que
+  // llega hasta acá.
+  React.useEffect(() => {
+    if (esEdicion || !cuponInicial?.trim()) return
+    const codigo = cuponInicial.trim()
+    // Diferido: setState síncrono dentro de un efecto dispara renders en
+    // cascada (regla react-hooks/set-state-in-effect) — mismo mecanismo
+    // que ya usa mostrarToast en este archivo.
+    window.setTimeout(() => {
+      setCuponInput(codigo)
+      setValidandoCupon(true)
+      setCuponError(null)
+    }, 0)
+    validarCupon(codigo).then((cupon) => {
+      setValidandoCupon(false)
+      if (!cupon) {
+        setCuponError("Ese código no es válido o ya no está activo.")
+        return
+      }
+      setCuponValidado(cupon)
+    })
+  }, [esEdicion, cuponInicial])
 
   function agregarServicio() {
     setServicios((prev) =>
@@ -2108,7 +2146,7 @@ export function TarjetaForm({ tarjeta, plan, periodicidad = "anual", planActivo 
       {cuponError && <p className="text-sm text-destructive">{cuponError}</p>}
 
       <p className="text-xs text-muted-foreground">
-        Al crear tu tarjeta vas a ir a Mercado Pago para activar tu suscripción{" "}
+        Al crear tu tarjeta vas a ir a Stripe para activar tu suscripción{" "}
         {periodicidad === "anual" ? "anual" : "mensual"}. El precio final puede ser menor
         a este si te corresponde algún descuento adicional.
       </p>

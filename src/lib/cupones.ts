@@ -59,6 +59,19 @@ export async function eliminarCupon(id: number) {
  * los datos para mostrar el descuento en el preview — ya no repite la
  * validación de vencimiento/límite, fn_cupon_es_valido ya la hizo.
  */
+/**
+ * Contador real para el home (cupón de lanzamiento LINKARD15) — expone
+ * solo el número vía fn_cupon_usos_restantes() (security definer, no
+ * necesita policy de select sobre cupon_usos). Null = sin límite de usos
+ * o el código no existe; el llamador decide qué mostrar en ese caso.
+ */
+export async function getCuponUsosRestantes(codigo: string): Promise<number | null> {
+  const { data } = await supabase.rpc("fn_cupon_usos_restantes", {
+    p_codigo: codigo.trim().toUpperCase(),
+  })
+  return (data as number | null) ?? null
+}
+
 export async function validarCupon(codigo: string): Promise<Cupon | null> {
   if (!codigo.trim()) return null
 
