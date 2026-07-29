@@ -98,6 +98,27 @@ export interface IdentidadVisual {
   glassmorfismo?: boolean
   /** Trazabilidad de qué plantilla se usó como base, si alguna — no afecta el render. */
   plantillaBase?: string | null
+  /** Ancla de reposicionamiento del banner (0-100 cada eje), tipo "reposicionar
+   *  foto de portada" — reemplaza el object-position fijo (50%,50%) de
+   *  siempre. Sin este campo, el banner se sigue viendo exactamente igual
+   *  que antes (fallback a 50/50). */
+  bannerPosicion?: { x: number; y: number }
+  /** Imagen de fondo de TODA la tarjeta (banner + detrás del panel de
+   *  contenido) — mutuamente excluyente con bannerUrl/bannerPreset/degradé
+   *  de banner Y con fondoTarjeta* de abajo: si está seteada, tiene
+   *  prioridad sobre ambos en el render (gating: personalizacion_avanzada). */
+  fondoImagenUrl?: string
+  fondoImagenPosicion?: { x: number; y: number }
+  /** Fondo del panel de contenido (blanco/oscuro por defecto según
+   *  temaModo) — separado a propósito del fondo del banner (colorPrimario/
+   *  colorSecundario) para no repetir la confusión de que "Fondo" en
+   *  Colores y tipografía en realidad controlaba el banner. Simple =
+   *  personalizacion_libre, avanzado = personalizacion_avanzada. */
+  fondoTarjetaModo?: "simple" | "avanzado"
+  fondoTarjetaColor?: string
+  fondoTarjetaColorSecundario?: string
+  fondoTarjetaTipoDegradado?: "lineal" | "radial"
+  fondoTarjetaDireccionGrados?: number
 }
 
 export type MetodoPago = "mercado_pago" | "transferencia"

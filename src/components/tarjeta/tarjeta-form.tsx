@@ -10,6 +10,7 @@ import {
   FileText,
   Loader2,
   Moon,
+  Move,
   Plus,
   Sun,
   Trash2,
@@ -28,6 +29,7 @@ import { OpcionPersonalizacion, SwatchDivisor, SwatchForma } from "@/components/
 import { PlantillasGaleria } from "@/components/tarjeta/plantillas-galeria"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 import { RecortarAvatar } from "@/components/tarjeta/recortar-avatar"
+import { ReposicionarImagen } from "@/components/tarjeta/reposicionar-imagen"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
 import { BANNER_PRESETS } from "@/lib/banner-presets"
@@ -256,6 +258,29 @@ export function TarjetaForm({
     visualInicial?.plantillaBase ?? null
   )
 
+  // Fondo de la tarjeta (panel de contenido) — separado a propósito del
+  // fondo del banner (colorPrimario/colorSecundario, arriba). "Activo" es un
+  // toggle explícito (no basta con mirar si fondoTarjetaColor tiene valor:
+  // un <input type="color"> siempre tiene algún valor, nunca está "vacío").
+  const [fondoTarjetaActivo, setFondoTarjetaActivo] = React.useState(
+    Boolean(visualInicial?.fondoTarjetaColor)
+  )
+  const [fondoTarjetaModo, setFondoTarjetaModo] = React.useState<"simple" | "avanzado">(
+    visualInicial?.fondoTarjetaModo ?? "simple"
+  )
+  const [fondoTarjetaColor, setFondoTarjetaColor] = React.useState(
+    visualInicial?.fondoTarjetaColor ?? "#ffffff"
+  )
+  const [fondoTarjetaColorSecundario, setFondoTarjetaColorSecundario] = React.useState(
+    visualInicial?.fondoTarjetaColorSecundario ?? "#f4f4f5"
+  )
+  const [fondoTarjetaTipoDegradado, setFondoTarjetaTipoDegradado] = React.useState<
+    "lineal" | "radial"
+  >(visualInicial?.fondoTarjetaTipoDegradado ?? "lineal")
+  const [fondoTarjetaDireccionGrados, setFondoTarjetaDireccionGrados] = React.useState(
+    visualInicial?.fondoTarjetaDireccionGrados ?? 135
+  )
+
   // Fail-closed: sin plan confirmado (ni el elegido al crear, ni uno activo
   // en edición), el gating queda en el nivel más restrictivo — mismo
   // criterio que el resto del gating por plan del proyecto.
@@ -300,6 +325,26 @@ export function TarjetaForm({
     visualInicial?.bannerUrl ? undefined : (visualInicial?.bannerPreset ?? "aurora")
   )
   const [bannerInputKey, setBannerInputKey] = React.useState(0)
+  const [bannerPosicion, setBannerPosicion] = React.useState(
+    visualInicial?.bannerPosicion ?? { x: 50, y: 50 }
+  )
+  const [reposicionandoBanner, setReposicionandoBanner] = React.useState(false)
+
+  // Imagen de fondo de TODA la tarjeta (banner + detrás del panel) —
+  // mutuamente excluyente con el banner de color/preset/upload de arriba y
+  // con "Fondo de la tarjeta" de abajo (gating: personalizacion_avanzada,
+  // ver lib/personalizacion.ts).
+  const [fondoImagenFile, setFondoImagenFile] = React.useState<File | null>(null)
+  const [fondoImagenPreview, setFondoImagenPreview] = React.useState("")
+  const [fondoImagenUrlExistente, setFondoImagenUrlExistente] = React.useState(
+    visualInicial?.fondoImagenUrl ?? ""
+  )
+  const [fondoImagenInputKey, setFondoImagenInputKey] = React.useState(0)
+  const [fondoImagenPosicion, setFondoImagenPosicion] = React.useState(
+    visualInicial?.fondoImagenPosicion ?? { x: 50, y: 50 }
+  )
+  const [reposicionandoFondoImagen, setReposicionandoFondoImagen] = React.useState(false)
+  const fondoImagenAbortRef = React.useRef<AbortController | null>(null)
 
   const avatarAbortRef = React.useRef<AbortController | null>(null)
   const bannerAbortRef = React.useRef<AbortController | null>(null)
@@ -717,6 +762,36 @@ export function TarjetaForm({
     setBannerInputKey((k) => k + 1)
   }
 
+  function handleFondoImagenFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const error = validarImagen(file)
+    if (error) {
+      mostrarErrorArchivo(error)
+      event.target.value = ""
+      return
+    }
+    setFondoImagenFile(file)
+    setFondoImagenUrlExistente("")
+    setFondoImagenPosicion({ x: 50, y: 50 })
+    setFondoImagenPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(file)
+    })
+  }
+
+  function quitarFondoImagen() {
+    fondoImagenAbortRef.current?.abort()
+    fondoImagenAbortRef.current = null
+    setFondoImagenFile(null)
+    setFondoImagenPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return ""
+    })
+    setFondoImagenUrlExistente("")
+    setFondoImagenInputKey((k) => k + 1)
+  }
+
   async function handleGuardar(event: React.SubmitEvent) {
     event.preventDefault()
     const nombrePrincipal = esEmpresarial ? nombreEmpresa : nombre
@@ -749,12 +824,14 @@ export function TarjetaForm({
     let avatarUrl: string | undefined = avatarUrlExistente || undefined
     let bannerUrl: string | undefined = bannerUrlExistente || undefined
     let brochureUrl: string | undefined = brochureUrlExistente || undefined
+    let fondoImagenUrlFinal: string | undefined = fondoImagenUrlExistente || undefined
     const imagenesProductoPorIndice = new Map<number, string>()
 
     type TareaSubida =
       | { tipo: "avatar"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "banner"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "brochure"; etiqueta: string; promesa: Promise<string | null> }
+      | { tipo: "fondoImagen"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "producto"; indice: number; etiqueta: string; promesa: Promise<string | null> }
 
     const tareas: TareaSubida[] = []
@@ -799,6 +876,19 @@ export function TarjetaForm({
       })
     }
 
+    if (fondoImagenFile) {
+      fondoImagenAbortRef.current = new AbortController()
+      tareas.push({
+        tipo: "fondoImagen",
+        etiqueta: "la imagen de fondo",
+        promesa: subirImagenCloudinary(
+          fondoImagenFile,
+          "mitarjeta/fondos",
+          fondoImagenAbortRef.current.signal
+        ).catch(() => null),
+      })
+    }
+
     productos.forEach((producto, indice) => {
       if (producto.titulo.trim() && producto.imagenFile) {
         tareas.push({
@@ -821,6 +911,7 @@ export function TarjetaForm({
     avatarAbortRef.current = null
     bannerAbortRef.current = null
     brochureAbortRef.current = null
+    fondoImagenAbortRef.current = null
 
     const fallidas: string[] = []
     tareas.forEach((tarea, i) => {
@@ -832,6 +923,7 @@ export function TarjetaForm({
       if (tarea.tipo === "avatar") avatarUrl = url
       else if (tarea.tipo === "banner") bannerUrl = url
       else if (tarea.tipo === "brochure") brochureUrl = url
+      else if (tarea.tipo === "fondoImagen") fondoImagenUrlFinal = url
       else imagenesProductoPorIndice.set(tarea.indice, url)
     })
 
@@ -907,6 +999,19 @@ export function TarjetaForm({
       divisorBanner,
       glassmorfismo,
       plantillaBase,
+      bannerPosicion,
+      fondoImagenUrl: fondoImagenUrlFinal,
+      fondoImagenPosicion: fondoImagenUrlFinal ? fondoImagenPosicion : undefined,
+      fondoTarjetaModo: fondoTarjetaActivo ? fondoTarjetaModo : undefined,
+      fondoTarjetaColor: fondoTarjetaActivo ? fondoTarjetaColor : undefined,
+      fondoTarjetaColorSecundario:
+        fondoTarjetaActivo && fondoTarjetaModo === "avanzado" ? fondoTarjetaColorSecundario : undefined,
+      fondoTarjetaTipoDegradado:
+        fondoTarjetaActivo && fondoTarjetaModo === "avanzado" ? fondoTarjetaTipoDegradado : undefined,
+      fondoTarjetaDireccionGrados:
+        fondoTarjetaActivo && fondoTarjetaModo === "avanzado" && fondoTarjetaTipoDegradado === "lineal"
+          ? fondoTarjetaDireccionGrados
+          : undefined,
     }
 
     if (bloqueosGuardado.length > 0) {
@@ -1058,6 +1163,7 @@ export function TarjetaForm({
 
   const avatarMostrado = avatarPreview || avatarUrlExistente
   const bannerMostrado = bannerPreview || bannerUrlExistente
+  const fondoImagenMostrado = fondoImagenPreview || fondoImagenUrlExistente
   const brochureMostrado = brochureUrlExistente || (brochureFile ? "#" : undefined)
   const productosActuales: Producto[] = productos
     .filter((producto) => producto.titulo.trim())
@@ -1119,6 +1225,19 @@ export function TarjetaForm({
     divisorBanner,
     glassmorfismo,
     plantillaBase,
+    bannerPosicion,
+    fondoImagenUrl: fondoImagenMostrado || undefined,
+    fondoImagenPosicion: fondoImagenMostrado ? fondoImagenPosicion : undefined,
+    fondoTarjetaModo: fondoTarjetaActivo ? fondoTarjetaModo : undefined,
+    fondoTarjetaColor: fondoTarjetaActivo ? fondoTarjetaColor : undefined,
+    fondoTarjetaColorSecundario:
+      fondoTarjetaActivo && fondoTarjetaModo === "avanzado" ? fondoTarjetaColorSecundario : undefined,
+    fondoTarjetaTipoDegradado:
+      fondoTarjetaActivo && fondoTarjetaModo === "avanzado" ? fondoTarjetaTipoDegradado : undefined,
+    fondoTarjetaDireccionGrados:
+      fondoTarjetaActivo && fondoTarjetaModo === "avanzado" && fondoTarjetaTipoDegradado === "lineal"
+        ? fondoTarjetaDireccionGrados
+        : undefined,
   }
 
   const bloqueosGuardado = calcularBloqueos(
@@ -1203,6 +1322,33 @@ export function TarjetaForm({
     ? ({ plan: "alcance" } as const)
     : null
 
+  const bloqueoGlassmorfismo = estaBloqueada(
+    "avanzada",
+    true,
+    visualInicial?.glassmorfismo ?? false,
+    featuresPersonalizacion
+  )
+
+  // Fondo de la tarjeta: mismo criterio que "Colores" de arriba — simple
+  // requiere Alcance, avanzado (2 colores + degradado) requiere Poder.
+  const bloqueoFondoTarjetaSimple = bloqueoColoresSimple
+  const bloqueoFondoTarjetaAvanzado = estaBloqueada(
+    "avanzada",
+    true,
+    Boolean(visualInicial?.fondoTarjetaModo === "avanzado"),
+    featuresPersonalizacion
+  )
+
+  // Imagen de fondo de toda la tarjeta: Poder únicamente (la feature
+  // visualmente más transformadora de las 6 nuevas, mismo nivel que
+  // divisores exóticos/glassmorfismo/modos avanzados).
+  const bloqueoFondoImagen = estaBloqueada(
+    "avanzada",
+    true,
+    Boolean(visualInicial?.fondoImagenUrl),
+    featuresPersonalizacion
+  )
+
   const contenidoColoresYTipografia = (
     <div className="flex flex-col gap-5 px-5 pb-5 pt-1">
       <div className="flex flex-col gap-2">
@@ -1246,7 +1392,7 @@ export function TarjetaForm({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
-            <span className="text-xs text-muted-foreground">Fondo</span>
+            <span className="text-xs text-muted-foreground">Fondo del banner</span>
             <div className="flex items-center gap-1.5">
               <input
                 type="color"
@@ -1284,6 +1430,30 @@ export function TarjetaForm({
           </label>
         </div>
 
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+          <span className={cn(labelClase, "flex items-center gap-1.5 text-xs")}>
+            Estilo de botones y badges
+            {bloqueoGlassmorfismo && <CandadoPlan plan={bloqueoGlassmorfismo.plan} />}
+          </span>
+          <div className="inline-flex rounded-full border border-border bg-background p-0.5">
+            {(["solido", "vidrio"] as const).map((opcion) => (
+              <button
+                key={opcion}
+                type="button"
+                onClick={() => setGlassmorfismo(opcion === "vidrio")}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium transition-all duration-200 ease-out",
+                  (opcion === "vidrio") === glassmorfismo
+                    ? "bg-foreground text-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {opcion === "solido" ? "Sólido" : "Vidrio"}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {modoColorAvanzado && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
@@ -1314,6 +1484,104 @@ export function TarjetaForm({
               />
             </label>
           </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <span className={cn(labelClase, "flex items-center gap-1.5")}>
+            Fondo de la tarjeta
+            {fondoTarjetaActivo &&
+              (fondoTarjetaModo === "avanzado" ? bloqueoFondoTarjetaAvanzado : bloqueoFondoTarjetaSimple) && (
+                <CandadoPlan
+                  plan={
+                    (fondoTarjetaModo === "avanzado"
+                      ? bloqueoFondoTarjetaAvanzado
+                      : bloqueoFondoTarjetaSimple
+                    )!.plan
+                  }
+                />
+              )}
+          </span>
+          <Switch checked={fondoTarjetaActivo} onCheckedChange={setFondoTarjetaActivo} />
+        </div>
+        <span className="text-xs text-muted-foreground">
+          El panel de contenido (separado del fondo del banner de arriba).
+        </span>
+
+        {fondoTarjetaActivo && (
+          <>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Modo avanzado (2 colores + degradado)</span>
+              <Switch
+                checked={fondoTarjetaModo === "avanzado"}
+                onCheckedChange={(checked) => setFondoTarjetaModo(checked ? "avanzado" : "simple")}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+                <span className="text-xs text-muted-foreground">
+                  {fondoTarjetaModo === "avanzado" ? "Color 1" : "Color"}
+                </span>
+                <input
+                  type="color"
+                  value={fondoTarjetaColor}
+                  onChange={(e) => setFondoTarjetaColor(e.target.value)}
+                  className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                />
+              </label>
+              {fondoTarjetaModo === "avanzado" && (
+                <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+                  <span className="text-xs text-muted-foreground">Color 2</span>
+                  <input
+                    type="color"
+                    value={fondoTarjetaColorSecundario}
+                    onChange={(e) => setFondoTarjetaColorSecundario(e.target.value)}
+                    className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                  />
+                </label>
+              )}
+            </div>
+
+            {fondoTarjetaModo === "avanzado" && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+                  <span className="text-xs text-muted-foreground">Tipo</span>
+                  <div className="inline-flex rounded-full border border-border bg-background p-0.5">
+                    {(["lineal", "radial"] as const).map((opcion) => (
+                      <button
+                        key={opcion}
+                        type="button"
+                        onClick={() => setFondoTarjetaTipoDegradado(opcion)}
+                        className={cn(
+                          "rounded-full px-3 py-1 text-xs font-medium transition-all duration-200 ease-out",
+                          fondoTarjetaTipoDegradado === opcion
+                            ? "bg-foreground text-background shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {opcion === "lineal" ? "Lineal" : "Radial"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {fondoTarjetaTipoDegradado === "lineal" && (
+                  <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+                    <span className="text-xs text-muted-foreground">Dirección</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={359}
+                      value={fondoTarjetaDireccionGrados}
+                      onChange={(e) => setFondoTarjetaDireccionGrados(Number(e.target.value))}
+                      className="w-24 cursor-pointer accent-foreground"
+                    />
+                  </label>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1504,13 +1772,6 @@ export function TarjetaForm({
     </div>
   )
 
-  const bloqueoGlassmorfismo = estaBloqueada(
-    "avanzada",
-    true,
-    visualInicial?.glassmorfismo ?? false,
-    featuresPersonalizacion
-  )
-
   const contenidoAvatarYBanner = (
     <div className="flex flex-col gap-5 px-5 pb-5 pt-1">
       <div className="flex flex-col gap-1.5">
@@ -1575,7 +1836,12 @@ export function TarjetaForm({
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div
+        className={cn(
+          "flex flex-col gap-2 transition-opacity",
+          fondoImagenMostrado && "pointer-events-none opacity-40"
+        )}
+      >
         <span className={labelClase}>Fondo del banner</span>
         <div className="grid grid-cols-5 gap-2">
           {BANNER_PRESETS.map((preset) => (
@@ -1604,7 +1870,7 @@ export function TarjetaForm({
             <div className="relative shrink-0">
               <div
                 className="h-12 w-20 rounded-lg border border-border bg-cover bg-center"
-                style={{ backgroundImage: `url(${bannerMostrado})` }}
+                style={{ backgroundImage: `url(${bannerMostrado})`, backgroundPosition: `${bannerPosicion.x}% ${bannerPosicion.y}%` }}
               />
               <button
                 type="button"
@@ -1628,6 +1894,66 @@ export function TarjetaForm({
             )}
           />
         </div>
+        {bannerMostrado && (
+          <button
+            type="button"
+            onClick={() => setReposicionandoBanner(true)}
+            className="inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-background/50 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+          >
+            <Move className="size-3.5" /> Reposicionar
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-background/50 p-3">
+        <span className={cn(labelClase, "flex items-center gap-1.5")}>
+          Imagen de fondo de la tarjeta
+          {bloqueoFondoImagen && <CandadoPlan plan={bloqueoFondoImagen.plan} />}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          Reemplaza el banner y el fondo del panel por una sola imagen continua
+          detrás de toda la tarjeta.
+        </span>
+        <div className="flex items-center gap-3">
+          {fondoImagenMostrado && (
+            <div className="relative shrink-0">
+              <div
+                className="h-12 w-20 rounded-lg border border-border bg-cover"
+                style={{
+                  backgroundImage: `url(${fondoImagenMostrado})`,
+                  backgroundPosition: `${fondoImagenPosicion.x}% ${fondoImagenPosicion.y}%`,
+                }}
+              />
+              <button
+                type="button"
+                onClick={quitarFondoImagen}
+                aria-label="Quitar imagen de fondo"
+                className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          )}
+          <input
+            key={fondoImagenInputKey}
+            type="file"
+            accept="image/*"
+            onChange={handleFondoImagenFileChange}
+            className={cn(
+              inputClase,
+              "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+            )}
+          />
+        </div>
+        {fondoImagenMostrado && (
+          <button
+            type="button"
+            onClick={() => setReposicionandoFondoImagen(true)}
+            className="inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-background/50 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+          >
+            <Move className="size-3.5" /> Reposicionar
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -1655,13 +1981,32 @@ export function TarjetaForm({
         </div>
       </div>
 
-      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
-        <span className={cn(labelClase, "flex items-center gap-1.5")}>
-          Efecto vidrio
-          {bloqueoGlassmorfismo && <CandadoPlan plan={bloqueoGlassmorfismo.plan} />}
-        </span>
-        <Switch checked={glassmorfismo} onCheckedChange={setGlassmorfismo} />
-      </label>
+      {bannerMostrado && (
+        <ReposicionarImagen
+          abierto={reposicionandoBanner}
+          imagenUrl={bannerMostrado}
+          valorInicial={bannerPosicion}
+          alto={192}
+          onCancelar={() => setReposicionandoBanner(false)}
+          onConfirmar={(pos) => {
+            setBannerPosicion(pos)
+            setReposicionandoBanner(false)
+          }}
+        />
+      )}
+      {fondoImagenMostrado && (
+        <ReposicionarImagen
+          abierto={reposicionandoFondoImagen}
+          imagenUrl={fondoImagenMostrado}
+          valorInicial={fondoImagenPosicion}
+          alto={420}
+          onCancelar={() => setReposicionandoFondoImagen(false)}
+          onConfirmar={(pos) => {
+            setFondoImagenPosicion(pos)
+            setReposicionandoFondoImagen(false)
+          }}
+        />
+      )}
     </div>
   )
 
@@ -2299,6 +2644,7 @@ export function TarjetaForm({
             tipo={tipo}
             datosContacto={datosContactoActual}
             identidadVisual={identidadVisualActual}
+            slug={tarjeta.slug}
             agendaServicios={agendaServiciosPreview}
             mostrarAcciones
             className="relative"
@@ -2339,6 +2685,7 @@ export function TarjetaForm({
                   tipo={tipo}
                   datosContacto={datosContactoActual}
                   identidadVisual={identidadVisualActual}
+                  slug={esEdicion ? tarjeta?.slug : slugPersonalizado.trim()}
                   agendaServicios={agendaServiciosPreview}
                   className="w-full min-w-0 rounded-none border-0 shadow-none"
                 />

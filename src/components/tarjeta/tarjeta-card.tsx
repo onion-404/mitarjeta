@@ -33,6 +33,10 @@ interface TarjetaCardProps {
   tipo: TarjetaTipo
   datosContacto: DatosContacto
   identidadVisual: IdentidadVisual
+  /** Enlace personalizado (el mismo de "Datos esenciales") — se muestra en el
+   *  badge en vez del tipo de tarjeta. Sin slug (ej. antes de escribirlo al
+   *  crear), el badge no se muestra. */
+  slug?: string
   className?: string
   mostrarAcciones?: boolean
   /** Servicios agendables activos, para la sección "Agendar" (no viene de datosContacto: son filas propias, no JSONB). */
@@ -56,11 +60,6 @@ export function formatDuracion(minutos: number) {
 const GRADIENTE_PLACEHOLDER: Record<TarjetaTipo, string> = {
   personal: "linear-gradient(135deg, #6366f1, #8b5cf6, #d946ef)",
   empresarial: "linear-gradient(135deg, #f59e0b, #f97316, #f43f5e)",
-}
-
-const ETIQUETA_TIPO: Record<TarjetaTipo, string> = {
-  personal: "Tarjeta personal",
-  empresarial: "Tarjeta empresarial",
 }
 
 function iniciales(nombre?: string) {
@@ -111,6 +110,7 @@ export function TarjetaCard({
   tipo,
   datosContacto,
   identidadVisual,
+  slug,
   className,
   mostrarAcciones = false,
   agendaServicios,
@@ -177,6 +177,14 @@ export function TarjetaCard({
     estiloTipografiaCuerpo,
     divisorBanner,
     glassmorfismo,
+    bannerPosicion,
+    fondoImagenUrl,
+    fondoImagenPosicion,
+    fondoTarjetaModo,
+    fondoTarjetaColor,
+    fondoTarjetaColorSecundario,
+    fondoTarjetaTipoDegradado,
+    fondoTarjetaDireccionGrados,
   } = identidadVisual
   const [productosAbiertos, setProductosAbiertos] = React.useState(false)
   const [serviciosAbiertos, setServiciosAbiertos] = React.useState<Set<number>>(
@@ -196,7 +204,14 @@ export function TarjetaCard({
   const subtitulo = esEmpresarial ? giro : puesto
   const telefonoPrincipal = esEmpresarial ? telefonoCorporativo : telefono
   const videoEmbedUrl = obtenerYoutubeEmbedUrl(videoUrl)
-  const esOscuro = temaModo === "oscuro"
+  // Con un "Fondo de la tarjeta" personalizado, el contraste de TODO el
+  // texto/bordes del panel (ya atados a dark: en vez de duplicarse por
+  // elemento) sigue al color elegido en vez de a temaModo — mismo criterio
+  // de auto-contraste que ya usan botones/badges, aplicado acá a nivel de
+  // toggle .dark en vez de por className individual.
+  const esOscuro = fondoTarjetaColor
+    ? obtenerColorContraste(fondoTarjetaColor) === "#ffffff"
+    : temaModo === "oscuro"
 
   function fuentePorEstilo(estilo: typeof estiloTipografia) {
     return estilo === "elegante"
@@ -220,6 +235,26 @@ export function TarjetaCard({
       ? `linear-gradient(135deg, ${colorPrimario}, ${colorSecundario})`
       : undefined
   const fondoBanner = preset?.background ?? gradienteInline
+
+  // Imagen de fondo de TODA la tarjeta (banner + detrás del panel) — cuando
+  // está activa, tiene prioridad sobre el banner (color/preset/upload) Y
+  // sobre "Fondo de la tarjeta" de abajo (mutuamente excluyentes, ver
+  // CLAUDE.md). Los valores de banner/fondo-de-tarjeta NO se borran al
+  // activarla — solo se ignoran en el render, así desactivarla no pierde
+  // la configuración previa.
+  const tieneFondoImagen = Boolean(fondoImagenUrl)
+  const posicionBanner = `${bannerPosicion?.x ?? 50}% ${bannerPosicion?.y ?? 50}%`
+  const posicionFondoImagen = `${fondoImagenPosicion?.x ?? 50}% ${fondoImagenPosicion?.y ?? 50}%`
+
+  // Fondo del panel de contenido (separado del fondo del banner de arriba).
+  const fondoTarjetaInline =
+    !tieneFondoImagen && fondoTarjetaColor
+      ? fondoTarjetaModo === "avanzado" && fondoTarjetaColorSecundario
+        ? fondoTarjetaTipoDegradado === "radial"
+          ? `radial-gradient(circle, ${fondoTarjetaColor}, ${fondoTarjetaColorSecundario})`
+          : `linear-gradient(${fondoTarjetaDireccionGrados ?? 135}deg, ${fondoTarjetaColor}, ${fondoTarjetaColorSecundario})`
+        : fondoTarjetaColor
+      : undefined
 
   // Botones/badges: colorBotones/colorBadges son nuevos, con default =
   // colorPrimario/colorSecundario para que una tarjeta que nunca los seteó
@@ -322,34 +357,56 @@ export function TarjetaCard({
           className
         )}
       >
-        <div data-campo="banner" className="relative h-48 w-full overflow-hidden">
-          {bannerUrl ? (
+        {tieneFondoImagen && (
+          <div className="absolute inset-0 z-0" aria-hidden>
             <Image
-              src={bannerUrl}
+              src={fondoImagenUrl!}
               alt=""
               fill
               priority
               sizes="(max-width: 640px) 100vw, 384px"
-              unoptimized={!esUrlOptimizable(bannerUrl)}
-              className="object-cover object-center"
+              unoptimized={!esUrlOptimizable(fondoImagenUrl!)}
+              className="object-cover"
+              style={{ objectPosition: posicionFondoImagen }}
             />
-          ) : (
-            <div
-              className={cn(
-                "size-full",
-                !fondoBanner && `bg-gradient-to-br ${GRADIENTE_PLACEHOLDER[tipo]}`
-              )}
-              style={fondoBanner ? { background: fondoBanner } : undefined}
-            />
-          )}
+          </div>
+        )}
+
+        <div data-campo="banner" className="relative z-10 h-48 w-full overflow-hidden">
+          {!tieneFondoImagen &&
+            (bannerUrl ? (
+              <Image
+                src={bannerUrl}
+                alt=""
+                fill
+                priority
+                sizes="(max-width: 640px) 100vw, 384px"
+                unoptimized={!esUrlOptimizable(bannerUrl)}
+                className="object-cover"
+                style={{ objectPosition: posicionBanner }}
+              />
+            ) : (
+              <div
+                className={cn(
+                  "size-full",
+                  !fondoBanner && `bg-gradient-to-br ${GRADIENTE_PLACEHOLDER[tipo]}`
+                )}
+                style={fondoBanner ? { background: fondoBanner } : undefined}
+              />
+            ))}
         </div>
 
         <div
           data-campo="divisor"
-          style={estiloDivisor}
+          style={{ ...estiloDivisor, ...(tieneFondoImagen ? undefined : { background: fondoTarjetaInline }) }}
           className={cn(
-            "relative -mt-14 border-t border-[rgba(255,255,255,0.5)] bg-[rgba(255,255,255,0.85)] px-6 pb-7 pt-3 text-center shadow-[0_-8px_30px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(24,24,27,0.85)]",
-            !estiloDivisor && "rounded-t-[2rem]"
+            "relative z-10 -mt-14 border-t px-6 pb-7 pt-3 text-center shadow-[0_-8px_30px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl",
+            !estiloDivisor && "rounded-t-[2rem]",
+            tieneFondoImagen
+              ? "border-[rgba(255,255,255,0.3)] bg-[rgba(255,255,255,0.55)] dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(24,24,27,0.55)]"
+              : fondoTarjetaInline
+                ? "border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.1)]"
+                : "border-[rgba(255,255,255,0.5)] bg-[rgba(255,255,255,0.85)] dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(24,24,27,0.85)]"
           )}
         >
           <div className="-mt-14 flex justify-center">
@@ -365,21 +422,23 @@ export function TarjetaCard({
             </div>
           </div>
 
-          <span
-            style={estiloBadge}
-            className={cn(
-              "mt-3 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide",
-              !estiloBadge &&
-                "bg-[rgba(24,24,27,0.05)] text-[#71717a] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#a1a1aa]"
-            )}
-          >
-            {esEmpresarial ? (
-              <Building2 className="size-3" />
-            ) : (
-              <Sparkles className="size-3" />
-            )}
-            {ETIQUETA_TIPO[tipo]}
-          </span>
+          {slug?.trim() && (
+            <span
+              style={estiloBadge}
+              className={cn(
+                "mt-3 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium tracking-wide",
+                !estiloBadge &&
+                  "bg-[rgba(24,24,27,0.05)] text-[#71717a] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#a1a1aa]"
+              )}
+            >
+              {esEmpresarial ? (
+                <Building2 className="size-3" />
+              ) : (
+                <Sparkles className="size-3" />
+              )}
+              @{slug.trim()}
+            </span>
+          )}
 
           <h1
             data-campo="nombre"

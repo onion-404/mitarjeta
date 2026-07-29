@@ -35,6 +35,7 @@ export const dynamic = "force-dynamic"
 // para la landing — el color de esta sección ES el producto, no decoración.
 const TARJETA_CREADORA = {
   tipo: "personal" as const,
+  slug: "sofia-martin",
   datosContacto: {
     nombre: "Sofía Martín",
     puesto: "Diseñadora UX",
@@ -54,6 +55,7 @@ const TARJETA_CREADORA = {
 
 const TARJETA_ESTUDIO = {
   tipo: "empresarial" as const,
+  slug: "estudio-raiz",
   datosContacto: {
     nombreEmpresa: "Estudio Raíz",
     giro: "Peluquería y estética",
@@ -68,6 +70,7 @@ const TARJETA_ESTUDIO = {
 
 const TARJETA_ANTOJITOS = {
   tipo: "empresarial" as const,
+  slug: "tacos-el-primo",
   datosContacto: {
     nombreEmpresa: "Tacos El Primo",
     giro: "Antojitos mexicanos",

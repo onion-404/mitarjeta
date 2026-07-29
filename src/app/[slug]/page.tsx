@@ -98,6 +98,7 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
           tipo={tarjeta.tipo}
           datosContacto={tarjeta.datos_contacto}
           identidadVisual={tarjeta.identidad_visual}
+          slug={slug}
           agendaServicios={agendaServicios}
           permitirAgendar
           tarjetaId={tarjeta.id}

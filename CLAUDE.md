@@ -2133,6 +2133,160 @@ el acceso correcto a cada rol.
   dispositivo/emulador cuando se pueda — misma nota de honestidad que ya se
   dejó para el header global del 2026-07-26.
 
+## Hallazgos de una sesión de prueba del editor de personalización — 2 bugs
+## reales + reposicionamiento de imágenes + fondo de tarjeta separado del
+## banner (2026-07-29)
+- Sin migración de DB en ninguno de estos cambios — `identidad_visual` sigue
+  siendo JSONB, todos los campos nuevos son aditivos/opcionales, mismo
+  criterio que toda la extensión anterior del sistema de personalización.
+
+### Bug 1 — badge mostraba el tipo de tarjeta en vez del slug (RESUELTO)
+- `TarjetaCard` no recibía el slug en absoluto — `TarjetaCardProps` ganó
+  `slug?: string`, el badge (icono persona/empresa + texto) ahora muestra
+  `@{slug}` en vez de "Tarjeta personal"/"Tarjeta empresarial"
+  (`ETIQUETA_TIPO` eliminado, sin otros usos). Sin slug, el badge no se
+  muestra (nunca pasa en producción real, solo en el instante antes de
+  escribir el enlace al crear). Hilado en los 6 call-sites: `[slug]/page.tsx`
+  (tarjeta pública), 2 previews de `tarjeta-form.tsx` (edición usa
+  `tarjeta.slug`, creación usa `slugPersonalizado` en vivo mientras se
+  escribe), y las 3 tarjetas demo del home (`sofia-martin`/`estudio-raiz`/
+  `tacos-el-primo`, agregadas solo para el demo).
+
+### Bug 2 — divisor diagonal/zigzag cortaba el contenido real (RESUELTO)
+- Causa raíz confirmada renderizando una tarjeta de prueba real: `diagonal`
+  y `zigzag` en `lib/personalizacion.ts` usaban `polygon()` **porcentual**
+  sobre la altura TOTAL del panel de contenido (dinámica, 200-800px según
+  agenda/servicios/productos) — el mismo bug de clase que ya tuvo "onda"
+  (documentado en el propio archivo) antes de su fix. El "60%"/"40%"
+  terminaba recortando avatar, badge y la mitad del nombre en vez de solo
+  un vistazo diagonal al banner.
+- Fix: mismo patrón que "onda" — `path()` en píxeles absolutos
+  (`anchoDiseno: 340`), confinado a una franja angosta arriba (~40-56px) +
+  rectángulo hasta y=4000 que no recorta nada del contenido real debajo.
+  Cero cambios en `TarjetaCard` ni en `SwatchDivisor` (el picker) — ambos ya
+  manejaban correctamente el caso `anchoDiseno`, solo se tocaron las 2
+  definiciones de clip-path. Verificado renderizado con 2 tarjetas de
+  prueba reales (una por divisor): avatar/badge/nombre completos, con el
+  notch diagonal/zigzag confinado correctamente al borde superior.
+
+### Componente reusable `ReposicionarImagen` (nuevo)
+- `src/components/tarjeta/reposicionar-imagen.tsx`: modal Base UI Dialog
+  (mismo patrón visual que `recortar-avatar.tsx`, pero **no destructivo** —
+  no re-sube ni recorta el archivo, solo guarda un ancla `{x,y}` 0-100 que
+  se puede reajustar cuando sea sin volver a subir nada). Arrastre 1:1 real
+  con el cursor (no una aproximación): mide el tamaño real que el navegador
+  le da a la imagen bajo `object-fit: cover` (naturalWidth/Height vs. el
+  tamaño real de la caja) para calcular cuánto "sobra" en cada eje, y cada
+  pixel de arrastre se traduce directo a ese sobrante — mismo cálculo que
+  usa `object-position` internamente, así el resultado final coincide
+  exactamente con lo que se vio mientras se arrastraba (confirmado
+  verificando que el thumbnail y el preview en vivo coinciden tras
+  "Listo"). Usado en 2 lugares:
+  - **Reposicionar banner** (nuevo, sin gating — es un fix/mejora de algo
+    ya gratis para cualquier plan, no una capacidad nueva): botón
+    "Reposicionar" junto al banner ya subido en "Avatar y banner". Caja de
+    preview con la misma proporción que el banner real (192px de alto) →
+    WYSIWYG exacto. `bannerPosicion` nuevo en `IdentidadVisual`, aplicado
+    en `TarjetaCard` como `objectPosition` reemplazando el `object-center`
+    fijo de siempre.
+  - **Reposicionar imagen de fondo de tarjeta** (ver feature de abajo).
+    Caja de preview más alta (420px) — limitación honesta documentada en
+    el propio componente: el panel de contenido no tiene una altura fija
+    real (depende del contenido), así que no hay WYSIWYG 100% perfecto
+    para "toda la tarjeta" sin conocer la altura final — la caja
+    representativa da un resultado bueno en la práctica, con un margen de
+    imprecisión solo en tarjetas con contenido excepcionalmente largo.
+
+### Imagen de fondo de toda la tarjeta (nuevo, gating: Poder únicamente)
+- `fondoImagenUrl`/`fondoImagenPosicion` en `IdentidadVisual`. Cloudinary:
+  carpeta nueva `mitarjeta/fondos` agregada a `CARPETAS_PERMITIDAS`
+  (`cloudinary-sign/route.ts`).
+- **Mutuamente excluyente con el banner de color/preset/upload Y con
+  "Fondo de la tarjeta" de abajo** — cuando está activa, tiene prioridad
+  sobre ambos en el render de `TarjetaCard`, pero NO borra sus valores
+  (siguen guardados) — desactivarla restaura todo sin reconfigurar nada.
+- Render: nuevo layer `absolute inset-0 z-0` como primer hijo del
+  `<article>`, con la imagen a pantalla completa (banner + detrás del
+  panel). El div del banner se vuelve transparente en este modo (deja ver
+  el layer de atrás). El panel de contenido pasa de su opacidad normal
+  (~0.85) a ~0.55 + blur más fuerte para que la imagen se note también
+  detrás del texto.
+- **Los divisores (onda/diagonal/zigzag) siguen siendo útiles con este
+  modo activo** — verificado renderizado: el panel translúcido (no 100%
+  transparente) hace que el corte del divisor siga revelando una
+  diferencia visual real (imagen "cruda" arriba del corte vs. imagen +
+  panel frosted abajo), no hizo falta deshabilitarlos.
+- UI: sección "Imagen de fondo de la tarjeta" en "Avatar y banner", debajo
+  de "Fondo del banner" (que se atenúa visualmente — `opacity-40
+  pointer-events-none` — mientras la imagen de fondo está activa, para
+  reforzar la exclusión mutua sin ocultar la configuración previa).
+- Gating confirmado renderizado con una tarjeta real en plan Alcance:
+  candado "Poder" junto al label, y el guardado se bloquea de verdad
+  (`calcularBloqueos` en `lib/personalizacion.ts` gana una entrada nueva)
+  con el aviso ámbar estándar del proyecto.
+
+### Efecto vidrio reubicado como "Sólido/Vidrio" (mismo dato, mismo gating)
+- Antes: `<Switch>` "Efecto vidrio" aislado al final de "Avatar y banner",
+  sin relación visual con lo que afecta (botones/badges). Ahora: segmented
+  control "Sólido | Vidrio" junto a los swatches de color "Botones"/
+  "Badges" en "Colores y tipografía". Mismo campo (`glassmorfismo:
+  boolean`), mismo gating (`personalizacion_avanzada`/Poder) — decisión
+  confirmada explícitamente: un solo control combinado (no se separó
+  botones/badges en 2 controles independientes, hoy siguen compartiendo el
+  mismo booleano, igual que antes).
+
+### Fondo de la tarjeta — nuevo, separado del fondo del banner (gating:
+### simple=Alcance, avanzado=Poder)
+- El "Fondo" de "Colores y tipografía" en realidad siempre controló el
+  degradé del BANNER (`colorPrimario`/`colorSecundario`) — renombrado a
+  **"Fondo del banner"** para no repetir la confusión. Nuevo bloque
+  **"Fondo de la tarjeta"** (toggle explícito `fondoTarjetaActivo`, ya que
+  un `<input type="color">` siempre tiene algún valor — no alcanza con
+  mirar si el campo está seteado para saber si está "activo"): modo simple
+  (1 color sólido, `fondoTarjetaColor`) + modo avanzado (2 colores +
+  tipo lineal/radial + dirección en grados, gating Poder, mismo patrón que
+  `modoColorAvanzado` ya existente).
+- **Contraste de texto automático**: cuando hay un `fondoTarjetaColor`
+  custom, `esOscuro` en `TarjetaCard` (que controla el toggle `.dark` de
+  TODO el texto/bordes del panel vía Tailwind `dark:`) se deriva del
+  contraste real de ese color (`obtenerColorContraste(fondoTarjetaColor)
+  === "#ffffff"`) en vez de `temaModo` — un solo cambio de una línea
+  reutiliza TODAS las clases `dark:` ya existentes en el componente, sin
+  tocar className por className. Verificado renderizado: fondo navy oscuro
+  con "Tema: Claro" → nombre/badge en blanco automáticamente, legible.
+  Heurística conocida: con el modo avanzado (2 colores), el contraste se
+  calcula sobre el Color 1 nada más — un degradé con extremos muy
+  distintos podría dejar el extremo del Color 2 con menos contraste ideal
+  (aceptado, no se hizo contraste por zona).
+- Gating confirmado renderizado con una tarjeta real en plan Alcance:
+  simple SIN candado (Alcance ya tiene `personalizacion_libre`, igual que
+  el resto de "Colores"), avanzado CON candado "Poder" apenas se activa el
+  toggle — y el guardado se bloquea de verdad con el aviso ámbar
+  ("Fondo de la tarjeta (Personalizado) requiere el plan Poder").
+
+### Verificación end-to-end con datos y sesiones reales
+- 2 tarjetas de prueba reales (una en plan Poder, otra en Alcance, cada una
+  con su propio usuario, sesiones inyectadas vía magic link — mismo patrón
+  no-destructivo ya usado en sesiones anteriores) + 2 imágenes de prueba
+  generadas localmente (PNG con franjas de colores para el banner, PNG con
+  degradé para la imagen de fondo — sin depender de ningún asset externo).
+  En la tarjeta Poder: banner subido y repositionado (confirmado que el
+  thumbnail y el preview en vivo coinciden), imagen de fondo subida,
+  reposicionada y confirmada mutuamente excluyente con el banner, divisor
+  diagonal confirmado revelando la imagen cruda vs. frosted, efecto Vidrio
+  activado, Fondo de la tarjeta en modo avanzado (radial, navy → gris)
+  guardado y confirmado con una lectura real de la DB (`bannerPosicion:
+  {x:50,y:100}`, `glassmorfismo:true`, `fondoTarjetaModo:"avanzado"`,
+  `fondoTarjetaTipoDegradado:"radial"`, todo exacto) — y confirmado también
+  en la tarjeta pública real (`/prueba-personalizacion-poder`, badge,
+  gradiente y vidrio visibles). En la tarjeta Alcance: los 4 candados
+  Poder (imagen de fondo, avatar/divisor exóticos, vidrio, fondo de
+  tarjeta avanzado) confirmados, fondo de tarjeta simple confirmado SIN
+  candado, y el bloqueo real de guardado confirmado con el aviso ámbar
+  exacto. Limpieza completa después: ambas tarjetas y sus 2 usuarios de
+  prueba borrados, confirmado en cero. `npm run build` + `tsc --noEmit` +
+  `eslint` limpios en cada paso.
+
 ## Notas de proceso
 - Proyecto de Supabase: producción única, sin staging. Antes de cualquier migración:
   backup con `pg_dump` (plan free, sin backups automáticos ni PITR).

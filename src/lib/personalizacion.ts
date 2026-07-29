@@ -96,14 +96,26 @@ export const DIVISORES_BANNER: DivisorBannerMeta[] = [
     id: "diagonal",
     etiqueta: "Diagonal",
     tier: "avanzada",
-    clipPath: "polygon(0% 60%, 100% 0%, 100% 100%, 0% 100%)",
+    // Antes era polygon(0% 60%, 100% 0%, ...) — porcentual sobre la altura
+    // TOTAL del panel de contenido, que es dinámica (200-800px según
+    // agenda/servicios/productos). El "60%" terminaba recortando medio
+    // panel real (avatar, badge y nombre desaparecían) en vez de solo un
+    // vistazo diagonal al banner — bug real confirmado renderizado con una
+    // tarjeta de prueba real. Mismo fix que "onda": path() en píxeles
+    // absolutos, confinado a una franja angosta arriba + rectángulo hasta
+    // y=4000 que no recorta nada del contenido real debajo.
+    anchoDiseno: 340,
+    clipPath: "path('M0,50 L340,0 L340,4000 L0,4000 Z')",
   },
   {
     id: "zigzag",
     etiqueta: "Zigzag",
     tier: "avanzada",
+    // Mismo bug y mismo fix que "diagonal" de arriba (era polygon()
+    // porcentual sobre la altura total del panel).
+    anchoDiseno: 340,
     clipPath:
-      "polygon(0% 40%, 8.33% 0%, 16.67% 40%, 25% 0%, 33.33% 40%, 41.67% 0%, 50% 40%, 58.33% 0%, 66.67% 40%, 75% 0%, 83.33% 40%, 91.67% 0%, 100% 40%, 100% 100%, 0% 100%)",
+      "path('M0,40 L28.33,0 L56.67,40 L85,0 L113.33,40 L141.67,0 L170,40 L198.33,0 L226.67,40 L255,0 L283.33,40 L311.67,0 L340,40 L340,4000 L0,4000 Z')",
   },
   {
     id: "onda",
@@ -343,6 +355,22 @@ export function calcularBloqueos(
   if (draft.modoTipografiaAvanzado) {
     const b = estaBloqueada("avanzada", true, base.modoTipografiaAvanzado ?? false, features)
     if (b) bloqueos.push({ ...b, campo: "Modo avanzado de tipografía", valorEtiqueta: "Activado" })
+  }
+
+  if (draft.fondoImagenUrl) {
+    const b = estaBloqueada("avanzada", true, Boolean(base.fondoImagenUrl), features)
+    if (b) bloqueos.push({ ...b, campo: "Imagen de fondo de la tarjeta", valorEtiqueta: "Activada" })
+  }
+
+  if (draft.fondoTarjetaColor) {
+    const tierFondoTarjeta: TierPersonalizacion = draft.fondoTarjetaModo === "avanzado" ? "avanzada" : "basica"
+    const b = estaBloqueada(
+      tierFondoTarjeta,
+      true,
+      Boolean(base.fondoTarjetaColor) && base.fondoTarjetaModo === draft.fondoTarjetaModo,
+      features
+    )
+    if (b) bloqueos.push({ ...b, campo: "Fondo de la tarjeta", valorEtiqueta: "Personalizado" })
   }
 
   // Colores personalizados (fondo/botones/badges): se consolida en un solo
