@@ -154,6 +154,7 @@ export function TarjetaCard({
     videoUrl,
     descripcionServicios,
     servicios,
+    seccionesServicios,
     productos,
     redes,
   } = datosContacto
@@ -189,12 +190,31 @@ export function TarjetaCard({
     tituloProductos,
   } = identidadVisual
   const [productosAbiertos, setProductosAbiertos] = React.useState(false)
+  // Legacy: expandir/colapsar la descripción de un ítem en el modelo VIEJO de
+  // Servicios (una sola lista título+descripción, sin precio/imagen/enlace).
+  // Se mantiene sin cambios para tarjetas no regrabadas todavía — ver
+  // seccionesServiciosAbiertas de abajo para el modelo nuevo.
   const [serviciosAbiertos, setServiciosAbiertos] = React.useState<Set<number>>(
     () => new Set()
   )
+  // Modelo nuevo: cada sección de Servicios es su propia grilla
+  // colapsable, igual que "Productos" — un Set de índices de SECCIÓN
+  // abiertas (no de ítem individual, a diferencia del legacy de arriba).
+  const [seccionesServiciosAbiertas, setSeccionesServiciosAbiertas] = React.useState<
+    Set<number>
+  >(() => new Set())
 
   function toggleServicio(index: number) {
     setServiciosAbiertos((prev) => {
+      const siguiente = new Set(prev)
+      if (siguiente.has(index)) siguiente.delete(index)
+      else siguiente.add(index)
+      return siguiente
+    })
+  }
+
+  function toggleSeccionServicios(index: number) {
+    setSeccionesServiciosAbiertas((prev) => {
       const siguiente = new Set(prev)
       if (siguiente.has(index)) siguiente.delete(index)
       else siguiente.add(index)
@@ -581,74 +601,193 @@ export function TarjetaCard({
             </div>
           )}
 
-          {(descripcionServicios?.trim() || servicios?.length || brochureUrl) && (
-            <div data-campo="servicios" className="mt-5 w-full text-left">
-              <h2
-                style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
-                className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
-              >
-                {tituloServicios?.trim() || "Servicios"}
-              </h2>
-              {descripcionServicios?.trim() && (
-                <p
-                  style={{ fontFamily: fuenteCuerpo }}
-                  className="mt-1.5 text-sm text-[#3f3f46] dark:text-[#d4d4d8]"
+          {seccionesServicios?.length ? (
+            // Modelo nuevo: N secciones tipo catálogo (mismo patrón visual
+            // que la grilla de "Productos" de abajo — título, precio,
+            // descripción, imagen, enlace por ítem). El folleto PDF sigue
+            // colgado de la sección [0] únicamente.
+            seccionesServicios.map((seccion, indiceSeccion) => {
+              const tituloSeccion =
+                seccion.titulo?.trim() || (indiceSeccion === 0 ? "Servicios" : `Sección ${indiceSeccion + 1}`)
+              const mostrarBrochure = indiceSeccion === 0 && Boolean(brochureUrl)
+              if (!seccion.items.length && !mostrarBrochure) return null
+              const abierta = seccionesServiciosAbiertas.has(indiceSeccion)
+              return (
+                <div
+                  key={indiceSeccion}
+                  data-campo={`servicios-${indiceSeccion}`}
+                  className="mt-5 w-full text-left"
                 >
-                  {descripcionServicios}
-                </p>
-              )}
-              {Boolean(servicios?.length) && (
-                <div className="mt-3 flex flex-col gap-2">
-                  {servicios?.map((servicio, index) => {
-                    const abierto = serviciosAbiertos.has(index)
-                    const tieneDescripcion = Boolean(servicio.descripcion?.trim())
-                    return (
-                      <div
-                        key={index}
-                        className="overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
+                  {seccion.items.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSeccionServicios(indiceSeccion)}
+                      className="flex w-full items-center justify-between gap-2"
+                    >
+                      <h2
+                        style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+                        className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
                       >
-                        <button
-                          type="button"
-                          onClick={() => tieneDescripcion && toggleServicio(index)}
-                          className="flex w-full items-center justify-between gap-2 bg-[rgba(24,24,27,0.03)] p-3 text-left dark:bg-[rgba(255,255,255,0.05)]"
-                        >
-                          <span className="flex items-center gap-1.5 text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
-                            {servicio.titulo}
-                          </span>
-                          {tieneDescripcion && (
-                            <ChevronDown
-                              className={cn(
-                                "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
-                                abierto && "rotate-180"
-                              )}
-                            />
-                          )}
-                        </button>
-                        {abierto && tieneDescripcion && (
-                          <p className="border-t border-[rgba(0,0,0,0.05)] p-3 text-xs text-[#71717a] dark:border-[rgba(255,255,255,0.08)] dark:text-[#a1a1aa]">
-                            {servicio.descripcion}
-                          </p>
+                        {tituloSeccion} ({seccion.items.length})
+                      </h2>
+                      <ChevronDown
+                        className={cn(
+                          "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
+                          abierta && "rotate-180"
                         )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-              {brochureUrl && (
-                <a
-                  href={brochureUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={estiloCta}
-                  className={cn(
-                    "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
-                    !estiloCta && "bg-foreground text-background"
+                      />
+                    </button>
+                  ) : (
+                    <h2
+                      style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+                      className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
+                    >
+                      {tituloSeccion}
+                    </h2>
                   )}
+                  {abierta && seccion.items.length > 0 && (
+                    <div className="mt-3 grid grid-cols-3 gap-2.5">
+                      {seccion.items.map((item, index) => (
+                        <div
+                          key={index}
+                          className="flex flex-col overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
+                        >
+                          {item.imagenUrl ? (
+                            <div className="relative aspect-square w-full">
+                              <Image
+                                src={item.imagenUrl}
+                                alt={item.titulo}
+                                fill
+                                sizes="(max-width: 640px) 30vw, 128px"
+                                unoptimized={!esUrlOptimizable(item.imagenUrl)}
+                                className="object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <div className="aspect-square w-full bg-[#f4f4f5] dark:bg-[#27272a]" />
+                          )}
+                          <div className="px-1.5 py-1.5 text-center">
+                            <p className="truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]">
+                              {item.titulo}
+                            </p>
+                            {item.descripcion?.trim() && (
+                              <p className="mt-0.5 line-clamp-2 text-[10px] text-[#71717a] dark:text-[#a1a1aa]">
+                                {item.descripcion}
+                              </p>
+                            )}
+                            {item.precio?.trim() && (
+                              <p className="mt-0.5 text-[10px] font-semibold text-[#18181b] dark:text-[#fafafa]">
+                                ${item.precio}
+                              </p>
+                            )}
+                            {item.enlaceUrl?.trim() && (
+                              <a
+                                href={item.enlaceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-[#3f3f46] underline underline-offset-2 dark:text-[#d4d4d8]"
+                              >
+                                Ver más <ExternalLink className="size-2.5" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {mostrarBrochure && (
+                    <a
+                      href={brochureUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={estiloCta}
+                      className={cn(
+                        "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
+                        !estiloCta && "bg-foreground text-background"
+                      )}
+                    >
+                      <FileText className="size-3.5" /> Descargar folleto (PDF)
+                    </a>
+                  )}
+                </div>
+              )
+            })
+          ) : (
+            // Legacy: tarjeta todavía no regrabada con el modelo nuevo — se
+            // mantiene el render viejo exacto (una sola lista título+
+            // descripción, con la descripción general y el folleto) para no
+            // perder contenido real ya publicado. En cuanto el dueño guarda
+            // una vez desde el editor, pasa a `seccionesServicios` y esta
+            // rama deja de usarse para esa tarjeta.
+            (descripcionServicios?.trim() || servicios?.length || brochureUrl) && (
+              <div data-campo="servicios-0" className="mt-5 w-full text-left">
+                <h2
+                  style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+                  className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
                 >
-                  <FileText className="size-3.5" /> Descargar folleto (PDF)
-                </a>
-              )}
-            </div>
+                  {tituloServicios?.trim() || "Servicios"}
+                </h2>
+                {descripcionServicios?.trim() && (
+                  <p
+                    style={{ fontFamily: fuenteCuerpo }}
+                    className="mt-1.5 text-sm text-[#3f3f46] dark:text-[#d4d4d8]"
+                  >
+                    {descripcionServicios}
+                  </p>
+                )}
+                {Boolean(servicios?.length) && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    {servicios?.map((servicio, index) => {
+                      const abierto = serviciosAbiertos.has(index)
+                      const tieneDescripcion = Boolean(servicio.descripcion?.trim())
+                      return (
+                        <div
+                          key={index}
+                          className="overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => tieneDescripcion && toggleServicio(index)}
+                            className="flex w-full items-center justify-between gap-2 bg-[rgba(24,24,27,0.03)] p-3 text-left dark:bg-[rgba(255,255,255,0.05)]"
+                          >
+                            <span className="flex items-center gap-1.5 text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
+                              {servicio.titulo}
+                            </span>
+                            {tieneDescripcion && (
+                              <ChevronDown
+                                className={cn(
+                                  "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
+                                  abierto && "rotate-180"
+                                )}
+                              />
+                            )}
+                          </button>
+                          {abierto && tieneDescripcion && (
+                            <p className="border-t border-[rgba(0,0,0,0.05)] p-3 text-xs text-[#71717a] dark:border-[rgba(255,255,255,0.08)] dark:text-[#a1a1aa]">
+                              {servicio.descripcion}
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                {brochureUrl && (
+                  <a
+                    href={brochureUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={estiloCta}
+                    className={cn(
+                      "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
+                      !estiloCta && "bg-foreground text-background"
+                    )}
+                  >
+                    <FileText className="size-3.5" /> Descargar folleto (PDF)
+                  </a>
+                )}
+              </div>
+            )
           )}
 
           {Boolean(agendaServicios?.length) && (

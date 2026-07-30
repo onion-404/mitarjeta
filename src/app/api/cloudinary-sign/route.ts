@@ -8,6 +8,7 @@ const CARPETAS_PERMITIDAS = new Set([
   "mitarjeta/avatars",
   "mitarjeta/banners",
   "mitarjeta/productos",
+  "mitarjeta/servicios",
   "mitarjeta/brochures",
   "mitarjeta/testimonios",
   "mitarjeta/fondos",

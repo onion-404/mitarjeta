@@ -47,6 +47,16 @@ export interface Producto {
   enlaceUrl?: string
 }
 
+/** Una sección de "Servicios" — mismos 5 campos por ítem que Producto (se
+ *  reusa el tipo). Reemplaza al modelo viejo (Servicio[] + descripcionServicios
+ *  + identidad_visual.tituloServicios, una sola lista sin precio/imagen/
+ *  enlace). Tope de secciones por tarjeta: 1/2/3 según
+ *  planes.features.secciones_servicios_max (presencia/alcance/poder). */
+export interface SeccionServicios {
+  titulo: string
+  items: Producto[]
+}
+
 export interface DatosContacto {
   // Personal
   nombre?: string
@@ -65,8 +75,17 @@ export interface DatosContacto {
   direccion?: string
   direccionMapsUrl?: string
   videoUrl?: string
+  /** @deprecated Modelo viejo de "Servicios" (una sola lista, sin precio/
+   *  imagen/enlace) — reemplazado por `seccionesServicios`. Se sigue
+   *  leyendo (no se borra de tarjetas viejas no regrabadas) solo para armar
+   *  una sección equivalente en memoria la primera vez que se abre el
+   *  editor; ya no se escribe. */
   descripcionServicios?: string
+  /** @deprecated Ver nota de `descripcionServicios`. */
   servicios?: Servicio[]
+  /** Reemplaza al modelo viejo de arriba — 1 a 3 secciones (tope según
+   *  plan), cada ítem con los mismos campos que Producto. */
+  seccionesServicios?: SeccionServicios[]
   productos?: Producto[]
   redes?: RedSocial[]
 }
@@ -119,9 +138,12 @@ export interface IdentidadVisual {
   fondoTarjetaColorSecundario?: string
   fondoTarjetaTipoDegradado?: "lineal" | "radial"
   fondoTarjetaDireccionGrados?: number
-  /** Títulos personalizables de las secciones "Servicios"/"Productos" —
-   *  vacío/undefined usa el default ("Servicios"/"Productos"). */
+  /** @deprecated Título de la sección "Servicios" del modelo viejo — ahora
+   *  vive por sección en `DatosContacto.seccionesServicios[].titulo`. Se
+   *  sigue leyendo solo para la migración en memoria de tarjetas viejas. */
   tituloServicios?: string
+  /** Título personalizable de la sección "Productos" — vacío/undefined usa
+   *  el default ("Productos"). */
   tituloProductos?: string
 }
 

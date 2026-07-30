@@ -2401,4 +2401,107 @@ el acceso correcto a cada rol.
   backup con `pg_dump` (plan free, sin backups automáticos ni PITR).
 - Convención de migraciones: `supabase/migrations/YYYYMMDDHHMMSS_descripcion.sql`,
   aditivas, envueltas en `BEGIN`/`COMMIT`.
+
+## 4 fixes de editor/tarjeta pública + reemplazo de "Servicios" por secciones
+## tipo catálogo (2026-07-29) — código escrito directo en esta sesión, sin
+## pasar por Claude Code, a pedido explícito del usuario
+- ⚠️ **Ninguno de estos cambios fue verificado en vivo** (sin dev server ni
+  navegador real disponibles desde esta sesión — solo edición de archivos +
+  revisión manual línea por línea). **Pendiente antes de dar por cerrado**:
+  correr `npm run build` + `tsc --noEmit` + `eslint`, y una pasada visual
+  real (desktop + mobile) de los 4 puntos de abajo.
+- **Acordeón "Productos" cerrado por defecto**: revertido
+  `Accordion.Root defaultValue={["datos", "productos"]}` → `["datos"]` en
+  `tarjeta-form.tsx` (deshace el cambio del mismo día documentado más
+  arriba en "Acordeón 'Productos' abierto por default").
+- **Modal de QR invisible en la tarjeta pública**: `Dialog.Backdrop`/
+  `Dialog.Popup` en `tarjeta-qr.tsx` no tenían z-index explícito, mientras
+  el botón trigger y el de `CompartirTarjeta` sí (`z-40`) — un elemento
+  con z-index explícito pinta por encima de uno con z-index:auto sin
+  importar el orden en el DOM, así que el modal quedaba tapado. Agregado
+  `z-50` a ambos (mismo valor ya usado en `reservar-servicio.tsx`).
+- **Botones de compartir/QR tapaban el footer**: eran `position: fixed
+  bottom-6` (pegados al viewport siempre) en `[slug]/page.tsx`. Cambiados a
+  `position: sticky` dentro de un contenedor nuevo que envuelve el
+  contenido de la tarjeta y termina justo antes de `<footer>` — técnica
+  CSS estándar sin JS: el sticky no puede salir de los límites de su
+  contenedor padre, así que al llegar al final del contenido (borde
+  superior del footer) deja de "flotar" solo. `TarjetaQr` ganó una prop
+  `className` opcional (mismo patrón que ya tenía `CompartirTarjeta`) para
+  poder pasar los estilos sin el `fixed`/`z-40` propios solo en este
+  contexto — el uso de `TarjetaQr`/`CompartirTarjeta` dentro del preview
+  "Ver tarjeta" de `TarjetaForm` (línea ~2689) no se tocó, sigue con su
+  comportamiento `fixed` de siempre.
+- **CTA "Creá tu propia tarjeta digital con Linkard" más llamativo**: pasó
+  de texto chico subrayado (`text-xs`, `underline`) a un botón píldora
+  (`rounded-full bg-foreground text-background`, mismo tratamiento visual
+  que el CTA de folleto PDF de `TarjetaCard`) en el footer de `[slug]/page.tsx`.
+- **Reemplazo del toggle "Servicios" por N secciones tipo Productos**
+  (título+precio+descripción+imagen+enlace por ítem, tope 1/2/3 según plan
+  Presencia/Alcance/Poder):
+  - **Decisiones confirmadas explícitamente con el cliente antes de
+    implementar**: se elimina la "Descripción general" (redundante con la
+    descripción por ítem); el folleto PDF SE MANTIENE pero solo en la
+    sección [0]; cada ítem SÍ tiene precio (paridad completa con Producto).
+  - **Modelo de datos**: `DatosContacto.seccionesServicios?:
+    SeccionServicios[]` (nuevo, `lib/types.ts`) — `SeccionServicios = {
+    titulo, items: Producto[] }`, reusa el tipo `Producto` en vez de crear
+    uno nuevo. `servicios`/`descripcionServicios` (DatosContacto) y
+    `tituloServicios` (IdentidadVisual) quedan marcados `@deprecated` en el
+    tipo pero **no se borran ni se migran en DB** — JSONB, sin migración de
+    schema.
+  - **Compatibilidad con tarjetas ya publicadas, sin migración de DB**:
+    tanto `TarjetaForm` (al abrir el editor) como `TarjetaCard` (render
+    público) tienen su propia lógica de fallback — si `seccionesServicios`
+    no existe o está vacío, arman/muestran el modelo VIEJO exacto (una
+    lista título+descripción + folleto, sin precio/imagen/enlace) a partir
+    de los campos legacy. `TarjetaForm` además convierte ese legacy a la
+    forma nueva EN MEMORIA apenas se abre el editor (no escribe nada hasta
+    el próximo "Guardar") — la primera vez que el dueño guarda, la tarjeta
+    pasa a `seccionesServicios` y `TarjetaCard` deja de usar la rama
+    legacy para esa tarjeta. Ninguna tarjeta real pierde contenido por no
+    haber sido regrabada.
+  - **Gating por plan**: nueva clave `secciones_servicios_max` en
+    `planes.features` (presencia=1, alcance=2, poder=3), migración
+    data-only `20260729020000_add_secciones_servicios_max_feature.sql`
+    (mismo patrón idempotente que
+    `20260727030000_add_personalizacion_avanzada_feature.sql`) —
+    **🔴 escrita pero NO aplicada a producción todavía**, falta que el
+    usuario la corra (mismo protocolo que toda migración desde
+    `20260725000000`: sin `supabase` CLI vinculado en ninguna sesión,
+    incluida esta). Sin aplicarla, `featuresGating?.secciones_servicios_max`
+    da `undefined` y el tope cae al fallback fail-closed de 1 sección para
+    los 3 planes — no rompe nada, solo no habilita Alcance/Poder hasta que
+    se aplique.
+  - El tope real nunca baja de lo ya guardado (mismo principio que
+    `calcularBloqueos` en `lib/personalizacion.ts`, pero implementado
+    aparte porque es un tope numérico de cantidad, no un lock de
+    valor/tier: no hizo falta tocar `lib/personalizacion.ts`) — bajar de
+    plan no oculta ni bloquea secciones ya creadas, solo impide agregar
+    una más allá del máximo actual. El botón "Agregar otra sección de
+    servicios" solo aparece en la ÚLTIMA sección visible; al tope, se
+    reemplaza por un aviso con `<CandadoPlan plan="alcance"|"poder">`.
+    Siempre queda al menos 1 sección (no se puede eliminar la última).
+  - **Subida de imágenes**: nueva carpeta Cloudinary `mitarjeta/servicios`
+    (agregada a `CARPETAS_PERMITIDAS` en `cloudinary-sign/route.ts`, mismo
+    motivo ya documentado para `mitarjeta/fondos`/`mitarjeta/testimonios` —
+    sin esto la subida se rechaza con 400). Las subidas de imágenes de
+    ítems de servicios se disparan en paralelo junto con avatar/banner/
+    folleto/fotos de productos (mismo `Promise.all` ya existente, un caso
+    nuevo `tipo: "servicioItem"` en el union `TareaSubida`, keyed por
+    `${indiceSeccion}-${indiceItem}`).
+  - **Sin instrumentación de métricas para los links de ítems de
+    servicios** (a propósito, para no mezclar en el mismo bucket
+    `click_producto` clicks que en realidad son de servicios, ni agregar
+    un tipo de evento nuevo que requeriría tocar el CHECK constraint de
+    `eventos_metricas.tipo_evento` — fuera del alcance de lo pedido). El
+    link igual funciona como `<a>` normal, simplemente no genera fila en
+    `eventos_metricas`.
+  - **Pendiente honesto**: cero verificación end-to-end (sin tarjetas de
+    prueba sembradas, sin captura de pantalla, sin confirmar contra la DB
+    real) — a diferencia del resto de este documento, que documenta
+    features ya verificadas en vivo. Antes de considerar esto "shippeado"
+    en el mismo sentido que el resto de CLAUDE.md, hace falta: aplicar la
+    migración, correr el build/lint, y probar en el editor real con al
+    menos una tarjeta por plan.
 </content>

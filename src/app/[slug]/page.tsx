@@ -82,41 +82,60 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
 
   return (
     <div className="relative flex w-full flex-1 flex-col overflow-hidden bg-zinc-50 dark:bg-black">
-      <div className="relative flex flex-1 items-center justify-center px-4 py-16">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -left-24 -top-24 size-72 rounded-full opacity-40 blur-3xl"
-          style={{ backgroundColor: colorPrimario || "#6366f1" }}
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -bottom-24 -right-24 size-72 rounded-full opacity-40 blur-3xl"
-          style={{ backgroundColor: colorSecundario || "#a855f7" }}
-        />
+      {/* Este wrapper agrupa el contenido scrolleable de la tarjeta + la barra
+         de acciones (QR/compartir) y termina justo antes del <footer>. Los
+         botones de abajo son `sticky` (no `fixed`): se mantienen pegados al
+         fondo del viewport mientras se scrollea la tarjeta, pero no pueden
+         salir de los límites de ESTE contenedor — al llegar al final del
+         contenido (justo antes del footer), dejan de "flotar" y el footer
+         queda visible sin overlap. */}
+      <div className="relative flex flex-1 flex-col">
+        <div className="relative flex flex-1 items-center justify-center px-4 py-16">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -left-24 -top-24 size-72 rounded-full opacity-40 blur-3xl"
+            style={{ backgroundColor: colorPrimario || "#6366f1" }}
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -bottom-24 -right-24 size-72 rounded-full opacity-40 blur-3xl"
+            style={{ backgroundColor: colorSecundario || "#a855f7" }}
+          />
 
-        <TarjetaCard
-          tipo={tarjeta.tipo}
-          datosContacto={tarjeta.datos_contacto}
-          identidadVisual={tarjeta.identidad_visual}
-          slug={slug}
-          agendaServicios={agendaServicios}
-          permitirAgendar
-          tarjetaId={tarjeta.id}
-          zonaHoraria={tarjeta.zona_horaria}
-          mostrarAcciones
-          className="relative"
-        />
-        <TarjetaQr slug={slug} />
-        <CompartirTarjeta slug={slug} titulo={nombrePrincipal || "Linkard"} />
+          <TarjetaCard
+            tipo={tarjeta.tipo}
+            datosContacto={tarjeta.datos_contacto}
+            identidadVisual={tarjeta.identidad_visual}
+            slug={slug}
+            agendaServicios={agendaServicios}
+            permitirAgendar
+            tarjetaId={tarjeta.id}
+            zonaHoraria={tarjeta.zona_horaria}
+            mostrarAcciones
+            className="relative"
+          />
+        </div>
+
+        <div className="sticky bottom-0 z-40 flex items-end justify-between px-6 pb-6">
+          <CompartirTarjeta
+            slug={slug}
+            titulo={nombrePrincipal || "Linkard"}
+            className="flex items-center gap-2 rounded-full bg-foreground px-5 py-3.5 text-sm font-semibold text-background shadow-xl transition-transform hover:scale-105 data-popup-open:scale-105"
+          />
+          <TarjetaQr
+            slug={slug}
+            className="flex size-14 items-center justify-center rounded-full bg-foreground text-background shadow-xl transition-transform hover:scale-105"
+          />
+        </div>
       </div>
 
       <footer className="relative flex flex-col items-center gap-2 border-t border-border/60 px-4 py-5 text-center text-xs text-muted-foreground">
         <Logo size="sm" />
-        <p>
-          © {new Date().getFullYear()} ·{" "}
+        <p className="flex flex-col items-center gap-2">
+          <span>© {new Date().getFullYear()}</span>
           <Link
             href="/crear"
-            className="underline underline-offset-2 hover:text-foreground"
+            className="rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0"
           >
             Creá tu propia tarjeta digital con Linkard
           </Link>

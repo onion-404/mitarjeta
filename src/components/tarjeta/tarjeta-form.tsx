@@ -59,7 +59,7 @@ import type {
   Producto,
   RedSocial,
   ServicioAgendable,
-  Servicio,
+  SeccionServicios,
   Tarjeta,
   TarjetaTipo,
   TemaModo,
@@ -73,6 +73,14 @@ interface ProductoFormState {
   imagenFile: File | null
   imagenPreview: string
   imagenUrlExistente: string
+}
+
+/** Un ítem de sección de Servicios usa exactamente la misma forma que un
+ *  ítem de Producto (mismos 5 campos) — se reusa el tipo en vez de
+ *  duplicarlo. */
+interface SeccionServiciosFormState {
+  titulo: string
+  items: ProductoFormState[]
 }
 
 const inputClase =
@@ -181,12 +189,48 @@ export function TarjetaForm({
   const [videoUrl, setVideoUrl] = React.useState(datosIniciales?.videoUrl ?? "")
   const [redes, setRedes] = React.useState<RedSocial[]>(datosIniciales?.redes ?? [])
 
-  // Servicios
-  const [descripcionServicios, setDescripcionServicios] = React.useState(
-    datosIniciales?.descripcionServicios ?? ""
-  )
-  const [servicios, setServicios] = React.useState<Servicio[]>(
-    datosIniciales?.servicios ?? []
+  // Servicios — N secciones independientes (tope 1/2/3 según plan, ver
+  // secciones_servicios_max más abajo), cada ítem con los mismos 5 campos
+  // que un Producto (título, precio, descripción, imagen, enlace). El
+  // folleto PDF de abajo solo se ofrece en la sección [0].
+  // Compatibilidad: si la tarjeta ya tiene `seccionesServicios` guardado, se
+  // usa directo. Si no (tarjeta vieja con el modelo previo de una sola lista
+  // título+descripción, o tarjeta nueva sin nada todavía), se arma UNA
+  // sección en memoria a partir de `servicios`/`tituloServicios` — no se
+  // escribe nada hasta el próximo guardado, así ninguna tarjeta real pierde
+  // datos por no haber sido regrabada.
+  const [seccionesServicios, setSeccionesServicios] = React.useState<SeccionServiciosFormState[]>(
+    () => {
+      if (datosIniciales?.seccionesServicios?.length) {
+        return datosIniciales.seccionesServicios.map((seccion) => ({
+          titulo: seccion.titulo,
+          items: seccion.items.map((item) => ({
+            titulo: item.titulo,
+            descripcion: item.descripcion ?? "",
+            precio: item.precio ?? "",
+            enlaceUrl: item.enlaceUrl ?? "",
+            imagenFile: null,
+            imagenPreview: "",
+            imagenUrlExistente: item.imagenUrl ?? "",
+          })),
+        }))
+      }
+      const legacyServicios = datosIniciales?.servicios ?? []
+      return [
+        {
+          titulo: visualInicial?.tituloServicios ?? "",
+          items: legacyServicios.map((servicio) => ({
+            titulo: servicio.titulo,
+            descripcion: servicio.descripcion ?? "",
+            precio: "",
+            enlaceUrl: "",
+            imagenFile: null,
+            imagenPreview: "",
+            imagenUrlExistente: "",
+          })),
+        },
+      ]
+    }
   )
 
   // Brochure (PDF)
@@ -281,13 +325,11 @@ export function TarjetaForm({
     visualInicial?.fondoTarjetaDireccionGrados ?? 135
   )
 
-  // Títulos personalizables de las secciones "Servicios"/"Productos" — vive
-  // en identidad_visual (jsonb, sin migración) igual que el resto del
-  // sistema de personalización. Vacío = usa el default ("Servicios"/
-  // "Productos") tanto acá como en TarjetaCard.
-  const [tituloServicios, setTituloServicios] = React.useState(
-    visualInicial?.tituloServicios ?? ""
-  )
+  // Título personalizable de la sección "Productos" — vive en identidad_visual
+  // (jsonb, sin migración) igual que el resto del sistema de
+  // personalización. Vacío = usa el default ("Productos") tanto acá como en
+  // TarjetaCard. El título de "Servicios" ahora vive POR SECCIÓN dentro de
+  // `seccionesServicios[].titulo` (ver más arriba) — ya no acá.
   const [tituloProductos, setTituloProductos] = React.useState(
     visualInicial?.tituloProductos ?? ""
   )
@@ -560,26 +602,138 @@ export function TarjetaForm({
     })
   }, [esEdicion, cuponInicial])
 
-  function agregarServicio() {
-    setServicios((prev) =>
-      prev.length >= 8 ? prev : [...prev, { titulo: "", descripcion: "" }]
+  // Tope de secciones de Servicios según el plan REAL de la tarjeta (mismo
+  // criterio fail-closed que featuresGating de arriba) — nunca por debajo de
+  // lo que ya está guardado (mismo principio que calcularBloqueos: bajar de
+  // plan no rompe/oculta secciones ya creadas, solo bloquea agregar una más).
+  const seccionesServiciosMaxPlan = Math.max(
+    Number(featuresGating?.secciones_servicios_max) || 1,
+    seccionesServicios.length
+  )
+
+  function agregarSeccionServicios() {
+    setSeccionesServicios((prev) =>
+      prev.length >= seccionesServiciosMaxPlan ? prev : [...prev, { titulo: "", items: [] }]
     )
   }
 
-  function actualizarServicioTitulo(index: number, titulo: string) {
-    setServicios((prev) =>
-      prev.map((servicio, i) => (i === index ? { ...servicio, titulo } : servicio))
+  function quitarSeccionServicios(indiceSeccion: number) {
+    setSeccionesServicios((prev) => {
+      if (prev.length <= 1) return prev // siempre queda al menos una sección
+      prev[indiceSeccion]?.items.forEach((item) => {
+        if (item.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
+      })
+      return prev.filter((_, i) => i !== indiceSeccion)
+    })
+  }
+
+  function actualizarTituloSeccionServicios(indiceSeccion: number, titulo: string) {
+    setSeccionesServicios((prev) =>
+      prev.map((seccion, i) => (i === indiceSeccion ? { ...seccion, titulo } : seccion))
     )
   }
 
-  function actualizarServicioDescripcion(index: number, descripcion: string) {
-    setServicios((prev) =>
-      prev.map((servicio, i) => (i === index ? { ...servicio, descripcion } : servicio))
+  function agregarItemServicio(indiceSeccion: number) {
+    setSeccionesServicios((prev) =>
+      prev.map((seccion, i) => {
+        if (i !== indiceSeccion || seccion.items.length >= 12) return seccion
+        return {
+          ...seccion,
+          items: [
+            ...seccion.items,
+            {
+              titulo: "",
+              descripcion: "",
+              precio: "",
+              enlaceUrl: "",
+              imagenFile: null,
+              imagenPreview: "",
+              imagenUrlExistente: "",
+            },
+          ],
+        }
+      })
     )
   }
 
-  function quitarServicio(index: number) {
-    setServicios((prev) => prev.filter((_, i) => i !== index))
+  function actualizarItemServicio<K extends keyof ProductoFormState>(
+    indiceSeccion: number,
+    indiceItem: number,
+    campo: K,
+    valor: ProductoFormState[K]
+  ) {
+    setSeccionesServicios((prev) =>
+      prev.map((seccion, i) =>
+        i !== indiceSeccion
+          ? seccion
+          : {
+              ...seccion,
+              items: seccion.items.map((item, j) =>
+                j === indiceItem ? { ...item, [campo]: valor } : item
+              ),
+            }
+      )
+    )
+  }
+
+  function handleItemServicioImagenChange(
+    indiceSeccion: number,
+    indiceItem: number,
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const error = validarImagen(file)
+    if (error) {
+      mostrarErrorArchivo(error)
+      event.target.value = ""
+      return
+    }
+    setSeccionesServicios((prev) =>
+      prev.map((seccion, i) => {
+        if (i !== indiceSeccion) return seccion
+        return {
+          ...seccion,
+          items: seccion.items.map((item, j) => {
+            if (j !== indiceItem) return item
+            if (item.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
+            return {
+              ...item,
+              imagenFile: file,
+              imagenPreview: URL.createObjectURL(file),
+              imagenUrlExistente: "",
+            }
+          }),
+        }
+      })
+    )
+  }
+
+  function quitarItemServicioImagen(indiceSeccion: number, indiceItem: number) {
+    setSeccionesServicios((prev) =>
+      prev.map((seccion, i) => {
+        if (i !== indiceSeccion) return seccion
+        return {
+          ...seccion,
+          items: seccion.items.map((item, j) => {
+            if (j !== indiceItem) return item
+            if (item.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
+            return { ...item, imagenFile: null, imagenPreview: "", imagenUrlExistente: "" }
+          }),
+        }
+      })
+    )
+  }
+
+  function quitarItemServicio(indiceSeccion: number, indiceItem: number) {
+    setSeccionesServicios((prev) =>
+      prev.map((seccion, i) => {
+        if (i !== indiceSeccion) return seccion
+        const item = seccion.items[indiceItem]
+        if (item?.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
+        return { ...seccion, items: seccion.items.filter((_, j) => j !== indiceItem) }
+      })
+    )
   }
 
   function handleBrochureChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -837,6 +991,7 @@ export function TarjetaForm({
     let brochureUrl: string | undefined = brochureUrlExistente || undefined
     let fondoImagenUrlFinal: string | undefined = fondoImagenUrlExistente || undefined
     const imagenesProductoPorIndice = new Map<number, string>()
+    const imagenesServicioItemPorClave = new Map<string, string>()
 
     type TareaSubida =
       | { tipo: "avatar"; etiqueta: string; promesa: Promise<string | null> }
@@ -844,6 +999,13 @@ export function TarjetaForm({
       | { tipo: "brochure"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "fondoImagen"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "producto"; indice: number; etiqueta: string; promesa: Promise<string | null> }
+      | {
+          tipo: "servicioItem"
+          indiceSeccion: number
+          indiceItem: number
+          etiqueta: string
+          promesa: Promise<string | null>
+        }
 
     const tareas: TareaSubida[] = []
 
@@ -913,9 +1075,26 @@ export function TarjetaForm({
       }
     })
 
-    // Todas las subidas (avatar, banner, folleto y fotos de productos) se
-    // disparan en paralelo en vez de esperarse una por una: en una conexión
-    // móvil esto reduce el tiempo de guardado a una fracción del secuencial.
+    seccionesServicios.forEach((seccion, indiceSeccion) => {
+      seccion.items.forEach((item, indiceItem) => {
+        if (item.titulo.trim() && item.imagenFile) {
+          tareas.push({
+            tipo: "servicioItem",
+            indiceSeccion,
+            indiceItem,
+            etiqueta: `la imagen de "${item.titulo.trim()}"`,
+            promesa: subirImagenCloudinary(item.imagenFile, "mitarjeta/servicios").catch(
+              () => null
+            ),
+          })
+        }
+      })
+    })
+
+    // Todas las subidas (avatar, banner, folleto y fotos de productos y
+    // servicios) se disparan en paralelo en vez de esperarse una por una: en
+    // una conexión móvil esto reduce el tiempo de guardado a una fracción
+    // del secuencial.
     const resultados =
       tareas.length > 0 ? await Promise.all(tareas.map((tarea) => tarea.promesa)) : []
 
@@ -935,7 +1114,8 @@ export function TarjetaForm({
       else if (tarea.tipo === "banner") bannerUrl = url
       else if (tarea.tipo === "brochure") brochureUrl = url
       else if (tarea.tipo === "fondoImagen") fondoImagenUrlFinal = url
-      else imagenesProductoPorIndice.set(tarea.indice, url)
+      else if (tarea.tipo === "producto") imagenesProductoPorIndice.set(tarea.indice, url)
+      else imagenesServicioItemPorClave.set(`${tarea.indiceSeccion}-${tarea.indiceItem}`, url)
     })
 
     if (fallidas.length > 0) {
@@ -960,13 +1140,34 @@ export function TarjetaForm({
       }))
 
     const redesFinales = redesValidas(redes)
-    const serviciosFinales = servicios.filter((servicio) => servicio.titulo.trim())
+    const seccionesServiciosFinales: SeccionServicios[] = seccionesServicios
+      .map((seccion, indiceSeccion) => ({
+        titulo: seccion.titulo.trim(),
+        items: seccion.items
+          .map((item, indiceItem) => ({ item, indiceItem }))
+          .filter(({ item }) => item.titulo.trim())
+          .map(({ item, indiceItem }) => ({
+            titulo: item.titulo.trim(),
+            descripcion: item.descripcion.trim() || undefined,
+            precio: item.precio.trim() || undefined,
+            enlaceUrl: item.enlaceUrl.trim() || undefined,
+            imagenUrl:
+              imagenesServicioItemPorClave.get(`${indiceSeccion}-${indiceItem}`) ??
+              item.imagenUrlExistente ??
+              undefined,
+          })),
+      }))
+      // La sección [0] siempre se guarda (aunque esté vacía, es la
+      // "Servicios" por defecto) — las siguientes solo si tienen título o
+      // algún ítem, para no persistir una sección vacía que se abrió pero
+      // nunca se llenó.
+      .filter((seccion, i) => i === 0 || seccion.titulo || seccion.items.length > 0)
+
     const comunes: DatosContacto = {
       direccion: direccion.trim() || undefined,
       direccionMapsUrl: direccionMapsUrl.trim() || undefined,
       videoUrl: videoUrl.trim() || undefined,
-      descripcionServicios: descripcionServicios.trim() || undefined,
-      servicios: serviciosFinales,
+      seccionesServicios: seccionesServiciosFinales,
       productos: productosFinales,
       redes: redesFinales,
     }
@@ -1023,7 +1224,6 @@ export function TarjetaForm({
         fondoTarjetaActivo && fondoTarjetaModo === "avanzado" && fondoTarjetaTipoDegradado === "lineal"
           ? fondoTarjetaDireccionGrados
           : undefined,
-      tituloServicios: tituloServicios.trim() || undefined,
       tituloProductos: tituloProductos.trim() || undefined,
     }
 
@@ -1188,12 +1388,24 @@ export function TarjetaForm({
       imagenUrl: producto.imagenPreview || producto.imagenUrlExistente || undefined,
     }))
 
+  const seccionesServiciosActuales: SeccionServicios[] = seccionesServicios.map((seccion) => ({
+    titulo: seccion.titulo,
+    items: seccion.items
+      .filter((item) => item.titulo.trim())
+      .map((item) => ({
+        titulo: item.titulo,
+        descripcion: item.descripcion || undefined,
+        precio: item.precio || undefined,
+        enlaceUrl: item.enlaceUrl || undefined,
+        imagenUrl: item.imagenPreview || item.imagenUrlExistente || undefined,
+      })),
+  }))
+
   const comunesActuales = {
     direccion,
     direccionMapsUrl,
     videoUrl,
-    descripcionServicios,
-    servicios: servicios.filter((servicio) => servicio.titulo.trim()),
+    seccionesServicios: seccionesServiciosActuales,
     productos: productosActuales,
     redes: redesValidas(redes),
   }
@@ -1251,7 +1463,6 @@ export function TarjetaForm({
       fondoTarjetaActivo && fondoTarjetaModo === "avanzado" && fondoTarjetaTipoDegradado === "lineal"
         ? fondoTarjetaDireccionGrados
         : undefined,
-    tituloServicios: tituloServicios.trim() || undefined,
     tituloProductos: tituloProductos.trim() || undefined,
   }
 
@@ -2237,109 +2448,202 @@ export function TarjetaForm({
     </div>
   )
 
-  const contenidoServicios = (
-    <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
-      <label className="flex flex-col gap-1.5">
-        <span className={labelClase}>Título de la sección</span>
-        <input
-          value={tituloServicios}
-          onChange={(e) => setTituloServicios(e.target.value)}
-          onFocus={() => scrollPreviewTo("servicios")}
-          placeholder="Servicios"
-          className={inputClase}
-        />
-      </label>
+  // Mismo patrón visual/UX que "Productos" (título, precio, descripción,
+  // enlace, imagen por ítem) — reemplaza al viejo "Servicios" de una sola
+  // lista título+descripción. Una función en vez de una constante porque
+  // ahora puede haber 1/2/3 secciones (según plan), cada una con su propio
+  // campo de título editable en tiempo real (ver SECCIONES más abajo).
+  function contenidoSeccionServicios(indiceSeccion: number) {
+    const seccion = seccionesServicios[indiceSeccion]
+    if (!seccion) return null
+    const esUltima = indiceSeccion === seccionesServicios.length - 1
+    const campoScroll = `servicios-${indiceSeccion}`
 
-      <label className="flex flex-col gap-1.5">
-        <span className={labelClase}>Descripción general</span>
-        <textarea
-          value={descripcionServicios}
-          onChange={(e) => setDescripcionServicios(e.target.value)}
-          onFocus={() => scrollPreviewTo("servicios")}
-          placeholder="Contá brevemente qué ofrecés"
-          rows={2}
-          className={inputClase}
-        />
-      </label>
-
-      {servicios.map((servicio, index) => (
-        <div
-          key={index}
-          className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
-        >
-          <div className="flex items-center gap-2">
+    return (
+      <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+        <div className="flex items-center gap-2">
+          <label className="flex flex-1 flex-col gap-1.5">
+            <span className={labelClase}>Título de la sección</span>
             <input
-              value={servicio.titulo}
-              onChange={(e) => actualizarServicioTitulo(index, e.target.value)}
-              onFocus={() => scrollPreviewTo("servicios")}
-              placeholder="Título del servicio"
-              className={cn(inputClase, "flex-1")}
+              value={seccion.titulo}
+              onChange={(e) => actualizarTituloSeccionServicios(indiceSeccion, e.target.value)}
+              onFocus={() => scrollPreviewTo(campoScroll)}
+              placeholder={indiceSeccion === 0 ? "Servicios" : `Sección ${indiceSeccion + 1}`}
+              className={inputClase}
             />
+          </label>
+          {indiceSeccion > 0 && (
             <button
               type="button"
-              onClick={() => quitarServicio(index)}
-              aria-label="Quitar servicio"
-              className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+              onClick={() => quitarSeccionServicios(indiceSeccion)}
+              aria-label="Quitar esta sección"
+              className="mt-6 shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
             >
               <Trash2 className="size-4" />
             </button>
-          </div>
-          <input
-            value={servicio.descripcion ?? ""}
-            onChange={(e) => actualizarServicioDescripcion(index, e.target.value)}
-            onFocus={() => scrollPreviewTo("servicios")}
-            placeholder="Descripción corta"
-            className={inputClase}
-          />
-        </div>
-      ))}
-
-      {servicios.length < 8 && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={agregarServicio}
-          className="self-start"
-        >
-          <Plus className="size-3.5" /> Agregar servicio
-        </Button>
-      )}
-
-      <label className="flex flex-col gap-1.5">
-        <span className={labelClase}>Folleto o presentación (PDF)</span>
-        <div className="flex items-center gap-3">
-          {(brochureUrlExistente || brochureFile) && (
-            <div className="flex shrink-0 items-center gap-2 rounded-xl border border-border bg-background/50 px-3 py-2">
-              <FileText className="size-4 text-muted-foreground" />
-              <span className="max-w-32 truncate text-xs text-foreground">
-                {brochureFile?.name || "Folleto actual"}
-              </span>
-              <button
-                type="button"
-                onClick={quitarBrochure}
-                aria-label="Quitar folleto"
-                className="shrink-0 text-muted-foreground hover:text-foreground"
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
           )}
-          <input
-            key={brochureInputKey}
-            type="file"
-            accept="application/pdf"
-            onChange={handleBrochureChange}
-            onFocus={() => scrollPreviewTo("servicios")}
-            className={cn(
-              inputClase,
-              "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-            )}
-          />
         </div>
-      </label>
-    </div>
-  )
+
+        {seccion.items.map((item, index) => {
+          const imagenMostrada = item.imagenPreview || item.imagenUrlExistente
+          return (
+            <div
+              key={index}
+              className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  value={item.titulo}
+                  onChange={(e) =>
+                    actualizarItemServicio(indiceSeccion, index, "titulo", e.target.value)
+                  }
+                  onFocus={() => scrollPreviewTo(campoScroll)}
+                  placeholder="Título del servicio"
+                  className={cn(inputClase, "flex-1")}
+                />
+                <div className="flex w-32 shrink-0 items-center overflow-hidden rounded-xl border border-border bg-muted/60">
+                  <span className="shrink-0 pl-3 text-xs text-muted-foreground">$</span>
+                  <input
+                    value={item.precio}
+                    onChange={(e) =>
+                      actualizarItemServicio(indiceSeccion, index, "precio", e.target.value)
+                    }
+                    onFocus={() => scrollPreviewTo(campoScroll)}
+                    placeholder="Precio"
+                    className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => quitarItemServicio(indiceSeccion, index)}
+                  aria-label="Quitar servicio"
+                  className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+              <input
+                value={item.descripcion}
+                onChange={(e) =>
+                  actualizarItemServicio(indiceSeccion, index, "descripcion", e.target.value)
+                }
+                onFocus={() => scrollPreviewTo(campoScroll)}
+                placeholder="Descripción corta (opcional)"
+                className={inputClase}
+              />
+              <input
+                type="url"
+                value={item.enlaceUrl}
+                onChange={(e) =>
+                  actualizarItemServicio(indiceSeccion, index, "enlaceUrl", e.target.value)
+                }
+                onFocus={() => scrollPreviewTo(campoScroll)}
+                placeholder="Enlace para agendar o ver más (opcional)"
+                className={inputClase}
+              />
+              <div className="flex items-center gap-3">
+                {imagenMostrada && (
+                  <div className="relative shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
+                    <img
+                      src={imagenMostrada}
+                      alt="Vista previa del servicio"
+                      className="size-12 rounded-lg border border-border object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => quitarItemServicioImagen(indiceSeccion, index)}
+                      aria-label="Quitar imagen del servicio"
+                      className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleItemServicioImagenChange(indiceSeccion, index, e)}
+                  onFocus={() => scrollPreviewTo(campoScroll)}
+                  className={cn(
+                    inputClase,
+                    "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                  )}
+                />
+              </div>
+            </div>
+          )
+        })}
+
+        {seccion.items.length < 12 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => agregarItemServicio(indiceSeccion)}
+            className="self-start"
+          >
+            <Plus className="size-3.5" /> Agregar servicio
+          </Button>
+        )}
+
+        {indiceSeccion === 0 && (
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClase}>Folleto o presentación (PDF)</span>
+            <div className="flex items-center gap-3">
+              {(brochureUrlExistente || brochureFile) && (
+                <div className="flex shrink-0 items-center gap-2 rounded-xl border border-border bg-background/50 px-3 py-2">
+                  <FileText className="size-4 text-muted-foreground" />
+                  <span className="max-w-32 truncate text-xs text-foreground">
+                    {brochureFile?.name || "Folleto actual"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={quitarBrochure}
+                    aria-label="Quitar folleto"
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              )}
+              <input
+                key={brochureInputKey}
+                type="file"
+                accept="application/pdf"
+                onChange={handleBrochureChange}
+                onFocus={() => scrollPreviewTo(campoScroll)}
+                className={cn(
+                  inputClase,
+                  "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                )}
+              />
+            </div>
+          </label>
+        )}
+
+        {esUltima &&
+          (seccionesServicios.length < seccionesServiciosMaxPlan ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={agregarSeccionServicios}
+              className="self-start"
+            >
+              <Plus className="size-3.5" /> Agregar otra sección de servicios
+            </Button>
+          ) : (
+            seccionesServicios.length < 3 && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <CandadoPlan plan={seccionesServicios.length === 1 ? "alcance" : "poder"} />
+                Actualizá tu plan para agregar otra sección de servicios.
+              </div>
+            )
+          ))}
+      </div>
+    )
+  }
 
   const contenidoProductos = (
     <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
@@ -2577,7 +2881,11 @@ export function TarjetaForm({
     { id: "redes", titulo: "Redes sociales", contenido: contenidoRedes },
     { id: "ubicacion", titulo: "Ubicación y negocio", contenido: contenidoUbicacion },
     { id: "multimedia", titulo: "Contenido multimedia", contenido: contenidoMultimedia },
-    { id: "servicios", titulo: "Servicios", contenido: contenidoServicios },
+    ...seccionesServicios.map((seccion, indiceSeccion) => ({
+      id: `servicios-${indiceSeccion}`,
+      titulo: seccion.titulo.trim() || (indiceSeccion === 0 ? "Servicios" : `Sección ${indiceSeccion + 1}`),
+      contenido: contenidoSeccionServicios(indiceSeccion),
+    })),
     { id: "productos", titulo: "Productos", contenido: contenidoProductos },
     ...(esEdicion && tarjeta ? [{ id: "agenda", titulo: "Agenda", contenido: contenidoAgenda }] : []),
     ...(esEdicion && tarjeta
@@ -2756,7 +3064,7 @@ export function TarjetaForm({
           </div>
 
           <Accordion.Root
-            defaultValue={["datos", "productos"]}
+            defaultValue={["datos"]}
             className="flex flex-col gap-3"
             style={{ "--acento-bg": `${colorSecundario || "#71717a"}1a` } as React.CSSProperties}
           >

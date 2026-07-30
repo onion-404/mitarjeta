@@ -11,6 +11,10 @@ interface TarjetaQrProps {
    *  "inline": solo el contenido (QR + texto), sin botón ni Dialog propio —
    *  para embeber dentro de otro contenedor (ej. un Drawer). */
   variant?: "flotante" | "inline"
+  /** Override del className del botón trigger (variant "flotante"). Sin esto,
+   *  usa el `fixed bottom-6 right-6` de siempre — para contextos donde el
+   *  botón ya vive dentro de un contenedor `sticky` propio (ver [slug]/page.tsx). */
+  className?: string
 }
 
 function ContenidoQr({ url }: { url: string }) {
@@ -44,7 +48,7 @@ function ContenidoQr({ url }: { url: string }) {
   )
 }
 
-export function TarjetaQr({ slug, variant = "flotante" }: TarjetaQrProps) {
+export function TarjetaQr({ slug, variant = "flotante", className }: TarjetaQrProps) {
   const [open, setOpen] = React.useState(false)
   const url = typeof window !== "undefined" ? `${window.location.origin}/${slug}` : ""
 
@@ -56,14 +60,17 @@ export function TarjetaQr({ slug, variant = "flotante" }: TarjetaQrProps) {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Mostrar código QR"
-        className="fixed bottom-6 right-6 z-40 flex size-14 items-center justify-center rounded-full bg-foreground text-background shadow-xl transition-transform hover:scale-105"
+        className={
+          className ??
+          "fixed bottom-6 right-6 z-40 flex size-14 items-center justify-center rounded-full bg-foreground text-background shadow-xl transition-transform hover:scale-105"
+        }
       >
         <QrCode className="size-6" />
       </button>
 
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity data-ending-style:opacity-0 data-starting-style:opacity-0 dark:bg-black/60" />
-        <Dialog.Popup className="fixed top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-border bg-background p-6 text-center shadow-2xl transition-all data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm transition-opacity data-ending-style:opacity-0 data-starting-style:opacity-0 dark:bg-black/60" />
+        <Dialog.Popup className="fixed top-1/2 left-1/2 z-50 w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-border bg-background p-6 text-center shadow-2xl transition-all data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
           <Dialog.Close
             aria-label="Cerrar"
             className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted"
