@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 
 import { CandadoPlan } from "@/components/tarjeta/candado-plan"
-import type { DivisorBannerMeta, FormaAvatarMeta } from "@/lib/personalizacion"
+import { ALTO_REFERENCIA_DIVISOR, type DivisorBannerMeta, type FormaAvatarMeta } from "@/lib/personalizacion"
 import { cn } from "@/lib/utils"
 
 interface OpcionPersonalizacionProps {
@@ -80,22 +80,23 @@ export function SwatchDivisor({ divisor }: { divisor: DivisorBannerMeta }) {
   let capaSuperior: ReactNode
   if (divisor.clipPath === null) {
     capaSuperior = <span className="absolute inset-x-0 bottom-0 top-4 rounded-t-md bg-background" />
-  } else if (divisor.anchoDiseno) {
-    const escala = ANCHO_SWATCH_DIVISOR / divisor.anchoDiseno
+  } else {
+    // X del clip-path ya es % (escala solo con el ancho real, sin reescalar
+    // acá) — el alto de referencia (ALTO_REFERENCIA_DIVISOR, mismo que
+    // -mt-14 en TarjetaCard) sí necesita comprimirse verticalmente al alto
+    // chico del swatch, con scaleY solamente (nunca scale() uniforme: eso
+    // volvería a achicar X, que ya viene correcto en %).
+    const escalaY = ALTO_SWATCH_DIVISOR / ALTO_REFERENCIA_DIVISOR
     capaSuperior = (
       <span
-        className="absolute left-0 top-0 origin-top-left bg-background"
+        className="absolute inset-x-0 top-0 origin-top bg-background"
         style={{
-          width: divisor.anchoDiseno,
-          height: divisor.anchoDiseno,
+          height: ALTO_REFERENCIA_DIVISOR,
           clipPath: divisor.clipPath,
-          transform: `scale(${escala})`,
+          transform: `scaleY(${escalaY})`,
         }}
       />
     )
-  } else {
-    // polygon(): porcentual, aplica directo sin reescalar.
-    capaSuperior = <span className="absolute inset-0 bg-background" style={{ clipPath: divisor.clipPath }} />
   }
 
   return (

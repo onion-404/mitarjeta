@@ -70,24 +70,36 @@ export const FORMAS_AVATAR: FormaAvatarMeta[] = [
 // Divisores banner → tarjeta
 // ============================================================================
 // "recta" no es un clip-path nuevo: es el rounded-t-[2rem] que ya existe hoy,
-// sin tocar. diagonal/zigzag son polygon() (porcentuales, escalan sin
-// problema). onda es path() — path() ata las coordenadas al ancho real en
-// píxeles de la caja, y TarjetaCard mide entre 320-384px según breakpoint;
-// se autoró para 340px y se verificó renderizada también a 384px: la
-// diferencia es imperceptible a simple vista (probado lado a lado), así que
-// un solo path alcanza para todo el rango real sin lógica condicional por
-// ancho.
+// sin tocar.
+//
+// diagonal/zigzag/onda usan clip-path: polygon() con UNIDADES MIXTAS por
+// punto — X en % (escala con cualquier ancho real del panel, 320-480px+
+// según breakpoint/dispositivo) e Y en px fijos (el panel tiene alto
+// dinámico según contenido — agenda/servicios/productos pueden hacerlo
+// altísimo — así que Y no puede ser porcentual sin recortar contenido real
+// debajo). CSS permite mezclar unidades por punto en polygon(), a
+// diferencia de path() (que exige TODO en px, sin %).
+//
+// Bug real #1 (ya documentado): con Y porcentual sobre la altura TOTAL del
+// panel, el corte devoraba avatar/badge/nombre en paneles altos.
+// Bug real #2, encontrado después de "corregir" el #1 con path() fijo a
+// 340px: X en píxeles absolutos no escala con el ancho REAL del panel — en
+// cualquier contenedor más ancho que 340px (confirmado con inspección real
+// del DOM: el preview del editor mide 368px, más que suficiente para
+// exponerlo) queda una franja sin recortar a la derecha, un bloque
+// rectangular con el degradé del banner "mordiendo" la forma — exactamente
+// el reporte real. polygon() con X porcentual no tiene este problema: un
+// polygon() con al menos un punto en X=% simplemente no admite mezclarse
+// con path(), así que se migran los 3 a polygon() (zigzag/diagonal ya eran
+// líneas rectas, triviales; "onda" se remuestreó punto por punto de la
+// curva bezier original para no cambiar el aspecto visual ya aprobado).
+export const ALTO_REFERENCIA_DIVISOR = 56 // px — coincide con -mt-14 en TarjetaCard
+
 export interface DivisorBannerMeta {
   id: DivisorBanner
   etiqueta: string
   tier: TierPersonalizacion | null // null = sin gating, disponible siempre
   clipPath: string | null // null = "recta", usa el rounded-t-[2rem] actual
-  /** Solo "onda": ancho (px) para el que se autoró el path() — el swatch
-   *  chico del picker lo reescala con el mismo wrapper de scale que usan las
-   *  formas de avatar con path(); la tarjeta real lo aplica directo, sin
-   *  reescalar (se probó renderizado que tolera bien todo el rango real de
-   *  320-384px de ancho, ver CLAUDE.md). */
-  anchoDiseno?: number
 }
 
 export const DIVISORES_BANNER: DivisorBannerMeta[] = [
@@ -96,42 +108,27 @@ export const DIVISORES_BANNER: DivisorBannerMeta[] = [
     id: "diagonal",
     etiqueta: "Diagonal",
     tier: "avanzada",
-    // Antes era polygon(0% 60%, 100% 0%, ...) — porcentual sobre la altura
-    // TOTAL del panel de contenido, que es dinámica (200-800px según
-    // agenda/servicios/productos). El "60%" terminaba recortando medio
-    // panel real (avatar, badge y nombre desaparecían) en vez de solo un
-    // vistazo diagonal al banner — bug real confirmado renderizado con una
-    // tarjeta de prueba real. Mismo fix que "onda": path() en píxeles
-    // absolutos, confinado a una franja angosta arriba + rectángulo hasta
-    // y=4000 que no recorta nada del contenido real debajo.
-    anchoDiseno: 340,
-    clipPath: "path('M0,50 L340,0 L340,4000 L0,4000 Z')",
+    // El borde inferior va a 4000px (no un % ni un valor chico) para no
+    // recortar contenido real debajo del corte, sea cual sea su alto.
+    clipPath: "polygon(0% 50px, 100% 0px, 100% 4000px, 0% 4000px)",
   },
   {
     id: "zigzag",
     etiqueta: "Zigzag",
     tier: "avanzada",
-    // Mismo bug y mismo fix que "diagonal" de arriba (era polygon()
-    // porcentual sobre la altura total del panel).
-    anchoDiseno: 340,
     clipPath:
-      "path('M0,40 L28.33,0 L56.67,40 L85,0 L113.33,40 L141.67,0 L170,40 L198.33,0 L226.67,40 L255,0 L283.33,40 L311.67,0 L340,40 L340,4000 L0,4000 Z')",
+      "polygon(0% 40px, 8.33% 0px, 16.67% 40px, 25% 0px, 33.33% 40px, 41.67% 0px, 50% 40px, 58.33% 0px, 66.67% 40px, 75% 0px, 83.33% 40px, 91.67% 0px, 100% 40px, 100% 4000px, 0% 4000px)",
   },
   {
     id: "onda",
     etiqueta: "Onda",
     tier: "avanzada",
-    // El borde inferior del path va a y=4000 (no y=100 como en el diseño
-    // original) — bug real encontrado antes de integrarlo: el panel de
-    // contenido real mide varios cientos de px de alto según el contenido
-    // (agenda, servicios, productos...), y path() usa píxeles absolutos, no
-    // porcentuales — con el borde en y=100 todo el contenido debajo de esa
-    // línea quedaba recortado (invisible). 4000 excede cualquier alto real
-    // posible sin afectar el swatch chico (un clip-path que se extiende más
-    // allá de la caja visible simplemente no recorta nada extra ahí).
-    anchoDiseno: 340,
+    // Remuestreado de la curva bezier original (M0,20 C42.5,0 85,40 127.5,20
+    // C170,0 212.5,40 255,20 C297.5,0 340,40 340,20), 14 puntos por tramo,
+    // para preservar el mismo aspecto visual ya aprobado — cada X convertido
+    // a % de 340 (el ancho para el que se autoró la curva original).
     clipPath:
-      "path('M0,20 C 42.5,0 85,40 127.5,20 C 170,0 212.5,40 255,20 C 297.5,0 340,40 340,20 L340,4000 L0,4000 Z')",
+      "polygon(0% 20px, 2.68% 16.6px, 5.36% 14.8px, 8.04% 14.2px, 10.71% 14.8px, 13.39% 16.1px, 16.07% 17.9px, 18.75% 20px, 21.43% 22.1px, 24.11% 23.9px, 26.79% 25.2px, 29.46% 25.8px, 32.14% 25.2px, 34.82% 23.4px, 37.5% 20px, 40.18% 16.6px, 42.86% 14.8px, 45.54% 14.2px, 48.21% 14.8px, 50.89% 16.1px, 53.57% 17.9px, 56.25% 20px, 58.93% 22.1px, 61.61% 23.9px, 64.29% 25.2px, 66.96% 25.8px, 69.64% 25.2px, 72.32% 23.4px, 75% 20px, 77.67% 16.6px, 80.32% 14.8px, 82.91% 14.2px, 85.42% 14.8px, 87.82% 16.1px, 90.09% 17.9px, 92.19% 20px, 94.1% 22.1px, 95.79% 23.9px, 97.23% 25.2px, 98.4% 25.8px, 99.27% 25.2px, 99.81% 23.4px, 100% 20px, 100% 4000px, 0% 4000px)",
   },
 ]
 

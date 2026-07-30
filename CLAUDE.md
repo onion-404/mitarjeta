@@ -2288,6 +2288,115 @@ el acceso correcto a cada rol.
   `eslint` limpios en cada paso.
 
 ## Notas de proceso
+## Divisor onda/diagonal/zigzag: fix real #2 — mordía el banner en cualquier
+## ancho >340px (2026-07-29)
+- El fix anterior (mismo día) solo había resuelto que el clip-path no
+  devorara el contenido real (avatar/nombre) — pero seguía roto de una
+  forma distinta, reportada dos veces: en cualquier contenedor más ancho
+  que 340px (confirmado con inspección real del DOM — el preview del
+  editor mide 368px), quedaba una franja rectangular SIN recortar a la
+  derecha, con el degradé del banner "mordiendo" la forma. Causa: `path()`
+  exige TODAS sus coordenadas en píxeles absolutos (no admite `%`), y
+  estaba autorado para 340px fijos — cualquier ancho real distinto expone
+  el sobrante sin cortar.
+- Fix real: los 3 divisores migraron de `path()` a `clip-path: polygon()`
+  con **unidades mixtas por punto** — X en `%` (escala con cualquier ancho
+  real) e Y en `px` fijos (el panel de contenido tiene alto dinámico según
+  agenda/servicios/productos, no puede ser `%` sin recortar contenido real
+  debajo — mismo motivo que ya forzó el uso de píxeles para Y desde el
+  principio). CSS permite mezclar `%`/`px` por punto en `polygon()`, a
+  diferencia de `path()` (todo o nada en píxeles). "Onda" se remuestreó
+  punto por punto de la curva bezier original (14 puntos por tramo) para
+  no cambiar el aspecto visual ya aprobado. `anchoDiseno` desapareció del
+  todo (ya no hace falta, X se autoescala); `SwatchDivisor` (el picker) solo
+  necesita `scaleY` ahora (nunca `scale()` uniforme) para comprimir el alto
+  de referencia (`ALTO_REFERENCIA_DIVISOR = 56`, coincide con el `-mt-14`
+  real) al tamaño chico del swatch — X ya viene correcto en `%`.
+- Verificado con inspección real del DOM (no solo lectura de código,
+  pedido explícito) + capturas reales en 2 tarjetas de prueba distintas y 2
+  anchos reales distintos (~318px página pública, 368px preview del
+  editor): banner rectángulo intacto (`clip-path: none` confirmado por
+  computed style) en los 3 casos, forma del divisor extendida limpiamente
+  de borde a borde sin remanente rectangular, picker con los 4 swatches
+  bien proporcionados. Datos de prueba borrados después.
+
+## Panel admin: alta manual de tarjetas + reasignación de dueño — COMPLETO
+## (2026-07-30)
+- **Migración `20260729010000_add_suscripciones_manual.sql`, aplicada por
+  el cliente y confirmada** (se verificó con un select real que
+  `registrado_por`/`nota_manual` ya existen antes de implementar el resto):
+  agrega `'manual'` al constraint de `suscripciones.proveedor` (buscando el
+  nombre real vía `pg_constraint` en vez de asumirlo — era
+  `suscripciones_proveedor_check`, autogenerado por Postgres) + columnas
+  `registrado_por`/`nota_manual` (nullable, mismo patrón que
+  `afiliado_pagos.registrado_por`, solo se completan para `proveedor:
+  'manual'`).
+- **Nueva página `/admin/tarjetas/[id]` (detalle de tarjeta)**: no existía
+  ninguna vista de detalle antes — `/editar/[id]` tiene un gate hardcodeado
+  `tarjeta.user_id !== session.user.id` **sin bypass de admin** (a pesar de
+  que la policy RLS `tarjetas_admin_todo` sí le da acceso completo al admin
+  — son dos capas distintas, RLS no es lo único que bloqueaba). Se decidió
+  NO tocar `/editar/[id]` (UI grande, orientada al dueño, con flujos de
+  pago/upsell que no tiene sentido mezclar con herramientas admin) y en
+  cambio crear una página nueva y liviana, específica para las 2 acciones
+  de admin. `FiltroTarjetas` (compartido con `/mi-cuenta/tarjetas`) ganó
+  una prop `hrefBase` (default `/editar`, admin pasa `/admin/tarjetas`)
+  para que cada contexto enlace a su propio destino sin tocar el otro.
+- **`POST /api/admin/activar-manual`**: mismo gate `ADMIN_EMAIL` que
+  `/api/admin/cobro-manual`. Si ya existe una suscripción `autorizada`/
+  `pausada` para la tarjeta → `409` (no pisa una suscripción real). Si
+  existe una `pendiente` (checkout abandonado) → la reutiliza con
+  `UPDATE` (mismo patrón que el retry-checkout de Stripe, evita chocar
+  contra `suscripciones_una_activa_por_tarjeta`). `precio_base` se
+  autocompleta del plan; `descuento_aplicado` se calcula y se **clampea a
+  0** si el costo ingresado es mayor al precio de lista (verificado con un
+  caso real: Alcance mensual $129 con costo $550 → `descuento_aplicado: 0`,
+  no un número negativo). `fecha_renovacion` se calcula sumando 1 mes/año a
+  la fecha de pago según periodicidad.
+- **`POST /api/admin/reasignar-tarjeta`**: confirmado **contra la API
+  real** (no asumido) que `GET {SUPABASE_URL}/auth/v1/admin/users?filter=<email>`
+  con el service role key busca por email exacto — probado con un email
+  real (lo encontró) y uno inexistente (`200` con `users: []`, no un error
+  críptico). La SDK de supabase-js instalada (2.110.2) no expone filtro por
+  email en `listUsers()`, así que el endpoint le pega directo a esa URL con
+  `fetch` en vez de al wrapper tipado. `GET /api/admin/usuario-por-id`
+  (nuevo, separado) resuelve el email del dueño ACTUAL para mostrarlo en la
+  UI antes de reasignar, vía `admin.auth.admin.getUserById()` (sí soportado
+  por la SDK).
+- **Verificado de punta a punta con datos y sesión real de admin** (magic
+  link real a `emuna.interno@gmail.com`, mismo patrón no-destructivo ya
+  usado en toda la sesión): tarjeta sin plan → activar manualmente Alcance
+  mensual $550 con nota → confirmado con una lectura real de la DB
+  (`suscripciones.estado: 'autorizada'`, `proveedor: 'manual'`,
+  `precio_base: 129`, `precio_final: 550`, `descuento_aplicado: 0`,
+  `registrado_por: 'emuna.interno@gmail.com'`, `nota_manual` exacta,
+  `fecha_renovacion` un mes después) y `tarjetas.plan_id` sincronizado —
+  reintentar el alta en la misma tarjeta mostró correctamente el aviso de
+  "ya tiene una suscripción autorizada, cancelala primero" en vez de
+  duplicarla. Tarjeta sin dueño → reasignar a un email real (funcionó,
+  `tarjetas.user_id` confirmado en la DB) y a un email inexistente
+  (mensaje claro, no error críptico). Confirmado que `/mi-cuenta/tarjetas`
+  sigue enlazando a `/editar/{id}` sin cambios (cero regresión). Limpieza
+  completa después (tarjetas, suscripción y usuario de prueba borrados,
+  confirmado en cero). `npm run build` + `tsc --noEmit` + `eslint` limpios.
+
+## Acordeón "Productos" abierto por default + títulos editables de
+## Servicios/Productos (2026-07-29)
+- `TarjetaForm`: `Accordion.Root defaultValue={["datos", "productos"]}`
+  (antes solo `["datos"]`) — Productos ya no arranca colapsado.
+- Nuevos campos `tituloServicios`/`tituloProductos` en `IdentidadVisual`
+  (jsonb, sin migración) — inputs "Título de la sección" al inicio de
+  "Servicios"/"Productos" en el editor (placeholder = default real:
+  "Servicios"/"Productos", vacío = usa ese default). `TarjetaCard` usa
+  `tituloServicios?.trim() || "Servicios"` y
+  `tituloProductos?.trim() || "Productos"` (este último reemplaza el
+  antiguo "Nuestros Productos" hardcodeado, manteniendo el conteo
+  `({productos.length})`). Verificado con una tarjeta de prueba real
+  (`tituloServicios:"Lo que hacemos"`, `tituloProductos:"Mi catálogo"`):
+  la tarjeta pública mostró "LO QUE HACEMOS" y "MI CATÁLOGO (1)"
+  correctamente. Dato de prueba borrado después.
+
+## Notas de proceso
 - Proyecto de Supabase: producción única, sin staging. Antes de cualquier migración:
   backup con `pg_dump` (plan free, sin backups automáticos ni PITR).
 - Convención de migraciones: `supabase/migrations/YYYYMMDDHHMMSS_descripcion.sql`,

@@ -45,6 +45,7 @@ const ESTADO_CLASE: Record<EstadoSuscripcion, string> = {
 const PROVEEDOR_ETIQUETA: Record<ProveedorSuscripcion, string> = {
   stripe: "Stripe",
   mercadopago: "Mercado Pago",
+  manual: "Manual",
 }
 
 function nombreTarjeta(suscripcion: SuscripcionConDetalle) {

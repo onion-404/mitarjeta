@@ -35,9 +35,19 @@ interface FiltroTarjetasProps {
    *  En /mi-cuenta/tarjetas queda oculto (un usuario ve pocas tarjetas, no
    *  necesita ese nivel de filtro). */
   mostrarFiltroPlan?: boolean
+  /** A dónde enlaza cada fila (+ "/{tarjeta.id}") — /editar en Mi Cuenta
+   *  (el dueño edita su propia tarjeta), /admin/tarjetas en el panel admin
+   *  (vista de detalle con acciones administrativas: activar plan
+   *  manualmente, reasignar dueño — el admin no pasa por el editor normal
+   *  de la tarjeta). */
+  hrefBase?: string
 }
 
-export function FiltroTarjetas({ tarjetas, mostrarFiltroPlan = false }: FiltroTarjetasProps) {
+export function FiltroTarjetas({
+  tarjetas,
+  mostrarFiltroPlan = false,
+  hrefBase = "/editar",
+}: FiltroTarjetasProps) {
   const [tipo, setTipo] = React.useState<TarjetaTipo | "todos">("todos")
   const [estado, setEstado] = React.useState<FiltroEstado>("todos")
   const [planSlug, setPlanSlug] = React.useState<string>("todos")
@@ -114,7 +124,7 @@ export function FiltroTarjetas({ tarjetas, mostrarFiltroPlan = false }: FiltroTa
           {filtradas.map((tarjeta) => (
             <Link
               key={tarjeta.id}
-              href={`/editar/${tarjeta.id}`}
+              href={`${hrefBase}/${tarjeta.id}`}
               className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-white/70 px-4 py-3 text-left shadow-sm backdrop-blur transition-colors hover:bg-muted dark:bg-zinc-900/50"
             >
               <div className="min-w-0">

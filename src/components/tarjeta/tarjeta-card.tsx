@@ -185,6 +185,8 @@ export function TarjetaCard({
     fondoTarjetaColorSecundario,
     fondoTarjetaTipoDegradado,
     fondoTarjetaDireccionGrados,
+    tituloServicios,
+    tituloProductos,
   } = identidadVisual
   const [productosAbiertos, setProductosAbiertos] = React.useState(false)
   const [serviciosAbiertos, setServiciosAbiertos] = React.useState<Set<number>>(
@@ -585,7 +587,7 @@ export function TarjetaCard({
                 style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
                 className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
               >
-                Servicios
+                {tituloServicios?.trim() || "Servicios"}
               </h2>
               {descripcionServicios?.trim() && (
                 <p
@@ -702,7 +704,7 @@ export function TarjetaCard({
                   style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
                   className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
                 >
-                  Nuestros Productos ({productos?.length ?? 0})
+                  {tituloProductos?.trim() || "Productos"} ({productos?.length ?? 0})
                 </h2>
                 <ChevronDown
                   className={cn(

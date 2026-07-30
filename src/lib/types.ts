@@ -119,6 +119,10 @@ export interface IdentidadVisual {
   fondoTarjetaColorSecundario?: string
   fondoTarjetaTipoDegradado?: "lineal" | "radial"
   fondoTarjetaDireccionGrados?: number
+  /** Títulos personalizables de las secciones "Servicios"/"Productos" —
+   *  vacío/undefined usa el default ("Servicios"/"Productos"). */
+  tituloServicios?: string
+  tituloProductos?: string
 }
 
 export type MetodoPago = "mercado_pago" | "transferencia"
@@ -288,7 +292,7 @@ export interface Plan {
 
 export type PeriodicidadSuscripcion = "mensual" | "anual"
 export type EstadoSuscripcion = "pendiente" | "autorizada" | "pausada" | "cancelada" | "vencida"
-export type ProveedorSuscripcion = "mercadopago" | "stripe"
+export type ProveedorSuscripcion = "mercadopago" | "stripe" | "manual"
 
 export interface Suscripcion {
   id: string
@@ -309,6 +313,10 @@ export interface Suscripcion {
   cupon_codigo: string | null
   fecha_inicio: string
   fecha_renovacion: string | null
+  /** Solo se completan para proveedor='manual' — alta manual desde el
+   *  admin (ej. pago por transferencia), sin pasar por Stripe. */
+  registrado_por: string | null
+  nota_manual: string | null
   created_at: string
   updated_at: string
 }

@@ -198,7 +198,7 @@ export default function AdminTarjetasPage() {
       <div>
         <h2 className="text-lg font-semibold text-foreground">Listado</h2>
         <div className="mt-4">
-          <FiltroTarjetas tarjetas={tarjetas} mostrarFiltroPlan />
+          <FiltroTarjetas tarjetas={tarjetas} mostrarFiltroPlan hrefBase="/admin/tarjetas" />
         </div>
       </div>
     </div>

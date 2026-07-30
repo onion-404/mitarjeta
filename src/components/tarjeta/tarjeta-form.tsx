@@ -281,6 +281,17 @@ export function TarjetaForm({
     visualInicial?.fondoTarjetaDireccionGrados ?? 135
   )
 
+  // Títulos personalizables de las secciones "Servicios"/"Productos" — vive
+  // en identidad_visual (jsonb, sin migración) igual que el resto del
+  // sistema de personalización. Vacío = usa el default ("Servicios"/
+  // "Productos") tanto acá como en TarjetaCard.
+  const [tituloServicios, setTituloServicios] = React.useState(
+    visualInicial?.tituloServicios ?? ""
+  )
+  const [tituloProductos, setTituloProductos] = React.useState(
+    visualInicial?.tituloProductos ?? ""
+  )
+
   // Fail-closed: sin plan confirmado (ni el elegido al crear, ni uno activo
   // en edición), el gating queda en el nivel más restrictivo — mismo
   // criterio que el resto del gating por plan del proyecto.
@@ -1012,6 +1023,8 @@ export function TarjetaForm({
         fondoTarjetaActivo && fondoTarjetaModo === "avanzado" && fondoTarjetaTipoDegradado === "lineal"
           ? fondoTarjetaDireccionGrados
           : undefined,
+      tituloServicios: tituloServicios.trim() || undefined,
+      tituloProductos: tituloProductos.trim() || undefined,
     }
 
     if (bloqueosGuardado.length > 0) {
@@ -1238,6 +1251,8 @@ export function TarjetaForm({
       fondoTarjetaActivo && fondoTarjetaModo === "avanzado" && fondoTarjetaTipoDegradado === "lineal"
         ? fondoTarjetaDireccionGrados
         : undefined,
+    tituloServicios: tituloServicios.trim() || undefined,
+    tituloProductos: tituloProductos.trim() || undefined,
   }
 
   const bloqueosGuardado = calcularBloqueos(
@@ -2225,6 +2240,17 @@ export function TarjetaForm({
   const contenidoServicios = (
     <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
       <label className="flex flex-col gap-1.5">
+        <span className={labelClase}>Título de la sección</span>
+        <input
+          value={tituloServicios}
+          onChange={(e) => setTituloServicios(e.target.value)}
+          onFocus={() => scrollPreviewTo("servicios")}
+          placeholder="Servicios"
+          className={inputClase}
+        />
+      </label>
+
+      <label className="flex flex-col gap-1.5">
         <span className={labelClase}>Descripción general</span>
         <textarea
           value={descripcionServicios}
@@ -2317,6 +2343,17 @@ export function TarjetaForm({
 
   const contenidoProductos = (
     <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+      <label className="flex flex-col gap-1.5">
+        <span className={labelClase}>Título de la sección</span>
+        <input
+          value={tituloProductos}
+          onChange={(e) => setTituloProductos(e.target.value)}
+          onFocus={() => scrollPreviewTo("productos")}
+          placeholder="Productos"
+          className={inputClase}
+        />
+      </label>
+
       {productos.map((producto, index) => {
         const imagenMostrada = producto.imagenPreview || producto.imagenUrlExistente
         return (
@@ -2719,7 +2756,7 @@ export function TarjetaForm({
           </div>
 
           <Accordion.Root
-            defaultValue={["datos"]}
+            defaultValue={["datos", "productos"]}
             className="flex flex-col gap-3"
             style={{ "--acento-bg": `${colorSecundario || "#71717a"}1a` } as React.CSSProperties}
           >
