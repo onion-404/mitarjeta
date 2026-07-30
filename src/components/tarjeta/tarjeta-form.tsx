@@ -2931,7 +2931,7 @@ export function TarjetaForm({
           tiene lugar; el botón "Guardar" ya da feedback propio. */}
       <div className="relative mx-auto hidden w-full max-w-6xl px-4 pt-10 sm:px-6 lg:block lg:px-10">
         <h1 className="text-2xl font-semibold text-foreground">
-          {esEdicion ? "Editá tu tarjeta" : "Creá tu tarjeta digital"}
+          {esEdicion ? "Edita tu tarjeta" : "Crea tu tarjeta digital"}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {esEdicion

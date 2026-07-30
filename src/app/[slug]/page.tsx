@@ -137,7 +137,7 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
             href="/crear"
             className="rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0"
           >
-            Creá tu propia tarjeta digital con Linkard
+            Crea tu propia tarjeta digital con Linkard
           </Link>
         </p>
       </footer>

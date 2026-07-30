@@ -2432,7 +2432,7 @@ el acceso correcto a cada rol.
   contexto — el uso de `TarjetaQr`/`CompartirTarjeta` dentro del preview
   "Ver tarjeta" de `TarjetaForm` (línea ~2689) no se tocó, sigue con su
   comportamiento `fixed` de siempre.
-- **CTA "Creá tu propia tarjeta digital con Linkard" más llamativo**: pasó
+- **CTA "Crea tu propia tarjeta digital con Linkard" más llamativo**: pasó
   de texto chico subrayado (`text-xs`, `underline`) a un botón píldora
   (`rounded-full bg-foreground text-background`, mismo tratamiento visual
   que el CTA de folleto PDF de `TarjetaCard`) en el footer de `[slug]/page.tsx`.

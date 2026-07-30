@@ -45,11 +45,11 @@ export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://linkard.mx"),
   title: "Linkard · Tarjeta digital en segundos",
   description:
-    "Creá tu tarjeta de presentación o de negocio digital, compartila con un enlace y un QR. Sin apps, sin imprimir: tu contacto siempre a un toque de distancia.",
+    "Crea tu tarjeta de presentación o de negocio digital, compartila con un enlace y un QR. Sin apps, sin imprimir: tu contacto siempre a un toque de distancia.",
   openGraph: {
     title: "Linkard · Tarjeta digital en segundos",
     description:
-      "Creá tu tarjeta de presentación o de negocio digital, compartila con un enlace y un QR.",
+      "Crea tu tarjeta de presentación o de negocio digital, compartila con un enlace y un QR.",
     siteName: "Linkard",
     locale: "es_MX",
     type: "website",
@@ -58,7 +58,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Linkard · Tarjeta digital en segundos",
     description:
-      "Creá tu tarjeta de presentación o de negocio digital, compartila con un enlace y un QR.",
+      "Crea tu tarjeta de presentación o de negocio digital, compartila con un enlace y un QR.",
   },
 };
 
