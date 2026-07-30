@@ -2403,13 +2403,25 @@ el acceso correcto a cada rol.
   aditivas, envueltas en `BEGIN`/`COMMIT`.
 
 ## 4 fixes de editor/tarjeta pública + reemplazo de "Servicios" por secciones
-## tipo catálogo (2026-07-29) — código escrito directo en esta sesión, sin
-## pasar por Claude Code, a pedido explícito del usuario
-- ⚠️ **Ninguno de estos cambios fue verificado en vivo** (sin dev server ni
-  navegador real disponibles desde esta sesión — solo edición de archivos +
-  revisión manual línea por línea). **Pendiente antes de dar por cerrado**:
-  correr `npm run build` + `tsc --noEmit` + `eslint`, y una pasada visual
-  real (desktop + mobile) de los 4 puntos de abajo.
+## tipo catálogo (2026-07-29) — código escrito directo por el usuario, sin
+## pasar por Claude Code
+- ✅ **Verificado de punta a punta en una sesión posterior (2026-07-30),
+  antes de pushear**: `npm run build` + `tsc --noEmit` + `eslint` limpios, y
+  verificación real en navegador (no solo lectura de código) de los 5
+  puntos de abajo con 2 tarjetas de prueba (una plan Presencia con modelo
+  LEGACY de servicios, otra plan Poder con `seccionesServicios` nuevo):
+  conversión legacy→nuevo confirmada en memoria al abrir el editor (título
+  custom + 2 ítems con su descripción, sin precio, exactamente como debía),
+  agregar secciones hasta el tope real de Poder (3, sin candado — es el
+  plan más alto) y candado real "Alcance" al tope de Presencia (1),
+  folleto solo en la sección [0], modal de QR con z-index correcto (la
+  primera captura que pareció "roto" era la animación de entrada a mitad
+  de camino, confirmado con una segunda captura ya asentada), botones de
+  compartir/QR dejando de tapar el footer al hacer scroll, y CTA del
+  footer como botón píldora. La migración de datos
+  `20260729020000_add_secciones_servicios_max_feature.sql` ya estaba
+  aplicada (confirmado con una lectura real de `planes.features` antes de
+  probar nada). Tarjetas y usuarios de prueba borrados después.
 - **Acordeón "Productos" cerrado por defecto**: revertido
   `Accordion.Root defaultValue={["datos", "productos"]}` → `["datos"]` en
   `tarjeta-form.tsx` (deshace el cambio del mismo día documentado más
@@ -2466,13 +2478,8 @@ el acceso correcto a cada rol.
     data-only `20260729020000_add_secciones_servicios_max_feature.sql`
     (mismo patrón idempotente que
     `20260727030000_add_personalizacion_avanzada_feature.sql`) —
-    **🔴 escrita pero NO aplicada a producción todavía**, falta que el
-    usuario la corra (mismo protocolo que toda migración desde
-    `20260725000000`: sin `supabase` CLI vinculado en ninguna sesión,
-    incluida esta). Sin aplicarla, `featuresGating?.secciones_servicios_max`
-    da `undefined` y el tope cae al fallback fail-closed de 1 sección para
-    los 3 planes — no rompe nada, solo no habilita Alcance/Poder hasta que
-    se aplique.
+    **✅ aplicada y confirmada** (lectura real de `planes.features`:
+    presencia→1, alcance→2, poder→3).
   - El tope real nunca baja de lo ya guardado (mismo principio que
     `calcularBloqueos` en `lib/personalizacion.ts`, pero implementado
     aparte porque es un tope numérico de cantidad, no un lock de
@@ -2497,11 +2504,5 @@ el acceso correcto a cada rol.
     `eventos_metricas.tipo_evento` — fuera del alcance de lo pedido). El
     link igual funciona como `<a>` normal, simplemente no genera fila en
     `eventos_metricas`.
-  - **Pendiente honesto**: cero verificación end-to-end (sin tarjetas de
-    prueba sembradas, sin captura de pantalla, sin confirmar contra la DB
-    real) — a diferencia del resto de este documento, que documenta
-    features ya verificadas en vivo. Antes de considerar esto "shippeado"
-    en el mismo sentido que el resto de CLAUDE.md, hace falta: aplicar la
-    migración, correr el build/lint, y probar en el editor real con al
-    menos una tarjeta por plan.
+  - Verificación end-to-end: ver la nota al principio de esta sección.
 </content>
