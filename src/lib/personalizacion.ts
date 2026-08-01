@@ -133,11 +133,20 @@ export const DIVISORES_BANNER: DivisorBannerMeta[] = [
 ]
 
 // ============================================================================
-// Estilo tipográfico (modo simple: 1 fuente para título Y cuerpo)
+// Estilo tipográfico (modo simple: 1 fuente para título Y cuerpo; modo
+// avanzado — modoTipografiaAvanzado — separa título de cuerpo, ver
+// estiloTipografiaCuerpo en IdentidadVisual)
 // ============================================================================
-// Las 3 son tier "basica" (requieren personalizacion_libre) — igual que las
-// formas básicas, "moderna" nunca muestra candado en la práctica porque es
-// el default de cualquier tarjeta nueva (nunca difiere de lo guardado).
+// 9 estilos (ampliado 2026-08-01 desde los 3 originales). 7 son tier
+// "basica" (requieren personalizacion_libre, igual que las formas básicas de
+// avatar) — "moderna" nunca muestra candado en la práctica porque es el
+// default de cualquier tarjeta nueva (nunca difiere de lo guardado). Las 2
+// últimas ("display"/"manuscrita") son tier "avanzada" (Poder exclusivo) —
+// fuentes de mucho carácter, pensadas como upsell, no defaults razonables
+// para cualquier tarjeta. Fuentes cargadas vía next/font/google en
+// layout.tsx, expuestas como CSS var — "mono" reusa el estilo "mono sans"
+// pedido explícitamente (Space Mono), sin chocar con --font-geist-mono
+// (fuente de UI del propio producto, sin relación).
 export interface EstiloTipografiaMeta {
   id: EstiloTipografia
   etiqueta: string
@@ -149,6 +158,12 @@ export const ESTILOS_TIPOGRAFIA: EstiloTipografiaMeta[] = [
   { id: "moderna", etiqueta: "Moderna", tier: "basica" },
   { id: "elegante", etiqueta: "Elegante", tier: "basica", fuente: "var(--font-elegante)" },
   { id: "creativa", etiqueta: "Creativa", tier: "basica", fuente: "var(--font-creativa)" },
+  { id: "clasica", etiqueta: "Clásica", tier: "basica", fuente: "var(--font-clasica)" },
+  { id: "geometrica", etiqueta: "Geométrica", tier: "basica", fuente: "var(--font-geometrica)" },
+  { id: "redondeada", etiqueta: "Redondeada", tier: "basica", fuente: "var(--font-redondeada)" },
+  { id: "mono", etiqueta: "Mono", tier: "basica", fuente: "var(--font-tipografia-mono)" },
+  { id: "display", etiqueta: "Display", tier: "avanzada", fuente: "var(--font-card-display)" },
+  { id: "manuscrita", etiqueta: "Manuscrita", tier: "avanzada", fuente: "var(--font-manuscrita)" },
 ]
 
 // ============================================================================
@@ -305,7 +320,13 @@ export interface BloqueoCampo extends Bloqueo {
   valorEtiqueta: string
 }
 
-const CAMPOS_COLOR_BASICOS = ["colorPrimario", "colorSecundario", "colorBotones", "colorBadges"] as const
+const CAMPOS_COLOR_BASICOS = [
+  "colorPrimario",
+  "colorSecundario",
+  "colorBotones",
+  "colorBadges",
+  "colorTitulo",
+] as const
 
 export function calcularBloqueos(
   draft: IdentidadVisual,
@@ -337,6 +358,16 @@ export function calcularBloqueos(
       const b = estaBloqueada(meta.tier, draft.estiloTipografia, base.estiloTipografia ?? "moderna", features)
       if (b) bloqueos.push({ ...b, campo: "Estilo tipográfico", valorEtiqueta: meta.etiqueta })
     }
+  }
+
+  if (draft.tituloTamano !== undefined) {
+    const b = estaBloqueada("basica", draft.tituloTamano, base.tituloTamano, features)
+    if (b) bloqueos.push({ ...b, campo: "Tamaño del título", valorEtiqueta: `${draft.tituloTamano}px` })
+  }
+
+  if (draft.tituloPeso !== undefined) {
+    const b = estaBloqueada("basica", draft.tituloPeso, base.tituloPeso, features)
+    if (b) bloqueos.push({ ...b, campo: "Peso del título", valorEtiqueta: String(draft.tituloPeso) })
   }
 
   if (draft.glassmorfismo) {

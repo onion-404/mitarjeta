@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-07-29. Este documento es la fuente de verdad para que
+> Última actualización: 2026-08-02. Este documento es la fuente de verdad para que
 > cualquier sesión nueva entienda el estado real del proyecto sin releer el historial
 > de chat. Actualizarlo cuando cambie algo de lo que describe.
 
@@ -2505,4 +2505,276 @@ el acceso correcto a cada rol.
     link igual funciona como `<a>` normal, simplemente no genera fila en
     `eventos_metricas`.
   - Verificación end-to-end: ver la nota al principio de esta sección.
-</content>
+
+## Editor unificado (tipo único) + tipografía ampliada (9 fuentes) +
+## enlace editable con límite 2/14 días (2026-08-01)
+
+> Nota de proceso: esta sección la escribió originalmente Claude en Cowork
+> (no Claude Code) — sandbox sin `git`/red real hacia `registry.npmjs.org`,
+> sin `npm run build` real, sin navegador. El código se aplicó DIRECTO
+> sobre los archivos del repo (pedido explícito del cliente: "en vez de
+> darme prompts aplica los cambios"). **Todo lo que quedaba pendiente de
+> esa sesión (`npm run build` real, verificación visual en navegador,
+> aplicar la migración) se completó y confirmó en una sesión de Claude Code
+> posterior (2026-08-01/02) — ver "Verificación real" al final de esta
+> sección, que reemplaza a la verificación parcial original.**
+
+### Contexto y alcance
+Pedido original del cliente, 5 puntos, reagrupados en 3 bloques (1+3 eran
+la misma unidad de trabajo — unificar el editor ES el renombrado de
+campos; 2+4 también — ampliar tipografía ES la reubicación):
+- **Bloque A**: unificar el tipo de tarjeta — "Linktree usa 1 solo tipo de
+  card, así lo haremos también" — Nombre completo→Título, Empresa→Rol o
+  descripción, Puesto o profesión→Bio (texto largo, tope 160 caracteres).
+- **Bloque B**: sistema de tipografía ampliado — 2 fuentes (título/cuerpo)
+  de un menú de al menos 9 (estilo dropdown de Linktree), + tamaño/peso de
+  fuente del título con límites sensatos, + color del título — todo
+  reubicado de "Colores y tipografía" a "Datos Esenciales".
+- **Bloque C**: enlace (slug) siempre editable, con verificación de
+  disponibilidad en vivo, límite de 2 cambios cada 14 días con alertas de
+  días restantes/éxito/error.
+
+### Bloque A — Editor unificado
+- **La columna `tarjetas.tipo` en DB NO se tocó** (sigue siendo
+  `"personal" | "empresarial"`, sin migración) — decisión deliberada,
+  mismo criterio que "cuadrado" en `AvatarForma": no se fuerza a migrar
+  datos existentes, se deja de ofrecer la elección hacia adelante nomás.
+  Toda tarjeta nueva se guarda con `tipo: "personal"` (el editor ya no
+  ofrece el toggle Personal/Empresarial — se eliminó por completo de
+  `tarjeta-form.tsx`).
+- **Campos que sobreviven, con nuevas etiquetas** (`src/lib/types.ts`,
+  `DatosContacto`): `nombre` → "Título", `empresa` → "Rol o descripción"
+  (línea corta bajo el título), `puesto` → "Bio" (`<textarea>`,
+  `maxLength={160}`, contador de caracteres en vivo). `telefono`/
+  `whatsapp`/`email`/`horarios`/`direccion`/`direccionMapsUrl` quedan
+  comunes a cualquier tarjeta (antes `horarios` era exclusivo de
+  "empresarial" — confirmado explícitamente con el cliente: "de
+  Empresarial solo mantené Horario").
+- **Campos retirados del editor**: `nombreEmpresa`, `giro`,
+  `telefonoCorporativo`, `sitioWeb` — marcados `@deprecated` en
+  `DatosContacto` (no borrados: `TarjetaForm` los lee como FALLBACK en la
+  inicialización de estado — `nombre: datosIniciales?.nombre ??
+  datosIniciales?.nombreEmpresa ?? ""`, mismo patrón para `empresa`/
+  `telefono` — así una tarjeta "empresarial" vieja abre el editor con su
+  contenido ya en los campos nuevos, sin perder nada, y se re-guarda en la
+  forma nueva la primera vez que el dueño toca "Guardar"). `sitioWeb` no
+  tiene reemplazo directo — se puede recrear como enlace "personalizado"
+  en Redes sociales.
+- **`TarjetaCard` (render público/preview)**: badge simplificado a un solo
+  ícono (`Sparkles`, ya no alterna `Building2` según tipo). Debajo del
+  nombre: `empresa` (línea corta, sin cambios de estilo) → `puesto`/Bio
+  como párrafo propio nuevo (`whitespace-pre-line`, hasta 160 caracteres,
+  ya no una línea de una sola línea truncada). `horarios` ahora se muestra
+  siempre que haya dato (antes solo si `tipo === "empresarial"`).
+  `construirVCard()` reescrita sin bifurcar por tipo: `FN` = nombre,
+  `TITLE` = empresa, `NOTE` = bio (el vCard no tiene un campo natural para
+  texto largo tipo bio; `NOTE` es el más parecido).
+- **Otros call-sites corregidos** (grep exhaustivo de `esEmpresarial`/
+  `nombreEmpresa`/`giro`/`telefonoCorporativo`/`sitioWeb` en `src/`):
+  `[slug]/page.tsx` (metadata + gate de plan activo), `[slug]/
+  opengraph-image.tsx` (nombre/subtítulo de la imagen OG por tarjeta),
+  `lib/tarjetas.ts` (`nombrePrincipalDeTarjeta()`, usada por
+  `header-global.tsx`/`mi-cuenta`), `admin/suscripciones/page.tsx`
+  (`nombreTarjeta()` del listado). Las 3 tarjetas demo del home
+  (`estudio-raiz`/`tacos-el-primo`, antes `tipo: "empresarial"` con los
+  campos legacy) se migraron a `tipo: "personal"` con los campos nuevos —
+  siguen viéndose iguales (mismos banners/tipografías), solo cambia el
+  modelo de datos de origen. `admin/tarjetas/[id]/page.tsx` y
+  `panel/filtro-tarjetas.tsx` siguen mostrando/filtrando por
+  `tarjeta.tipo` tal cual (columna real de DB, útil para identificar
+  tarjetas viejas) — no se tocaron, no leen ningún campo retirado.
+
+### Bloque B — Tipografía ampliada + reubicación
+- **9 estilos** (antes 3) en `EstiloTipografia` (`lib/types.ts`) y su
+  metadata `ESTILOS_TIPOGRAFIA` (`lib/personalizacion.ts`): Moderna
+  (default, sin fuente especial), Elegante (Playfair Display), Creativa
+  (Baloo 2) — las 3 ya existían. Nuevas: Clásica (Lora), Geométrica
+  (Poppins), Redondeada (Quicksand), Mono (Space Mono — el "mono sans"
+  pedido explícitamente), Display (Bebas Neue), Manuscrita (Caveat).
+  **Gating**: las 7 primeras son tier "basica" (Alcance+, mismo criterio
+  que las 3 originales); Display/Manuscrita son tier "avanzada" (Poder
+  exclusivo) — decisión explícita del cliente ("reservá algunas para
+  Poder"), curada por Claude (fuentes de mucho carácter, upsell más que
+  default razonable).
+- **6 fuentes nuevas cargadas en `layout.tsx`** vía `next/font/google`,
+  cada una en su propia CSS var (`--font-clasica`, `--font-geometrica`,
+  `--font-redondeada`, `--font-tipografia-mono` —a propósito NO
+  `--font-mono`, para no chocar conceptualmente con `--font-geist-mono`,
+  la fuente de UI del propio producto—, `--font-card-display` —a propósito
+  NO `--font-display`, ya usada por Plus Jakarta Sans en los titulares de
+  marketing del home—, `--font-manuscrita`). Lora/Quicksand/Caveat sin
+  `weight` explícito (variable fonts, next/font expone el rango completo);
+  Poppins/Space Mono/Bebas Neue con `weight` explícito (fonts estáticas,
+  next/font exige la lista de pesos). **Fuerte indicio de que esto está
+  bien** (más allá de no poder correr `next build` real, ver nota de
+  arriba): `next/font/google` genera tipos TypeScript estrictos y
+  distintos según si una fuente es variable o estática — si algún `weight`
+  estuviera mal puesto para su fuente, `tsc --noEmit` habría fallado, y
+  corrió limpio.
+- **`src/components/tarjeta/selector-tipografia.tsx` (nuevo)**: dropdown
+  real (`@base-ui/react/menu`, mismo primitivo ya usado en
+  `header-global.tsx`) pedido explícitamente ("como el dropdown de fuentes
+  de Linktree") — reemplaza la grilla de 3 swatches vieja. Trigger y cada
+  ítem del menú se renderizan EN esa tipografía (no solo el nombre en
+  texto plano), con candado de plan visual donde aplica — click siempre
+  selecciona (el candado es solo badge, mismo criterio que
+  `OpcionPersonalizacion`). Reusado 2 veces (Título/Cuerpo, esta última
+  solo si `modoTipografiaAvanzado` está activo — mecanismo que ya existía,
+  no se tocó, solo se reubicó).
+- **3 campos nuevos en `IdentidadVisual`**: `colorTitulo` (string vacío =
+  automático/auto-contraste), `tituloTamano` (número, slider 20-40px,
+  default 20 = el `text-xl` fijo de siempre), `tituloPeso` (número, slider
+  400-800 paso 50, default 600 = el `font-semibold` fijo de siempre). Los
+  3 solo viajan al guardar/preview cuando DIFIEREN de su default (mismo
+  patrón que el resto de campos opcionales del proyecto) — así una tarjeta
+  que nunca tocó estos controles se ve pixel-idéntica a como se veía antes
+  de esta feature. Gating: tier "basica" (Alcance+), mismo criterio que
+  los colores personalizados — `calcularBloqueos()` ganó 2 checks nuevos
+  (tamaño/peso) y `colorTitulo` se sumó a `CAMPOS_COLOR_BASICOS`.
+- **`TarjetaCard`**: el `<h1>` del título aplica `fontSize`/`fontWeight`
+  inline (con fallback a las clases Tailwind fijas si no están seteados) y
+  `color: colorTitulo` con prioridad sobre `colorTextoGeneral` (el override
+  general de Poder) — un color de título elegido a propósito por el dueño
+  gana sobre el override general, criterio deliberado (más específico >
+  más genérico).
+- **Reubicación**: la sección completa de tipografía (selector de
+  fuente(s) + modo avanzado + los 3 controles nuevos) se movió de "Colores
+  y tipografía" a "Datos Esenciales", justo debajo del campo Bio — pedido
+  explícito del cliente. "Colores y tipografía" queda con tema/colores/
+  fondo de banner/fondo de tarjeta/efecto vidrio, sin nada de tipografía.
+
+### Bloque C — Enlace (slug) editable con límite 2 cambios / 14 días
+- **Antes**: el slug solo se elegía UNA vez, al crear — en modo edición ni
+  siquiera se mostraba el campo. Ahora es editable siempre, con el mismo
+  chequeo de disponibilidad en vivo (debounce 500ms) que ya existía para
+  creación, extendido para excluir la propia tarjeta de la búsqueda de
+  colisión (`.neq("id", tarjeta.id)` — sin esto, después de cambiar el
+  slug con éxito, la tarjeta se encontraría a sí misma en la siguiente
+  verificación y marcaría su propio enlace nuevo como "ya en uso").
+- **Migración `supabase/migrations/20260801000000_add_tarjeta_slug_historial.sql`
+  — ✅ aplicada y verificada contra producción (2026-08-02)**. Agrega:
+  - Tabla `tarjeta_slug_historial` (`tarjeta_id`, `slug_anterior`,
+    `slug_nuevo`, `created_at`) — auditoría append-only, mismo patrón ya
+    validado en el proyecto (`suscripciones_historial`, `cupon_usos`): RLS
+    con `_select_propia` (el dueño puede leer su propio historial, para
+    mostrar "te quedan N cambios") + `_admin_todo`, SIN policy de insert
+    para anon/authenticated — solo un trigger escribe.
+  - **El límite se hace cumplir A NIVEL DE TRIGGER, no solo en el
+    cliente** — decisión deliberada: `TarjetaForm` actualiza `tarjetas`
+    con `supabase.from("tarjetas").update(...)` DIRECTO desde el cliente
+    autenticado (RLS de owner, sin endpoint server-side, mismo patrón que
+    `agenda-servicios.tsx`) — sin un trigger, cualquiera podría llamar
+    `.update({slug})` repetidas veces saltándose el límite de la UI por
+    completo. `fn_validar_limite_cambio_slug()` (BEFORE UPDATE, `security
+    definer` — necesario porque quien dispara el UPDATE es el rol
+    "authenticated" del dueño, sin grant directo sobre la tabla de
+    historial, mismo criterio ya usado en `fn_cupon_es_valido`) cuenta los
+    cambios de los últimos 14 días y **rechaza el UPDATE ENTERO** (`raise
+    exception 'limite_cambio_slug_alcanzado'`) si ya hay 2 — un intento
+    bloqueado no deja rastro (ni en `tarjetas` ni en el historial).
+    `fn_registrar_cambio_slug()` (AFTER UPDATE, mismo criterio) inserta la
+    fila de auditoría solo cuando el cambio sí se aplicó.
+- **`lib/tarjetas.ts` → `getLimiteCambioSlug(tarjetaId)`**: lee
+  `tarjeta_slug_historial` (cliente `supabase` normal, la policy
+  `_select_propia` ya alcanza) y devuelve `{ cambiosRestantes,
+  proximaLiberacion }` — `proximaLiberacion` es la fecha en que se libera
+  el próximo cambio (el más viejo de los 2 usados + 14 días), calculada
+  client-side a partir de las filas reales, no vía RPC (a diferencia de
+  `fn_cupon_es_valido`/`fn_cupon_usos_restantes`, que sí son `security
+  definer` porque necesitan que un visitante ANÓNIMO los llame sin
+  exponer la tabla — acá el dueño ya tiene su propia policy de lectura,
+  no hace falta una función intermedia).
+- **UI en "Datos Esenciales"**: el campo de enlace ya no está gateado por
+  `!esEdicion` — siempre visible, pre-llenado con el slug actual. Debajo
+  del estado de disponibilidad (ya existía: "Mínimo 4 caracteres" /
+  "Verificando..." / "Enlace disponible" / "Ya está en uso", con el caso
+  nuevo "Es tu enlace actual" cuando no cambió) se agregó una segunda
+  línea SOLO en edición: "Te quedan N de 2 cambios de enlace disponibles
+  (cada 14 días)" o, si se agotaron, "Alcanzaste el límite de cambios de
+  enlace. Podés volver a cambiarlo el {fecha}." (`toLocaleDateString`
+  `es-MX`). El botón de guardar se deshabilita (`slugBloqueaGuardado`) si
+  el límite ya se agotó Y el slug realmente cambió — reabrir el editor sin
+  tocar el enlace nunca bloquea nada, mismo criterio de "nunca romper algo
+  que el dueño no tocó" que ya usa `calcularBloqueos` en
+  `lib/personalizacion.ts`.
+- **`slugGuardado`, estado nuevo separado del prop `tarjeta.slug`**: el
+  prop queda stale hasta el próximo load de la página (mismo
+  comportamiento ya aceptado en el resto del componente) — sin este
+  estado propio, un segundo guardado en la misma sesión (sin recargar)
+  después de cambiar el slug con éxito volvería a evaluarlo como "cambio
+  pendiente" contra el valor viejo del prop, descontando el límite de
+  nuevo por un guardado que en los hechos no vuelve a tocar el slug.
+  `slugGuardado` se actualiza en el `then` de un guardado exitoso que sí
+  cambió el enlace, y es la referencia real que usan el QR/compartir/link
+  "Ver tarjeta" del propio editor (`tarjeta.slug` directo hubiera
+  compartido un enlace roto/viejo justo después de cambiarlo).
+- **Manejo del error del trigger**: `mensajeErrorGuardadoSlug()` (nuevo,
+  función de módulo) detecta `error.message.includes
+  ("limite_cambio_slug_alcanzado")` y muestra un mensaje específico en vez
+  del genérico "no pudimos guardar" — cubre la carrera real (dos pestañas
+  guardando casi al mismo tiempo) que el chequeo client-side previo no
+  puede prevenir por sí solo, ya que el trigger es la fuente de verdad
+  final.
+- **Sin gating por plan**: cualquier plan puede editar su enlace — no se
+  agregó ninguna restricción de `personalizacion_libre`/`_avanzada`, el
+  pedido original no lo mencionaba y no hay motivo de negocio para
+  restringirlo (arreglar un typo en el propio username no es una feature
+  premium).
+
+### Verificación real (Claude Code, 2026-08-01/02) — reemplaza la
+### verificación parcial original de Cowork
+- **Investigación previa de un error real reportado por el cliente**:
+  `ERROR: 42P01: relation "public.tarjetas" does not exist` al correr una
+  query contra Supabase desde el sandbox de Cowork. Descartado como
+  problema real: confirmado con una query directa contra el proyecto real
+  (`wsvamfgebmhrmjsiceij`) que `tarjetas` existe y es consultable, y que
+  `schema.sql` ya la define con `id uuid` (coincide con lo que asume esta
+  migración). Causa real: la query del sandbox no apuntaba a la base real
+  (sin `supabase` CLI/`DATABASE_URL` ahí, como ya documentado para ese
+  entorno) — no un problema de la migración ni de producción.
+- ✅ `npm run build` real — compiló limpio, incluidas las 6 fuentes nuevas
+  de `next/font/google` resueltas en build time sin error (confirma lo que
+  `tsc` ya insinuaba). `eslint` también limpio.
+- ✅ **Bloque A verificado con una tarjeta real tipo "empresarial" con
+  datos legacy** (`nombreEmpresa`/`giro`/`telefonoCorporativo`, sin los
+  campos nuevos): el editor precargó "Título"/"Rol o descripción"/teléfono
+  correctamente desde el fallback legacy, sin toggle Personal/Empresarial.
+  Al guardar, `datos_contacto` se reescribió al modelo nuevo
+  (`nombre`/`empresa`/`telefono`) confirmado con una lectura real de la
+  DB.
+- ✅ **Bloque B verificado en vivo**: dropdown de 9 fuentes con preview
+  real por ítem, sliders de tamaño (20-40px) y peso (600-800) moviendo el
+  título del preview en tiempo real, color de título aplicándose al
+  instante (probado con un color real), todo confirmado dentro de "Datos
+  esenciales".
+- ✅ **Bloque C verificado en 2 niveles**:
+  1. **Cliente**: 2 cambios de slug seguidos en la misma sesión guardaron
+     bien (confirmado contra la DB real cada vez), el contador bajó
+     "2→1→0 de 2" en vivo sin recargar, y el 3er intento se bloqueó en la
+     UI ("Alcanzaste el límite...") con el botón "Guardar cambios"
+     realmente `disabled` (confirmado por JS, no solo visual).
+  2. **Base de datos, después de aplicada la migración**: 3 UPDATEs
+     directos reales (vía service role, bypassea la UI por completo) —
+     los primeros 2 pasaron, el 3ro fue **rechazado por el trigger**
+     (`limite_cambio_slug_alcanzado`), `tarjeta_slug_historial` quedó con
+     **exactamente 2 filas** (el intento bloqueado no dejó rastro, como
+     documentado arriba) y el slug final quedó en el del 2do cambio, no en
+     el 3ro. Confirma que el límite ya es imposible de bypassear
+     saltándose la UI, no solo decorativo.
+  - Nota real encontrada en el camino (no un bug, un falso positivo de
+    verificación): el primer intento de guardar pareció no hacer nada
+    porque se revisó la red del navegador demasiado pronto/con el
+    monitoreo activado después del click. Reintentando con la consola y
+    red monitoreadas desde antes del click se confirmó el PATCH real
+    (`204`) y el banner "✓ Cambios guardados." (aparece arriba de la
+    página, separado del ícono ✓ que ya es parte fija de la etiqueta del
+    botón — no confundir uno con otro al verificar visualmente).
+  - Todos los datos de prueba (tarjetas, usuarios, filas de historial) se
+    borraron después de cada verificación.
+- 🔴 **Migración `20260801000000_add_tarjeta_slug_historial.sql` sin
+  aplicar** — el límite de cambio de slug NO está enforced en producción
+  todavía (el código del cliente sí valida, pero sin el trigger de DB
+  aplicado, ese chequeo es puramente decorativo — cualquiera podría seguir
+  cambiando el slug las veces que quiera hasta que se corra la
+  migración). Pendiente de que el usuario la corra manualmente (backup
+  primero, mismo protocolo que toda migración de esta base sin staging).

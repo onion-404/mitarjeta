@@ -30,13 +30,13 @@ import { PlantillasGaleria } from "@/components/tarjeta/plantillas-galeria"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 import { RecortarAvatar } from "@/components/tarjeta/recortar-avatar"
 import { ReposicionarImagen } from "@/components/tarjeta/reposicionar-imagen"
+import { SelectorTipografia } from "@/components/tarjeta/selector-tipografia"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
 import { BANNER_PRESETS } from "@/lib/banner-presets"
 import { validarCupon } from "@/lib/cupones"
 import {
   DIVISORES_BANNER,
-  ESTILOS_TIPOGRAFIA,
   FORMAS_AVATAR,
   calcularBloqueos,
   estaBloqueada,
@@ -45,6 +45,7 @@ import {
 import { PLATAFORMAS, obtenerPlataforma } from "@/lib/redes"
 import { subirImagenCloudinary, validarImagen } from "@/lib/subir-imagen"
 import { supabase } from "@/lib/supabase"
+import { getLimiteCambioSlug, type LimiteCambioSlug } from "@/lib/tarjetas"
 import { cn } from "@/lib/utils"
 import type {
   AvatarForma,
@@ -121,6 +122,20 @@ function validarPdf(file: File): string | null {
   return null
 }
 
+/** Traduce el error de un UPDATE de `tarjetas` a un mensaje legible — el
+ *  trigger `fn_validar_limite_cambio_slug` (ver migración
+ *  20260801000000_add_tarjeta_slug_historial.sql) rechaza el UPDATE entero
+ *  con una excepción de Postgres si ya se agotó el límite de 2 cambios de
+ *  enlace cada 14 días; esto solo debería disparar en una carrera real
+ *  (dos pestañas guardando casi al mismo tiempo) ya que el cliente ya
+ *  valida esto antes de intentar guardar (ver slugLimiteAlcanzado). */
+function mensajeErrorGuardadoSlug(error: { message?: string } | null): string {
+  if (error?.message?.includes("limite_cambio_slug_alcanzado")) {
+    return "Alcanzaste el límite de 2 cambios de enlace cada 14 días. Probá de nuevo más tarde."
+  }
+  return "No pudimos guardar los cambios. Probá de nuevo en unos segundos."
+}
+
 interface TarjetaFormProps {
   /** Si se pasa, el formulario opera en modo edición (UPDATE en vez de INSERT). */
   tarjeta?: Tarjeta
@@ -160,25 +175,32 @@ export function TarjetaForm({
   const datosIniciales = tarjeta?.datos_contacto
   const visualInicial = tarjeta?.identidad_visual
 
-  const [tipo, setTipo] = React.useState<TarjetaTipo>(tarjeta?.tipo ?? "personal")
+  // Tipo único de tarjeta (ver lib/types.ts): la columna `tipo` en DB sigue
+  // existiendo (no se migra), pero el editor ya no ofrece elegirla — toda
+  // tarjeta nueva se guarda como "personal". Se mantiene el estado (nunca se
+  // vuelve a llamar `setTipo`) solo para no romper el payload de guardado ni
+  // el valor ya guardado de tarjetas viejas.
+  const [tipo] = React.useState<TarjetaTipo>(tarjeta?.tipo ?? "personal")
 
-  // Personal
-  const [nombre, setNombre] = React.useState(datosIniciales?.nombre ?? "")
-  const [empresa, setEmpresa] = React.useState(datosIniciales?.empresa ?? "")
+  // Título / Rol o descripción / Bio (antes "Nombre completo"/"Empresa"/
+  // "Puesto o profesión") — con fallback a los campos legacy de
+  // "empresarial" (nombreEmpresa/giro/telefonoCorporativo) para que una
+  // tarjeta empresarial ya existente abra el editor con su contenido
+  // pre-cargado en los campos nuevos, sin perder nada. Se escribe solo en
+  // los campos nuevos al guardar — los legacy quedan @deprecated en
+  // lib/types.ts, no se borran de tarjetas no regrabadas.
+  const [nombre, setNombre] = React.useState(
+    datosIniciales?.nombre ?? datosIniciales?.nombreEmpresa ?? ""
+  )
+  const [empresa, setEmpresa] = React.useState(
+    datosIniciales?.empresa ?? datosIniciales?.giro ?? ""
+  )
   const [puesto, setPuesto] = React.useState(datosIniciales?.puesto ?? "")
-  const [telefono, setTelefono] = React.useState(datosIniciales?.telefono ?? "")
+  const [telefono, setTelefono] = React.useState(
+    datosIniciales?.telefono ?? datosIniciales?.telefonoCorporativo ?? ""
+  )
   const [whatsapp, setWhatsapp] = React.useState(datosIniciales?.whatsapp ?? "")
   const [email, setEmail] = React.useState(datosIniciales?.email ?? "")
-
-  // Empresarial
-  const [nombreEmpresa, setNombreEmpresa] = React.useState(
-    datosIniciales?.nombreEmpresa ?? ""
-  )
-  const [giro, setGiro] = React.useState(datosIniciales?.giro ?? "")
-  const [telefonoCorporativo, setTelefonoCorporativo] = React.useState(
-    datosIniciales?.telefonoCorporativo ?? ""
-  )
-  const [sitioWeb, setSitioWeb] = React.useState(datosIniciales?.sitioWeb ?? "")
   const [horarios, setHorarios] = React.useState(datosIniciales?.horarios ?? "")
 
   // Común
@@ -268,6 +290,12 @@ export function TarjetaForm({
   const [estiloTipografia, setEstiloTipografia] = React.useState<EstiloTipografia>(
     visualInicial?.estiloTipografia ?? "moderna"
   )
+  // Color/tamaño/peso del título — defaults calzan con el look fijo de
+  // siempre (auto-contraste / 20px / 600) para que una tarjeta sin estos
+  // campos seteados se vea exactamente igual que antes de esta feature.
+  const [colorTitulo, setColorTitulo] = React.useState(visualInicial?.colorTitulo ?? "")
+  const [tituloTamano, setTituloTamano] = React.useState(visualInicial?.tituloTamano ?? 20)
+  const [tituloPeso, setTituloPeso] = React.useState(visualInicial?.tituloPeso ?? 600)
 
   // --- Personalización avanzada (gating por plan, ver lib/personalizacion.ts) ---
   const [colorBotones, setColorBotones] = React.useState(
@@ -431,8 +459,15 @@ export function TarjetaForm({
     mostrarToast("advertencia", mensaje)
   }
 
-  // Enlace personalizado (opcional, solo al crear)
-  const [slugPersonalizado, setSlugPersonalizado] = React.useState("")
+  // Enlace personalizado — obligatorio al crear, y editable siempre (con
+  // límite de 2 cambios cada 14 días, ver limiteSlug más abajo).
+  const [slugPersonalizado, setSlugPersonalizado] = React.useState(tarjeta?.slug ?? "")
+  // El slug realmente persistido, según esta sesión del editor — arranca
+  // igual al prop `tarjeta.slug`, pero se actualiza tras un guardado
+  // exitoso que lo cambió. Se usa en vez del prop (que queda stale hasta el
+  // próximo load de la página) para no confundir "guardé un cambio" con
+  // "tengo un cambio sin guardar" en un segundo guardado consecutivo.
+  const [slugGuardado, setSlugGuardado] = React.useState(tarjeta?.slug ?? "")
   // Último slug efectivamente consultado y su disponibilidad. `verificandoSlug`
   // y `slugDisponible` se derivan de esto comparando contra el valor actual
   // del input, en vez de guardarse aparte (evita setState síncrono en el
@@ -441,6 +476,21 @@ export function TarjetaForm({
     slug: string
     disponible: boolean
   } | null>(null)
+  // Cuántos cambios de enlace le quedan a la tarjeta en la ventana móvil de
+  // 14 días — solo aplica en edición (crear no consume el límite, ver
+  // lib/tarjetas.ts). null mientras carga o en modo creación.
+  const [limiteSlug, setLimiteSlug] = React.useState<LimiteCambioSlug | null>(null)
+
+  React.useEffect(() => {
+    if (!esEdicion || !tarjeta) return
+    let cancelado = false
+    getLimiteCambioSlug(tarjeta.id).then((limite) => {
+      if (!cancelado) setLimiteSlug(limite)
+    })
+    return () => {
+      cancelado = true
+    }
+  }, [esEdicion, tarjeta])
   const [vista, setVista] = React.useState<"editar" | "ver">("editar")
 
   // Tab/drawer móvil (patrón Linktree): id de la sección abierta, o null.
@@ -461,21 +511,32 @@ export function TarjetaForm({
   const [cuponError, setCuponError] = React.useState<string | null>(null)
   const [validandoCupon, setValidandoCupon] = React.useState(false)
 
-  const esEmpresarial = tipo === "empresarial"
-
-  // Chequeo de disponibilidad del enlace personalizado, con debounce de 500ms.
+  // Chequeo de disponibilidad del enlace personalizado, con debounce de
+  // 500ms — corre tanto al crear como al editar (el enlace ya es editable
+  // siempre, ver CLAUDE.md). En edición, si el valor no cambió respecto al
+  // slug ya guardado de la tarjeta, se marca disponible sin consultar nada
+  // (es el que ya tiene).
   React.useEffect(() => {
-    if (esEdicion) return
-
     const slug = slugPersonalizado.trim()
     if (slug.length < 4) return
 
+    // Diferido con setTimeout aunque el caso "ya es el mío" no necesite
+    // debounce real — llamar setState de forma síncrona en el cuerpo del
+    // efecto dispara renders en cascada (regla react-hooks/set-state-in-effect),
+    // mismo mecanismo ya usado en otros efectos de este archivo.
+    if (esEdicion && tarjeta && slug === slugGuardado) {
+      const timeoutId = window.setTimeout(() => setResultadoSlug({ slug, disponible: true }), 0)
+      return () => window.clearTimeout(timeoutId)
+    }
+
     const timeoutId = window.setTimeout(async () => {
-      const { data, error } = await supabase
-        .from("tarjetas")
-        .select("slug")
-        .eq("slug", slug)
-        .maybeSingle()
+      let consulta = supabase.from("tarjetas").select("slug").eq("slug", slug)
+      // Excluye la propia tarjeta — sin esto, después de guardar un cambio
+      // de slug con éxito (el prop `tarjeta` sigue con el valor viejo hasta
+      // el próximo load), la consulta se encontraría a sí misma y marcaría
+      // su propio enlace nuevo como "ya en uso".
+      if (esEdicion && tarjeta) consulta = consulta.neq("id", tarjeta.id)
+      const { data, error } = await consulta.maybeSingle()
 
       // Si falló la consulta (red, etc.) no bloqueamos: la unicidad real se
       // valida igual al guardar, atrapando el error 23505 de Postgres.
@@ -484,7 +545,7 @@ export function TarjetaForm({
     }, 500)
 
     return () => window.clearTimeout(timeoutId)
-  }, [slugPersonalizado, esEdicion])
+  }, [slugPersonalizado, esEdicion, tarjeta, slugGuardado])
 
   // Vuelta desde el Checkout hosteado de Stripe (success_url/cancel_url):
   // `back_url` de Mercado Pago no distinguía éxito de cancelación, esto sí
@@ -959,17 +1020,15 @@ export function TarjetaForm({
 
   async function handleGuardar(event: React.SubmitEvent) {
     event.preventDefault()
-    const nombrePrincipal = esEmpresarial ? nombreEmpresa : nombre
-    if (!nombrePrincipal.trim()) {
-      setSaveError(
-        esEmpresarial
-          ? "Ingresá el nombre de la empresa para continuar."
-          : "Ingresá un nombre para continuar."
-      )
+    if (!nombre.trim()) {
+      setSaveError("Ingresá un título para continuar.")
       return
     }
 
-    if (!esEdicion) {
+    // El enlace es obligatorio siempre (editable en cualquier modo, ver
+    // CLAUDE.md) — en edición viene pre-llenado con el actual, así que solo
+    // se topa con esto si lo borró a mano.
+    {
       const slugElegido = slugPersonalizado.trim()
       if (!slugElegido) {
         setSaveError("Elegí un enlace personalizado para continuar.")
@@ -978,6 +1037,22 @@ export function TarjetaForm({
       if (slugElegido.length < 4) {
         setSaveError("El enlace debe tener al menos 4 caracteres.")
         return
+      }
+      if (esEdicion && slugCambio) {
+        if (slugDisponible === false) {
+          setSaveError("Ese enlace ya está en uso. Elegí otro para continuar.")
+          return
+        }
+        if (slugLimiteAlcanzado) {
+          setSaveError(
+            limiteSlug?.proximaLiberacion
+              ? `Alcanzaste el límite de 2 cambios de enlace cada 14 días. Podés volver a cambiarlo el ${new Date(
+                  limiteSlug.proximaLiberacion
+                ).toLocaleDateString("es-MX", { day: "numeric", month: "long" })}.`
+              : "Alcanzaste el límite de 2 cambios de enlace cada 14 días."
+          )
+          return
+        }
       }
     }
 
@@ -1163,32 +1238,21 @@ export function TarjetaForm({
       // nunca se llenó.
       .filter((seccion, i) => i === 0 || seccion.titulo || seccion.items.length > 0)
 
-    const comunes: DatosContacto = {
+    const datos_contacto: DatosContacto = {
       direccion: direccion.trim() || undefined,
       direccionMapsUrl: direccionMapsUrl.trim() || undefined,
       videoUrl: videoUrl.trim() || undefined,
       seccionesServicios: seccionesServiciosFinales,
       productos: productosFinales,
       redes: redesFinales,
+      nombre: nombre.trim(),
+      empresa: empresa.trim() || undefined,
+      puesto: puesto.trim() || undefined,
+      telefono: telefono.trim() || undefined,
+      whatsapp: whatsapp.trim() || undefined,
+      email: email.trim() || undefined,
+      horarios: horarios.trim() || undefined,
     }
-    const datos_contacto: DatosContacto = esEmpresarial
-      ? {
-          ...comunes,
-          nombreEmpresa: nombreEmpresa.trim(),
-          giro: giro.trim() || undefined,
-          telefonoCorporativo: telefonoCorporativo.trim() || undefined,
-          sitioWeb: sitioWeb.trim() || undefined,
-          horarios: horarios.trim() || undefined,
-        }
-      : {
-          ...comunes,
-          nombre: nombre.trim(),
-          empresa: empresa.trim() || undefined,
-          puesto: puesto.trim() || undefined,
-          telefono: telefono.trim() || undefined,
-          whatsapp: whatsapp.trim() || undefined,
-          email: email.trim() || undefined,
-        }
 
     const identidad_visual: IdentidadVisual = {
       colorPrimario,
@@ -1200,6 +1264,9 @@ export function TarjetaForm({
       temaModo,
       avatarForma,
       estiloTipografia,
+      colorTitulo: colorTitulo || undefined,
+      tituloTamano: tituloTamano !== 20 ? tituloTamano : undefined,
+      tituloPeso: tituloPeso !== 600 ? tituloPeso : undefined,
       colorBotones,
       colorBadges,
       modoColorAvanzado,
@@ -1238,13 +1305,24 @@ export function TarjetaForm({
     if (esEdicion && tarjeta && tienePlanActivo) {
       const { error } = await supabase
         .from("tarjetas")
-        .update({ tipo, datos_contacto, identidad_visual })
+        .update({
+          tipo,
+          datos_contacto,
+          identidad_visual,
+          ...(slugCambio ? { slug: slugActualTrim } : {}),
+        })
         .eq("id", tarjeta.id)
 
       setSaving(false)
       if (error) {
-        setSaveError("No pudimos guardar los cambios. Probá de nuevo en unos segundos.")
+        setSaveError(mensajeErrorGuardadoSlug(error))
         return
+      }
+      if (slugCambio) {
+        setSlugGuardado(slugActualTrim)
+        setLimiteSlug((prev) =>
+          prev ? { ...prev, cambiosRestantes: Math.max(0, prev.cambiosRestantes - 1) } : prev
+        )
       }
       setGuardadoOk(true)
       setGuardadoExito(true)
@@ -1321,15 +1399,21 @@ export function TarjetaForm({
     if (esEdicion && tarjeta) {
       const { error } = await supabase
         .from("tarjetas")
-        .update({ tipo, datos_contacto, identidad_visual })
+        .update({
+          tipo,
+          datos_contacto,
+          identidad_visual,
+          ...(slugCambio ? { slug: slugActualTrim } : {}),
+        })
         .eq("id", tarjeta.id)
 
       if (error) {
-        setSaveError("No pudimos guardar los cambios. Probá de nuevo en unos segundos.")
+        setSaveError(mensajeErrorGuardadoSlug(error))
         setSaving(false)
         return
       }
-      await alGuardarConExito({ id: tarjeta.id, slug: tarjeta.slug })
+      if (slugCambio) setSlugGuardado(slugActualTrim)
+      await alGuardarConExito({ id: tarjeta.id, slug: slugCambio ? slugActualTrim : tarjeta.slug })
       return
     }
 
@@ -1401,33 +1485,21 @@ export function TarjetaForm({
       })),
   }))
 
-  const comunesActuales = {
+  const datosContactoActual: DatosContacto = {
     direccion,
     direccionMapsUrl,
     videoUrl,
     seccionesServicios: seccionesServiciosActuales,
     productos: productosActuales,
     redes: redesValidas(redes),
+    nombre,
+    empresa,
+    puesto,
+    telefono,
+    whatsapp,
+    email,
+    horarios,
   }
-
-  const datosContactoActual: DatosContacto = esEmpresarial
-    ? {
-        ...comunesActuales,
-        nombreEmpresa,
-        giro,
-        telefonoCorporativo,
-        sitioWeb,
-        horarios,
-      }
-    : {
-        ...comunesActuales,
-        nombre,
-        empresa,
-        puesto,
-        telefono,
-        whatsapp,
-        email,
-      }
 
   const identidadVisualActual: IdentidadVisual = {
     colorPrimario,
@@ -1439,6 +1511,9 @@ export function TarjetaForm({
     temaModo,
     avatarForma,
     estiloTipografia,
+    colorTitulo: colorTitulo || undefined,
+    tituloTamano: tituloTamano !== 20 ? tituloTamano : undefined,
+    tituloPeso: tituloPeso !== 600 ? tituloPeso : undefined,
     colorBotones,
     colorBadges,
     modoColorAvanzado,
@@ -1489,9 +1564,16 @@ export function TarjetaForm({
 
   const slugMuyCorto = Boolean(slugActualTrim) && slugActualTrim.length < 4
 
+  // En edición, el enlace solo "cambia" (y consume el límite de 2/14 días)
+  // si difiere del que la tarjeta ya tiene guardado — reabrir el editor sin
+  // tocarlo nunca debe bloquear el guardado del resto de los campos.
+  const slugCambio = esEdicion && Boolean(tarjeta) && slugActualTrim !== slugGuardado
+  const slugLimiteAlcanzado = slugCambio && limiteSlug !== null && limiteSlug.cambiosRestantes <= 0
+
   const slugBloqueaGuardado =
-    !esEdicion &&
-    (!slugActualTrim || slugMuyCorto || verificandoSlug || slugDisponible === false)
+    ((!esEdicion || slugCambio) &&
+      (!slugActualTrim || slugMuyCorto || verificandoSlug || slugDisponible === false)) ||
+    slugLimiteAlcanzado
 
   const personalizacionBloqueaGuardado = bloqueosGuardado.length > 0
 
@@ -1810,190 +1892,221 @@ export function TarjetaForm({
           </>
         )}
       </div>
-
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <span className={labelClase}>Tipografía</span>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            Modo avanzado
-            {bloqueoTipografiaAvanzada && <CandadoPlan plan={bloqueoTipografiaAvanzada.plan} />}
-            <Switch checked={modoTipografiaAvanzado} onCheckedChange={setModoTipografiaAvanzado} />
-          </label>
-        </div>
-        <span className="text-xs text-muted-foreground">
-          {modoTipografiaAvanzado ? "Título" : "Estilo tipográfico"}
-        </span>
-        <div className="grid grid-cols-3 gap-2">
-          {ESTILOS_TIPOGRAFIA.map((estilo) => {
-            const bloqueada = estaBloqueada(
-              estilo.tier,
-              estilo.id,
-              visualInicial?.estiloTipografia ?? "moderna",
-              featuresPersonalizacion
-            )
-            return (
-              <OpcionPersonalizacion
-                key={estilo.id}
-                seleccionada={estiloTipografia === estilo.id}
-                bloqueada={bloqueada}
-                etiqueta={estilo.etiqueta}
-                onClick={() => setEstiloTipografia(estilo.id)}
-              >
-                <span style={{ fontFamily: estilo.fuente }} className="text-lg font-semibold">
-                  Aa
-                </span>
-              </OpcionPersonalizacion>
-            )
-          })}
-        </div>
-
-        {modoTipografiaAvanzado && (
-          <>
-            <span className="mt-2 text-xs text-muted-foreground">Cuerpo</span>
-            <div className="grid grid-cols-3 gap-2">
-              {ESTILOS_TIPOGRAFIA.map((estilo) => (
-                <OpcionPersonalizacion
-                  key={estilo.id}
-                  seleccionada={estiloTipografiaCuerpo === estilo.id}
-                  etiqueta={estilo.etiqueta}
-                  onClick={() => setEstiloTipografiaCuerpo(estilo.id)}
-                >
-                  <span style={{ fontFamily: estilo.fuente }} className="text-lg font-semibold">
-                    Aa
-                  </span>
-                </OpcionPersonalizacion>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
     </div>
   )
 
   const contenidoDatosEsenciales = (
     <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
-      {esEmpresarial ? (
-        <>
-          <label className="flex flex-col gap-1.5">
-            <span className={labelClase}>Nombre de la empresa</span>
-            <input
-              required
-              value={nombreEmpresa}
-              onChange={(e) => setNombreEmpresa(e.target.value)}
-              onFocus={() => scrollPreviewTo("nombre")}
-              placeholder="Ej. Café Aroma"
-              className={inputClase}
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className={labelClase}>Giro / Razón social</span>
-            <input
-              value={giro}
-              onChange={(e) => setGiro(e.target.value)}
-              onFocus={() => scrollPreviewTo("nombre")}
-              placeholder="Ej. Cafetería"
-              className={inputClase}
-            />
-          </label>
-        </>
-      ) : (
-        <>
-          <label className="flex flex-col gap-1.5">
-            <span className={labelClase}>Nombre completo</span>
-            <input
-              required
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              onFocus={() => scrollPreviewTo("nombre")}
-              placeholder="Ej. María Gómez"
-              className={inputClase}
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className={labelClase}>Empresa</span>
-            <input
-              value={empresa}
-              onChange={(e) => setEmpresa(e.target.value)}
-              onFocus={() => scrollPreviewTo("nombre")}
-              placeholder="Ej. Grupo Aroma"
-              className={inputClase}
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className={labelClase}>Puesto o profesión</span>
-            <input
-              value={puesto}
-              onChange={(e) => setPuesto(e.target.value)}
-              onFocus={() => scrollPreviewTo("nombre")}
-              placeholder="Ej. Abogada"
-              className={inputClase}
-            />
-          </label>
-        </>
-      )}
+      <label className="flex flex-col gap-1.5">
+        <span className={labelClase}>Título</span>
+        <input
+          required
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          onFocus={() => scrollPreviewTo("nombre")}
+          placeholder="Ej. María Gómez o Café Aroma"
+          className={inputClase}
+        />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className={labelClase}>Rol o descripción</span>
+        <input
+          value={empresa}
+          onChange={(e) => setEmpresa(e.target.value)}
+          onFocus={() => scrollPreviewTo("nombre")}
+          placeholder="Ej. Abogada · Grupo Aroma"
+          className={inputClase}
+        />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between">
+          <span className={labelClase}>Bio</span>
+          <span className="text-xs text-muted-foreground">{puesto.length}/160</span>
+        </div>
+        <textarea
+          value={puesto}
+          onChange={(e) => setPuesto(e.target.value.slice(0, 160))}
+          onFocus={() => scrollPreviewTo("bio")}
+          maxLength={160}
+          rows={3}
+          placeholder="Contá en pocas palabras quién sos o qué hacés."
+          className={cn(inputClase, "resize-none")}
+        />
+      </label>
 
-      {!esEdicion && (
-        <label className="flex flex-col gap-1.5">
-          <span className={labelClase}>Enlace personalizado</span>
-          <div className="flex items-stretch overflow-hidden rounded-xl border border-border bg-white/70 backdrop-blur transition-colors duration-200 ease-out focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-zinc-900/60">
-            <span className="flex shrink-0 items-center border-r border-border bg-muted/60 px-3 text-sm text-muted-foreground">
-              linkard.mx/
+      {/* Tipografía + color/tamaño/peso del título — antes vivía en "Colores
+          y tipografía", reubicada acá (pedido explícito, ver CLAUDE.md): es
+          lo primero que define la identidad de la tarjeta, junto al Título
+          mismo. */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/40 p-3">
+        <div className="flex items-center justify-between">
+          <span className={cn(labelClase, "flex items-center gap-1.5")}>
+            Fuente del título
+            {bloqueoColoresSimple && <CandadoPlan plan={bloqueoColoresSimple.plan} />}
+          </span>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            Fuente distinta para el cuerpo
+            {bloqueoTipografiaAvanzada && <CandadoPlan plan={bloqueoTipografiaAvanzada.plan} />}
+            <Switch checked={modoTipografiaAvanzado} onCheckedChange={setModoTipografiaAvanzado} />
+          </label>
+        </div>
+
+        <SelectorTipografia
+          value={estiloTipografia}
+          onChange={setEstiloTipografia}
+          valorGuardado={visualInicial?.estiloTipografia ?? "moderna"}
+          features={featuresPersonalizacion}
+        />
+
+        {modoTipografiaAvanzado && (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">Fuente del cuerpo</span>
+            <SelectorTipografia
+              value={estiloTipografiaCuerpo}
+              onChange={setEstiloTipografiaCuerpo}
+              valorGuardado={visualInicial?.estiloTipografiaCuerpo ?? "moderna"}
+              features={featuresPersonalizacion}
+            />
+          </label>
+        )}
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">
+              Tamaño del título ({tituloTamano}px)
             </span>
             <input
-              required
-              minLength={4}
-              value={slugPersonalizado}
-              onChange={(e) =>
-                setSlugPersonalizado(
-                  e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "")
-                )
-              }
-              placeholder="tu-nombre"
-              className="w-full bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              type="range"
+              min={20}
+              max={40}
+              value={tituloTamano}
+              onChange={(e) => setTituloTamano(Number(e.target.value))}
+              onFocus={() => scrollPreviewTo("nombre")}
+              className="w-full cursor-pointer accent-foreground"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">Peso del título ({tituloPeso})</span>
+            <input
+              type="range"
+              min={400}
+              max={800}
+              step={50}
+              value={tituloPeso}
+              onChange={(e) => setTituloPeso(Number(e.target.value))}
+              onFocus={() => scrollPreviewTo("nombre")}
+              className="w-full cursor-pointer accent-foreground"
+            />
+          </label>
+        </div>
+
+        <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+          <span className="text-xs text-muted-foreground">Color del título</span>
+          <div className="flex items-center gap-2">
+            {colorTitulo && (
+              <button
+                type="button"
+                onClick={() => setColorTitulo("")}
+                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                Automático
+              </button>
+            )}
+            <input
+              type="color"
+              value={colorTitulo || "#18181b"}
+              onChange={(e) => setColorTitulo(e.target.value)}
+              onFocus={() => scrollPreviewTo("nombre")}
+              className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
             />
           </div>
-          {slugPersonalizado.trim() && (
-            <p
-              className={cn(
-                "flex items-center gap-1 text-xs",
-                slugMuyCorto
-                  ? "text-destructive"
-                  : verificandoSlug
-                    ? "text-muted-foreground"
-                    : slugDisponible === true
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : slugDisponible === false
-                        ? "text-destructive"
-                        : "text-muted-foreground"
-              )}
-            >
-              {slugMuyCorto ? (
-                <>
-                  <X className="size-3" /> Mínimo 4 caracteres
-                </>
-              ) : verificandoSlug ? (
-                <>
-                  <Loader2 className="size-3 animate-spin" /> Verificando
-                  disponibilidad...
-                </>
-              ) : slugDisponible === true ? (
-                <>
-                  <Check className="size-3" /> Enlace disponible
-                </>
-              ) : slugDisponible === false ? (
-                <>
-                  <X className="size-3" /> Este enlace ya está en uso
-                </>
-              ) : null}
-            </p>
-          )}
         </label>
-      )}
+      </div>
+
+      <label className="flex flex-col gap-1.5">
+        <span className={labelClase}>Enlace personalizado</span>
+        <div className="flex items-stretch overflow-hidden rounded-xl border border-border bg-white/70 backdrop-blur transition-colors duration-200 ease-out focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-zinc-900/60">
+          <span className="flex shrink-0 items-center border-r border-border bg-muted/60 px-3 text-sm text-muted-foreground">
+            linkard.mx/
+          </span>
+          <input
+            required
+            minLength={4}
+            value={slugPersonalizado}
+            onChange={(e) =>
+              setSlugPersonalizado(
+                e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "")
+              )
+            }
+            placeholder="tu-nombre"
+            className="w-full bg-transparent px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+        </div>
+        {slugPersonalizado.trim() && (
+          <p
+            className={cn(
+              "flex items-center gap-1 text-xs",
+              slugMuyCorto
+                ? "text-destructive"
+                : verificandoSlug
+                  ? "text-muted-foreground"
+                  : slugDisponible === true
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : slugDisponible === false
+                      ? "text-destructive"
+                      : "text-muted-foreground"
+            )}
+          >
+            {slugMuyCorto ? (
+              <>
+                <X className="size-3" /> Mínimo 4 caracteres
+              </>
+            ) : verificandoSlug ? (
+              <>
+                <Loader2 className="size-3 animate-spin" /> Verificando
+                disponibilidad...
+              </>
+            ) : slugDisponible === true ? (
+              <>
+                <Check className="size-3" />{" "}
+                {esEdicion && !slugCambio ? "Es tu enlace actual" : "Enlace disponible"}
+              </>
+            ) : slugDisponible === false ? (
+              <>
+                <X className="size-3" /> Este enlace ya está en uso
+              </>
+            ) : null}
+          </p>
+        )}
+
+        {/* Límite de 2 cambios cada 14 días — solo aplica en edición, crear
+            la tarjeta no consume el límite (ver lib/tarjetas.ts). */}
+        {esEdicion && limiteSlug && (
+          <p
+            className={cn(
+              "flex items-center gap-1 text-xs",
+              slugLimiteAlcanzado ? "text-destructive" : "text-muted-foreground"
+            )}
+          >
+            {slugLimiteAlcanzado ? (
+              <>
+                <X className="size-3" /> Alcanzaste el límite de cambios de enlace.{" "}
+                {limiteSlug.proximaLiberacion &&
+                  `Podés volver a cambiarlo el ${new Date(
+                    limiteSlug.proximaLiberacion
+                  ).toLocaleDateString("es-MX", { day: "numeric", month: "long" })}.`}
+              </>
+            ) : (
+              `Te quedan ${limiteSlug.cambiosRestantes} de 2 cambios de enlace disponibles (cada 14 días).`
+            )}
+          </p>
+        )}
+      </label>
 
       <p className="rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-        ¡No te preocupes! {esEdicion ? "El único campo obligatorio es tu nombre." : "Los únicos campos obligatorios son tu nombre y tu enlace personalizado."}{" "}
-        Todos los demás datos los puedes agregar, cambiar o
-        mejorar en el momento que quieras.
+        ¡No te preocupes! Los únicos campos obligatorios son tu título y tu
+        enlace personalizado. Todos los demás datos los puedes agregar,
+        cambiar o mejorar en el momento que quieras.
       </p>
     </div>
   )
@@ -2001,9 +2114,7 @@ export function TarjetaForm({
   const contenidoAvatarYBanner = (
     <div className="flex flex-col gap-5 px-5 pb-5 pt-1">
       <div className="flex flex-col gap-1.5">
-        <span className={labelClase}>
-          {esEmpresarial ? "Foto o logo" : "Foto de perfil"}
-        </span>
+        <span className={labelClase}>Foto de perfil</span>
         <div className="flex items-center gap-3">
           {avatarMostrado && (
             <div className="relative shrink-0">
@@ -2238,69 +2349,41 @@ export function TarjetaForm({
 
   const contenidoContacto = (
     <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
-      {esEmpresarial ? (
-        <>
-          <label className="flex flex-col gap-1.5">
-            <span className={labelClase}>Teléfono corporativo</span>
-            <input
-              type="tel"
-              value={telefonoCorporativo}
-              onChange={(e) => setTelefonoCorporativo(e.target.value)}
-              onFocus={() => scrollPreviewTo("contacto")}
-              placeholder="+54 11 5555-5555"
-              className={inputClase}
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className={labelClase}>Sitio web</span>
-            <input
-              value={sitioWeb}
-              onChange={(e) => setSitioWeb(e.target.value)}
-              onFocus={() => scrollPreviewTo("contacto")}
-              placeholder="https://..."
-              className={inputClase}
-            />
-          </label>
-        </>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className={labelClase}>Teléfono celular</span>
-              <input
-                type="tel"
-                value={telefono}
-                onChange={(e) => setTelefono(e.target.value)}
-                onFocus={() => scrollPreviewTo("contacto")}
-                placeholder="+54 11 5555-5555"
-                className={inputClase}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className={labelClase}>WhatsApp</span>
-              <input
-                type="tel"
-                value={whatsapp}
-                onChange={(e) => setWhatsapp(e.target.value)}
-                onFocus={() => scrollPreviewTo("contacto")}
-                placeholder="+54 11 5555-5555"
-                className={inputClase}
-              />
-            </label>
-          </div>
-          <label className="flex flex-col gap-1.5">
-            <span className={labelClase}>Email</span>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onFocus={() => scrollPreviewTo("contacto")}
-              placeholder="tu@correo.com"
-              className={inputClase}
-            />
-          </label>
-        </>
-      )}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <label className="flex flex-col gap-1.5">
+          <span className={labelClase}>Teléfono</span>
+          <input
+            type="tel"
+            value={telefono}
+            onChange={(e) => setTelefono(e.target.value)}
+            onFocus={() => scrollPreviewTo("contacto")}
+            placeholder="+54 11 5555-5555"
+            className={inputClase}
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className={labelClase}>WhatsApp</span>
+          <input
+            type="tel"
+            value={whatsapp}
+            onChange={(e) => setWhatsapp(e.target.value)}
+            onFocus={() => scrollPreviewTo("contacto")}
+            placeholder="+54 11 5555-5555"
+            className={inputClase}
+          />
+        </label>
+      </div>
+      <label className="flex flex-col gap-1.5">
+        <span className={labelClase}>Email</span>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onFocus={() => scrollPreviewTo("contacto")}
+          placeholder="tu@correo.com"
+          className={inputClase}
+        />
+      </label>
     </div>
   )
 
@@ -2418,18 +2501,16 @@ export function TarjetaForm({
           />
         </label>
       </div>
-      {esEmpresarial && (
-        <label className="flex flex-col gap-1.5">
-          <span className={labelClase}>Horarios de atención</span>
-          <input
-            value={horarios}
-            onChange={(e) => setHorarios(e.target.value)}
-            onFocus={() => scrollPreviewTo("ubicacion")}
-            placeholder="Lun a Vie 9 a 18hs"
-            className={inputClase}
-          />
-        </label>
-      )}
+      <label className="flex flex-col gap-1.5">
+        <span className={labelClase}>Horarios de atención</span>
+        <input
+          value={horarios}
+          onChange={(e) => setHorarios(e.target.value)}
+          onFocus={() => scrollPreviewTo("ubicacion")}
+          placeholder="Lun a Vie 9 a 18hs"
+          className={inputClase}
+        />
+      </label>
     </div>
   )
 
@@ -2945,7 +3026,7 @@ export function TarjetaForm({
           <div className="mt-6 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
             <Check className="size-4 shrink-0" />
             Cambios guardados.{" "}
-            <Link href={`/${tarjeta.slug}`} className="underline underline-offset-2">
+            <Link href={`/${slugGuardado}`} className="underline underline-offset-2">
               Ver tarjeta
             </Link>
           </div>
@@ -2989,17 +3070,15 @@ export function TarjetaForm({
             tipo={tipo}
             datosContacto={datosContactoActual}
             identidadVisual={identidadVisualActual}
-            slug={tarjeta.slug}
+            slug={slugGuardado}
             agendaServicios={agendaServiciosPreview}
             mostrarAcciones
             className="relative"
           />
-          <TarjetaQr slug={tarjeta.slug} />
+          <TarjetaQr slug={slugGuardado} />
           <CompartirTarjeta
-            slug={tarjeta.slug}
-            titulo={
-              (esEmpresarial ? nombreEmpresa : nombre) || "Linkard"
-            }
+            slug={slugGuardado}
+            titulo={nombre || "Linkard"}
           />
         </div>
       )}
@@ -3030,7 +3109,7 @@ export function TarjetaForm({
                   tipo={tipo}
                   datosContacto={datosContactoActual}
                   identidadVisual={identidadVisualActual}
-                  slug={esEdicion ? tarjeta?.slug : slugPersonalizado.trim()}
+                  slug={slugPersonalizado.trim() || tarjeta?.slug}
                   agendaServicios={agendaServiciosPreview}
                   className="w-full min-w-0 rounded-none border-0 shadow-none"
                 />
@@ -3045,24 +3124,6 @@ export function TarjetaForm({
           onSubmit={handleGuardar}
           className="relative z-10 hidden flex-col gap-6 lg:flex"
         >
-          <div className="inline-flex w-fit rounded-full border border-border bg-white/70 p-1 shadow-sm backdrop-blur dark:bg-zinc-900/50">
-            {(["personal", "empresarial"] as const).map((opcion) => (
-              <button
-                key={opcion}
-                type="button"
-                onClick={() => setTipo(opcion)}
-                className={cn(
-                  "rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 ease-out",
-                  tipo === opcion
-                    ? "bg-foreground text-background shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {opcion === "personal" ? "Personal" : "Empresarial"}
-              </button>
-            ))}
-          </div>
-
           <Accordion.Root
             defaultValue={["datos"]}
             className="flex flex-col gap-3"
@@ -3238,10 +3299,10 @@ export function TarjetaForm({
                     </Drawer.Close>
                   </div>
                   <div className="flex flex-col gap-5 px-5 pb-5">
-                    <TarjetaQr slug={tarjeta.slug} variant="inline" />
+                    <TarjetaQr slug={slugGuardado} variant="inline" />
                     <CompartirTarjeta
-                      slug={tarjeta.slug}
-                      titulo={(esEmpresarial ? nombreEmpresa : nombre) || "Linkard"}
+                      slug={slugGuardado}
+                      titulo={nombre || "Linkard"}
                       variant="inline"
                     />
                   </div>

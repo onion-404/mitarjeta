@@ -46,14 +46,8 @@ export default async function Image({ params }: Props) {
     return new ImageResponse(renderOgImageGenerico(), { ...size, fonts })
   }
 
-  const esEmpresarial = tarjeta.tipo === "empresarial"
-  const nombre =
-    (esEmpresarial
-      ? tarjeta.datos_contacto.nombreEmpresa
-      : tarjeta.datos_contacto.nombre) || "Linkard"
-  const subtitulo = esEmpresarial
-    ? tarjeta.datos_contacto.giro
-    : tarjeta.datos_contacto.puesto
+  const nombre = tarjeta.datos_contacto.nombre || "Linkard"
+  const subtitulo = tarjeta.datos_contacto.empresa || tarjeta.datos_contacto.puesto
 
   const { colorPrimario, colorSecundario, avatarUrl } = tarjeta.identidad_visual
   const fondo =

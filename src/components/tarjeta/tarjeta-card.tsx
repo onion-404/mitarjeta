@@ -1,7 +1,6 @@
 "use client"
 
 import {
-  Building2,
   ChevronDown,
   Clock,
   Download,
@@ -83,23 +82,24 @@ function esUrlOptimizable(url: string) {
   return url.startsWith("http://") || url.startsWith("https://")
 }
 
-function construirVCard(tipo: TarjetaTipo, datos: DatosContacto) {
-  const esEmpresarial = tipo === "empresarial"
-  const nombrePrincipal = esEmpresarial ? datos.nombreEmpresa : datos.nombre
-  const telefono = esEmpresarial ? datos.telefonoCorporativo : datos.telefono
+// Tipo único de tarjeta (ver nota en lib/types.ts): ya no bifurca por
+// personal/empresarial — nombre ("Título"), empresa ("Rol o descripción") y
+// puesto ("Bio") son los mismos 3 campos para cualquier tarjeta.
+function construirVCard(datos: DatosContacto) {
+  const nombrePrincipal = datos.nombre
 
   const lineas = [
     "BEGIN:VCARD",
     "VERSION:3.0",
     `FN:${nombrePrincipal || "Sin nombre"}`,
-    esEmpresarial ? `ORG:${nombrePrincipal || ""}` : "",
-    !esEmpresarial && datos.puesto ? `TITLE:${datos.puesto}` : "",
-    esEmpresarial && datos.giro ? `TITLE:${datos.giro}` : "",
-    telefono ? `TEL;TYPE=WORK,VOICE:${telefono}` : "",
-    !esEmpresarial && datos.whatsapp ? `TEL;TYPE=CELL:${datos.whatsapp}` : "",
+    datos.empresa ? `TITLE:${datos.empresa}` : "",
+    datos.puesto ? `NOTE:${datos.puesto}` : "",
+    datos.telefono ? `TEL;TYPE=CELL,VOICE:${datos.telefono}` : "",
+    datos.whatsapp && datos.whatsapp !== datos.telefono
+      ? `TEL;TYPE=CELL:${datos.whatsapp}`
+      : "",
     datos.email ? `EMAIL:${datos.email}` : "",
-    esEmpresarial && datos.sitioWeb ? `URL:${datos.sitioWeb}` : "",
-    esEmpresarial && datos.direccion ? `ADR;TYPE=WORK:;;${datos.direccion}` : "",
+    datos.direccion ? `ADR:;;${datos.direccion}` : "",
     "END:VCARD",
   ].filter(Boolean)
 
@@ -136,7 +136,6 @@ export function TarjetaCard({
     registrarEvento(tarjetaId, tipoEvento, metadata)
   }
 
-  const esEmpresarial = tipo === "empresarial"
   const {
     nombre,
     empresa,
@@ -144,12 +143,8 @@ export function TarjetaCard({
     telefono,
     whatsapp,
     email,
-    nombreEmpresa,
-    giro,
-    telefonoCorporativo,
     direccion,
     direccionMapsUrl,
-    sitioWeb,
     horarios,
     videoUrl,
     descripcionServicios,
@@ -168,6 +163,9 @@ export function TarjetaCard({
     temaModo,
     avatarForma,
     estiloTipografia,
+    colorTitulo,
+    tituloTamano,
+    tituloPeso,
     colorBotones,
     colorBadges,
     modoColorAvanzado,
@@ -222,9 +220,11 @@ export function TarjetaCard({
     })
   }
 
-  const nombrePrincipal = esEmpresarial ? nombreEmpresa : nombre
-  const subtitulo = esEmpresarial ? giro : puesto
-  const telefonoPrincipal = esEmpresarial ? telefonoCorporativo : telefono
+  // Tipo único: "nombre" es el Título, "empresa" el Rol o descripción (línea
+  // corta bajo el nombre) y "puesto" la Bio (párrafo largo, hasta 160
+  // caracteres) — ver lib/types.ts y la sección "Datos Esenciales" del editor.
+  const nombrePrincipal = nombre
+  const telefonoPrincipal = telefono
   const videoEmbedUrl = obtenerYoutubeEmbedUrl(videoUrl)
   // Con un "Fondo de la tarjeta" personalizado, el contraste de TODO el
   // texto/bordes del panel (ya atados a dark: en vez de duplicarse por
@@ -235,12 +235,11 @@ export function TarjetaCard({
     ? obtenerColorContraste(fondoTarjetaColor) === "#ffffff"
     : temaModo === "oscuro"
 
+  // Reusa la metadata de ESTILOS_TIPOGRAFIA (lib/personalizacion.ts) en vez
+  // de repetir el mapeo id → CSS var acá — con 9 estilos (ampliado
+  // 2026-08-01) mantener un ternario manual duplicado se vuelve frágil.
   function fuentePorEstilo(estilo: typeof estiloTipografia) {
-    return estilo === "elegante"
-      ? "var(--font-elegante)"
-      : estilo === "creativa"
-        ? "var(--font-creativa)"
-        : undefined
+    return ESTILOS_TIPOGRAFIA.find((e) => e.id === estilo)?.fuente
   }
   const fuenteEncabezado = fuentePorEstilo(estiloTipografia)
   // Modo simple (default): el cuerpo usa la fuente del sistema, igual que
@@ -341,7 +340,7 @@ export function TarjetaCard({
     .replace(/\s+/g, "-")
 
   function handleGuardarContacto() {
-    const contenido = construirVCard(tipo, datosContacto)
+    const contenido = construirVCard(datosContacto)
     const blob = new Blob([contenido], { type: "text/vcard;charset=utf-8" })
     const url = URL.createObjectURL(blob)
     const enlace = document.createElement("a")
@@ -453,18 +452,20 @@ export function TarjetaCard({
                   "bg-[rgba(24,24,27,0.05)] text-[#71717a] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#a1a1aa]"
               )}
             >
-              {esEmpresarial ? (
-                <Building2 className="size-3" />
-              ) : (
-                <Sparkles className="size-3" />
-              )}
+              <Sparkles className="size-3" />
               @{slug.trim()}
             </span>
           )}
 
           <h1
             data-campo="nombre"
-            style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
+            style={{
+              fontFamily: fuenteEncabezado,
+              ...estiloTextoGeneral,
+              fontSize: tituloTamano ? `${tituloTamano}px` : undefined,
+              fontWeight: tituloPeso ?? undefined,
+              ...(colorTitulo ? { color: colorTitulo } : undefined),
+            }}
             className="mt-2 text-xl font-semibold text-balance text-[#18181b] dark:text-[#fafafa]"
           >
             {nombrePrincipal?.trim() || "Sin nombre"}
@@ -477,20 +478,24 @@ export function TarjetaCard({
               {empresa}
             </p>
           )}
-          {subtitulo?.trim() && (
-            <p style={{ fontFamily: fuenteCuerpo }} className="text-xs text-[#71717a] dark:text-[#a1a1aa]">
-              {subtitulo}
+          {puesto?.trim() && (
+            <p
+              data-campo="bio"
+              style={{ fontFamily: fuenteCuerpo }}
+              className="mt-1.5 max-w-xs text-sm whitespace-pre-line text-[#52525b] dark:text-[#a1a1aa]"
+            >
+              {puesto}
             </p>
           )}
 
-          {(direccion?.trim() || (esEmpresarial && horarios?.trim())) && (
+          {(direccion?.trim() || horarios?.trim()) && (
             <div data-campo="ubicacion" className="mt-3 flex flex-col items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]">
               {direccion?.trim() && (
                 <span className="inline-flex items-center gap-1">
                   <MapPin className="size-3.5" /> {direccion}
                 </span>
               )}
-              {esEmpresarial && horarios?.trim() && (
+              {horarios?.trim() && (
                 <span className="inline-flex items-center gap-1">
                   <Clock className="size-3.5" /> {horarios}
                 </span>
@@ -499,12 +504,7 @@ export function TarjetaCard({
           )}
 
           {Boolean(
-            telefonoPrincipal ||
-              whatsapp ||
-              email ||
-              sitioWeb ||
-              direccionMapsUrl ||
-              redes?.length
+            telefonoPrincipal || whatsapp || email || direccionMapsUrl || redes?.length
           ) && (
             <div className="mt-5 flex w-full flex-wrap items-center justify-center gap-2">
               {telefonoPrincipal && (
@@ -517,7 +517,7 @@ export function TarjetaCard({
                   <Phone className="size-3.5" /> Llamar
                 </a>
               )}
-              {!esEmpresarial && whatsapp && (
+              {whatsapp && (
                 <a
                   data-campo="contacto"
                   href={`https://wa.me/${soloDigitos(whatsapp)}`}
@@ -537,18 +537,6 @@ export function TarjetaCard({
                   className={accionClase}
                 >
                   <Mail className="size-3.5" /> Email
-                </a>
-              )}
-              {esEmpresarial && sitioWeb && (
-                <a
-                  data-campo="contacto"
-                  href={sitioWeb}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => track("click_enlace", { tipo_enlace: "sitio_web" })}
-                  className={accionClase}
-                >
-                  <Globe className="size-3.5" /> Sitio web
                 </a>
               )}
               {direccionMapsUrl && (

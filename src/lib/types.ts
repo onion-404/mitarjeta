@@ -34,7 +34,20 @@ export type AvatarForma =
   | "blob"
   | "corazon"
   | "estrella"
-export type EstiloTipografia = "moderna" | "elegante" | "creativa"
+// 9 estilos (2026-08-01, ampliado desde los 3 originales) — 7 disponibles
+// con personalizacion_libre (Alcance+), 2 exclusivos de personalizacion_avanzada
+// (Poder): "display" y "manuscrita". Ver ESTILOS_TIPOGRAFIA en
+// lib/personalizacion.ts para el tier y la fuente de cada uno.
+export type EstiloTipografia =
+  | "moderna"
+  | "elegante"
+  | "creativa"
+  | "clasica"
+  | "geometrica"
+  | "redondeada"
+  | "mono"
+  | "display"
+  | "manuscrita"
 // "recta" = el rounded-t-[2rem] que ya existe hoy, sin cambios. Las otras 3
 // usan clip-path, ver lib/personalizacion.ts.
 export type DivisorBanner = "recta" | "onda" | "diagonal" | "zigzag"
@@ -57,20 +70,34 @@ export interface SeccionServicios {
   items: Producto[]
 }
 
+// Tipo único de tarjeta (2026-08-01): el editor ya no distingue
+// personal/empresarial (ver tarjeta-form.tsx) — todos estos campos son
+// comunes a cualquier tarjeta. `nombre` = "Título", `empresa` = "Rol o
+// descripción" (línea corta), `puesto` = "Bio" (párrafo largo, tope 160
+// caracteres en el editor). La columna `tarjetas.tipo` en DB no se tocó
+// (sigue existiendo "personal"/"empresarial"), pero ya no gatea ningún
+// campo del formulario ni del render.
 export interface DatosContacto {
-  // Personal
   nombre?: string
   empresa?: string
   puesto?: string
   telefono?: string
   whatsapp?: string
   email?: string
-  // Empresarial
-  nombreEmpresa?: string
-  giro?: string
-  telefonoCorporativo?: string
-  sitioWeb?: string
   horarios?: string
+  /** @deprecated Modelo viejo (tipo "empresarial") — reemplazado por `nombre`.
+   *  Se sigue leyendo solo como fallback en memoria para pre-llenar el editor
+   *  de tarjetas viejas no regrabadas (ver tarjeta-form.tsx). */
+  nombreEmpresa?: string
+  /** @deprecated Ver nota de `nombreEmpresa` — reemplazado por `empresa`. */
+  giro?: string
+  /** @deprecated Ver nota de `nombreEmpresa` — reemplazado por `telefono`. */
+  telefonoCorporativo?: string
+  /** @deprecated Campo eliminado del editor unificado (2026-08-01), sin
+   *  reemplazo directo — se puede recrear como un enlace "personalizado" en
+   *  `redes`. Se sigue leyendo por si alguna tarjeta vieja lo necesitara para
+   *  otro propósito en el futuro; no se muestra en ningún lado hoy. */
+  sitioWeb?: string
   // Común a ambos
   direccion?: string
   direccionMapsUrl?: string
@@ -138,6 +165,18 @@ export interface IdentidadVisual {
   fondoTarjetaColorSecundario?: string
   fondoTarjetaTipoDegradado?: "lineal" | "radial"
   fondoTarjetaDireccionGrados?: number
+  /** Color del título (h1) — default: auto-contraste (mismo criterio que el
+   *  resto del texto) si no está seteado. Gating: personalizacion_libre,
+   *  mismo criterio que colorBotones/colorBadges. */
+  colorTitulo?: string
+  /** Tamaño de fuente del título en px — rango sugerido en el editor 20-40,
+   *  default: 20 (equivalente al `text-xl` fijo de siempre) si no está
+   *  seteado. Gating: personalizacion_libre. */
+  tituloTamano?: number
+  /** peso de fuente del título (font-weight) — rango sugerido en el editor
+   *  400-800, default: 600 (equivalente al `font-semibold` fijo de siempre)
+   *  si no está seteado. Gating: personalizacion_libre. */
+  tituloPeso?: number
   /** @deprecated Título de la sección "Servicios" del modelo viejo — ahora
    *  vive por sección en `DatosContacto.seccionesServicios[].titulo`. Se
    *  sigue leyendo solo para la migración en memoria de tarjetas viejas. */
@@ -173,6 +212,20 @@ export interface Tarjeta {
 // cuando `plan_id` es null (nunca pagó, o se le canceló la suscripción).
 export interface TarjetaConPlan extends Tarjeta {
   planes: { nombre_display: string; slug: string } | null
+}
+
+// Auditoría de cada cambio de `tarjetas.slug` (el enlace personalizado) —
+// una fila por cambio, poblada por un trigger AFTER UPDATE (nunca por el
+// cliente directo, ver migración 20260801000000_add_tarjeta_slug_historial.sql).
+// Usada para calcular "cuántos cambios de enlace le quedan" al dueño en el
+// editor — límite de negocio: máximo 2 cambios cada 14 días, enforced
+// también a nivel de trigger (BEFORE UPDATE), no solo en el cliente.
+export interface CambioSlugTarjeta {
+  id: string
+  tarjeta_id: string
+  slug_anterior: string
+  slug_nuevo: string
+  created_at: string
 }
 
 export interface ServicioAgendable {

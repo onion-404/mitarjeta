@@ -19,13 +19,8 @@ export async function generateMetadata({
 }: TarjetaPageProps): Promise<Metadata> {
   const { slug } = await params
   const tarjeta = await getTarjetaPublicada(slug)
-  const esEmpresarial = tarjeta?.tipo === "empresarial"
-  const nombre = esEmpresarial
-    ? tarjeta?.datos_contacto.nombreEmpresa
-    : tarjeta?.datos_contacto.nombre
-  const subtitulo = esEmpresarial
-    ? tarjeta?.datos_contacto.giro
-    : tarjeta?.datos_contacto.puesto
+  const nombre = tarjeta?.datos_contacto.nombre
+  const subtitulo = tarjeta?.datos_contacto.empresa || tarjeta?.datos_contacto.puesto
 
   return {
     title: nombre ? `${nombre} · Linkard` : "Tarjeta no encontrada",
@@ -74,10 +69,7 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
   }
 
   const { colorPrimario, colorSecundario } = tarjeta.identidad_visual
-  const esEmpresarial = tarjeta.tipo === "empresarial"
-  const nombrePrincipal = esEmpresarial
-    ? tarjeta.datos_contacto.nombreEmpresa
-    : tarjeta.datos_contacto.nombre
+  const nombrePrincipal = tarjeta.datos_contacto.nombre
   const agendaServicios = await getServiciosAgendablesActivos(tarjeta.id)
 
   return (

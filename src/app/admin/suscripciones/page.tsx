@@ -50,7 +50,9 @@ const PROVEEDOR_ETIQUETA: Record<ProveedorSuscripcion, string> = {
 
 function nombreTarjeta(suscripcion: SuscripcionConDetalle) {
   const datos = suscripcion.tarjetas?.datos_contacto
-  return datos?.nombreEmpresa || datos?.nombre || "Sin nombre"
+  // Fallback a nombreEmpresa (legacy) para tarjetas "empresarial" viejas que
+  // nunca se regrabaron con el editor unificado — ver lib/types.ts.
+  return datos?.nombre || datos?.nombreEmpresa || "Sin nombre"
 }
 
 // "Suscripciones" — antes no existía ningún listado fila-por-fila, solo

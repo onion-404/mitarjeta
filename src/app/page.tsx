@@ -54,12 +54,12 @@ const TARJETA_CREADORA = {
 }
 
 const TARJETA_ESTUDIO = {
-  tipo: "empresarial" as const,
+  tipo: "personal" as const,
   slug: "estudio-raiz",
   datosContacto: {
-    nombreEmpresa: "Estudio Raíz",
-    giro: "Peluquería y estética",
-    telefonoCorporativo: "+52 55 4444 4444",
+    nombre: "Estudio Raíz",
+    empresa: "Peluquería y estética",
+    telefono: "+52 55 4444 4444",
     horarios: "Lun-Sáb 9-19h",
   },
   identidadVisual: {
@@ -69,12 +69,12 @@ const TARJETA_ESTUDIO = {
 }
 
 const TARJETA_ANTOJITOS = {
-  tipo: "empresarial" as const,
+  tipo: "personal" as const,
   slug: "tacos-el-primo",
   datosContacto: {
-    nombreEmpresa: "Tacos El Primo",
-    giro: "Antojitos mexicanos",
-    telefonoCorporativo: "+52 55 3333 3333",
+    nombre: "Tacos El Primo",
+    empresa: "Antojitos mexicanos",
+    telefono: "+52 55 3333 3333",
     horarios: "Todos los días 18-24h",
   },
   identidadVisual: {

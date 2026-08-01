@@ -2,6 +2,7 @@ import { cache } from "react"
 
 import { supabase } from "@/lib/supabase"
 import type {
+  CambioSlugTarjeta,
   EstadoSuscripcion,
   PeriodicidadSuscripcion,
   ProveedorSuscripcion,
@@ -9,6 +10,16 @@ import type {
   Tarjeta,
   TarjetaConPlan,
 } from "@/lib/types"
+
+const VENTANA_CAMBIO_SLUG_DIAS = 14
+const LIMITE_CAMBIOS_SLUG = 2
+
+export interface LimiteCambioSlug {
+  cambiosRestantes: number
+  /** ISO string de cuándo se libera el próximo cambio, o null si ya hay
+   *  cambios disponibles ahora mismo (cambiosRestantes > 0). */
+  proximaLiberacion: string | null
+}
 
 export const getTarjetaPublicada = cache(async (slug: string) => {
   const { data } = await supabase
@@ -150,8 +161,40 @@ export async function getSuscripcionesDeUsuario(
 
 export function nombrePrincipalDeTarjeta(tarjeta: Tarjeta) {
   const datos = tarjeta.datos_contacto
-  return (
-    (tarjeta.tipo === "empresarial" ? datos.nombreEmpresa : datos.nombre) ||
-    "Sin nombre"
-  )
+  // Fallback a nombreEmpresa (legacy) para tarjetas "empresarial" viejas que
+  // nunca se regrabaron con el editor unificado — ver lib/types.ts.
+  return datos.nombre || datos.nombreEmpresa || "Sin nombre"
+}
+
+/**
+ * Cuántos cambios de enlace (slug) le quedan a una tarjeta en la ventana
+ * móvil de 14 días, y cuándo se libera el próximo si ya se acabaron — lee
+ * `tarjeta_slug_historial` (policy `_select_propia`, RLS ya alcanza, mismo
+ * criterio que el resto de lib/*.ts que usa el cliente `supabase` plano).
+ * El límite real (bloqueo duro) vive en el trigger de DB — esto es solo
+ * para mostrarle al dueño el estado ANTES de intentar guardar, ver
+ * migración 20260801000000_add_tarjeta_slug_historial.sql.
+ */
+export async function getLimiteCambioSlug(tarjetaId: string): Promise<LimiteCambioSlug> {
+  const desde = new Date(Date.now() - VENTANA_CAMBIO_SLUG_DIAS * 24 * 60 * 60 * 1000).toISOString()
+
+  const { data } = await supabase
+    .from("tarjeta_slug_historial")
+    .select("created_at")
+    .eq("tarjeta_id", tarjetaId)
+    .gte("created_at", desde)
+    .order("created_at", { ascending: true })
+
+  const cambiosRecientes = (data ?? []) as Pick<CambioSlugTarjeta, "created_at">[]
+  const cambiosRestantes = Math.max(0, LIMITE_CAMBIOS_SLUG - cambiosRecientes.length)
+
+  let proximaLiberacion: string | null = null
+  if (cambiosRestantes === 0 && cambiosRecientes[0]) {
+    proximaLiberacion = new Date(
+      new Date(cambiosRecientes[0].created_at).getTime() +
+        VENTANA_CAMBIO_SLUG_DIAS * 24 * 60 * 60 * 1000
+    ).toISOString()
+  }
+
+  return { cambiosRestantes, proximaLiberacion }
 }
