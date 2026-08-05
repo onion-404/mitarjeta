@@ -440,10 +440,6 @@ export function TarjetaForm({
   const avatarAbortRef = React.useRef<AbortController | null>(null)
   const bannerAbortRef = React.useRef<AbortController | null>(null)
   const previewRef = React.useRef<HTMLDivElement>(null)
-  // Ref al <article> real del preview "Ver tarjeta" (desktop) — lo necesita
-  // AccionesTarjeta para exportar el PDF (mismo mecanismo que TarjetaPublica
-  // en la tarjeta pública real, ver ese componente).
-  const previewVerCardRef = React.useRef<HTMLElement>(null)
 
   function scrollPreviewTo(campo: string) {
     if (typeof window !== "undefined" && window.innerWidth < 1024) return
@@ -2270,20 +2266,26 @@ export function TarjetaForm({
             <Move className="size-3.5" /> Reposicionar
           </button>
         )}
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">Altura del banner ({bannerAltura}px)</span>
-          <input
-            type="range"
-            min={140}
-            max={320}
-            step={8}
-            value={bannerAltura}
-            onChange={(e) => setBannerAltura(Number(e.target.value))}
-            onFocus={() => scrollPreviewTo("banner")}
-            className="w-full cursor-pointer accent-foreground"
-          />
-        </label>
       </div>
+
+      {/* Fuera del bloque de arriba (que se deshabilita con "Imagen de
+          fondo de la tarjeta" activa) a propósito: el alto sigue
+          determinando dónde queda el "corte" antes del panel incluso con
+          la imagen de fondo puesta — no es exclusivo del banner de
+          color/preset/upload. */}
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs text-muted-foreground">Altura del banner ({bannerAltura}px)</span>
+        <input
+          type="range"
+          min={140}
+          max={320}
+          step={8}
+          value={bannerAltura}
+          onChange={(e) => setBannerAltura(Number(e.target.value))}
+          onFocus={() => scrollPreviewTo("banner")}
+          className="w-full cursor-pointer accent-foreground"
+        />
+      </label>
 
       <div className="flex flex-col gap-2 rounded-xl border border-border bg-background/50 p-3">
         <span className={cn(labelClase, "flex items-center gap-1.5")}>
@@ -3110,7 +3112,6 @@ export function TarjetaForm({
       {esEdicion && vista === "ver" && tarjeta && (
         <div className="relative mx-auto hidden w-full max-w-6xl flex-1 items-center justify-center px-4 py-10 lg:flex">
           <TarjetaCard
-            ref={previewVerCardRef}
             tipo={tipo}
             datosContacto={datosContactoActual}
             identidadVisual={identidadVisualActual}
@@ -3120,7 +3121,6 @@ export function TarjetaForm({
             className="relative"
           />
           <AccionesTarjeta
-            cardRef={previewVerCardRef}
             slug={slugGuardado}
             titulo={nombre || "Linkard"}
             datosContacto={datosContactoActual}

@@ -92,27 +92,22 @@ function esUrlOptimizable(url: string) {
   return url.startsWith("http://") || url.startsWith("https://")
 }
 
-// forwardRef: expone el <article> real a quien renderiza TarjetaCard — lo
-// necesita AccionesTarjeta (compartir/QR/PDF/contacto, ver ese archivo) para
-// exportar el PDF con html2pdf, ya que esas acciones ahora viven en un FAB
-// separado en vez de adentro de este componente (así el mismo botón sirve
-// tanto para la tarjeta pública real como para el preview "Ver tarjeta" del
-// editor, sin duplicar la lógica de compartir/QR/PDF/vCard en cada lugar).
-export const TarjetaCard = React.forwardRef<HTMLElement, TarjetaCardProps>(function TarjetaCard(
-  {
-    tipo,
-    datosContacto,
-    identidadVisual,
-    slug,
-    className,
-    pantallaCompleta = false,
-    agendaServicios,
-    permitirAgendar = false,
-    tarjetaId,
-    zonaHoraria,
-  },
-  ref
-) {
+// Compartir/QR/contacto viven en un FAB separado (AccionesTarjeta), no
+// adentro de este componente — así el mismo botón sirve tanto para la
+// tarjeta pública real como para el preview "Ver tarjeta" del editor, sin
+// duplicar esa lógica en cada lugar.
+export function TarjetaCard({
+  tipo,
+  datosContacto,
+  identidadVisual,
+  slug,
+  className,
+  pantallaCompleta = false,
+  agendaServicios,
+  permitirAgendar = false,
+  tarjetaId,
+  zonaHoraria,
+}: TarjetaCardProps) {
   const agendaInteractiva = permitirAgendar && Boolean(tarjetaId) && Boolean(zonaHoraria)
 
   // Solo la tarjeta pública real pasa tarjetaId (el preview del editor y el
@@ -330,30 +325,76 @@ export const TarjetaCard = React.forwardRef<HTMLElement, TarjetaCardProps>(funct
       : "border-[rgba(0,0,0,0.05)] bg-[rgba(255,255,255,0.8)] text-[#3f3f46] backdrop-blur dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#f4f4f5]"
   )
 
+  // En pantallaCompleta (mobile), el panel de contenido nunca queda más
+  // bajo que la pantalla menos el banner — así una tarjeta con poco
+  // contenido (solo redes + dirección, por ej.) no deja un hueco de fondo
+  // plano de la página entre el final de la tarjeta y el footer: el fondo
+  // del panel (color/degradado/imagen) llena la pantalla igual. Variable
+  // CSS + clase con `sm:` para apagarlo desde tablet/desktop (ahí la
+  // tarjeta vuelve a ser una card chica centrada, no debe ocupar la
+  // pantalla entera). `100dvh` en vez de `100vh`: en mobile real el
+  // toolbar del navegador cambia el alto visible, dvh se ajusta con eso.
+  const estiloAltoMinimo = pantallaCompleta
+    ? ({ "--alto-min-divisor": `calc(100dvh - ${alturaBanner}px)` } as React.CSSProperties)
+    : undefined
+
   return (
     <div className={cn("flex flex-col items-center gap-4", esOscuro && "dark")}>
       <article
-        ref={ref}
         className={cn(
           "relative min-w-[320px] overflow-hidden border border-[rgba(0,0,0,0.05)] bg-white shadow-[0_25px_60px_-20px_rgba(0,0,0,0.35)] dark:border-[rgba(255,255,255,0.1)] dark:bg-[#18181b]",
           pantallaCompleta
-            ? "w-full rounded-none border-0 shadow-none sm:max-w-sm sm:rounded-[2rem] sm:border sm:shadow-[0_25px_60px_-20px_rgba(0,0,0,0.35)]"
+            ? "w-full rounded-2xl border-0 shadow-none sm:max-w-sm sm:rounded-[2rem] sm:border sm:shadow-[0_25px_60px_-20px_rgba(0,0,0,0.35)]"
             : "w-full max-w-sm rounded-[2rem]",
           className
         )}
       >
+        {tieneFondoImagen &&
+          (pantallaCompleta ? (
+            // Pantalla completa (tarjeta pública real / preview "Ver
+            // tarjeta"): la imagen cubre el viewport entero en `fixed`, no
+            // solo el alto de la tarjeta — así se ve como un fondo real de
+            // página en vez de una imagen "adentro" de la card, y de paso
+            // no depende en absoluto de cuánto crezca el contenido. Se
+            // apaga en sm: (la card vuelve a ser chica y centrada, un
+            // fondo a pantalla completa detrás no tendría sentido ahí).
+            <div className="fixed inset-0 z-0 sm:hidden" aria-hidden>
+              <Image
+                src={fondoImagenUrl!}
+                alt=""
+                fill
+                priority
+                sizes="100vw"
+                unoptimized={!esUrlOptimizable(fondoImagenUrl!)}
+                className="object-cover"
+                style={estiloFondoImagen}
+              />
+            </div>
+          ) : null)}
         {tieneFondoImagen && (
-          // Alto FIJO (ALTO_FONDO_IMAGEN), no `inset-0` atado al alto
-          // dinámico del panel — ver el comentario largo en
+          // Versión contenida (siempre en desktop/sm:, y la única versión
+          // en cualquier consumidor que no sea pantallaCompleta — preview
+          // chico del editor, demo del home): alto FIJO
+          // (ALTO_FONDO_IMAGEN), no `inset-0` atado al alto dinámico del
+          // panel — ver el comentario largo en
           // IdentidadVisual.fondoImagenPosicion (lib/types.ts). El
-          // `<article>` ya recorta con overflow-hidden todo lo que exceda
-          // el alto real de la tarjeta, así que esto no desborda nada.
-          <div className="absolute inset-x-0 top-0 z-0" style={{ height: ALTO_FONDO_IMAGEN }} aria-hidden>
+          // `<article>` recorta con overflow-hidden todo lo que exceda el
+          // alto real de la tarjeta, así que esto no desborda nada. Sin
+          // `priority`: en pantallaCompleta ya la tiene la versión `fixed`
+          // de arriba (mismo src, no hace falta preload duplicado).
+          <div
+            className={cn(
+              "absolute inset-x-0 top-0 z-0",
+              pantallaCompleta && "hidden sm:block"
+            )}
+            style={{ height: ALTO_FONDO_IMAGEN }}
+            aria-hidden
+          >
             <Image
               src={fondoImagenUrl!}
               alt=""
               fill
-              priority
+              priority={!pantallaCompleta}
               sizes="(max-width: 640px) 100vw, 384px"
               unoptimized={!esUrlOptimizable(fondoImagenUrl!)}
               className="object-cover"
@@ -392,10 +433,15 @@ export const TarjetaCard = React.forwardRef<HTMLElement, TarjetaCardProps>(funct
 
         <div
           data-campo="divisor"
-          style={{ ...estiloDivisor, ...(tieneFondoImagen ? undefined : { background: fondoTarjetaInline }) }}
+          style={{
+            ...estiloAltoMinimo,
+            ...estiloDivisor,
+            ...(tieneFondoImagen ? undefined : { background: fondoTarjetaInline }),
+          }}
           className={cn(
             "relative z-10 -mt-14 border-t px-6 pb-7 pt-3 text-center shadow-[0_-8px_30px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl",
-            !estiloDivisor && (pantallaCompleta ? "rounded-none sm:rounded-t-[2rem]" : "rounded-t-[2rem]"),
+            pantallaCompleta && "min-h-[var(--alto-min-divisor)] sm:min-h-0",
+            !estiloDivisor && (pantallaCompleta ? "rounded-2xl sm:rounded-t-[2rem]" : "rounded-t-[2rem]"),
             tieneFondoImagen
               ? "border-[rgba(255,255,255,0.3)] bg-[rgba(255,255,255,0.55)] dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(24,24,27,0.55)]"
               : fondoTarjetaInline
@@ -881,6 +927,4 @@ export const TarjetaCard = React.forwardRef<HTMLElement, TarjetaCardProps>(funct
       </article>
     </div>
   )
-})
-
-TarjetaCard.displayName = "TarjetaCard"
+}

@@ -2,27 +2,25 @@
 
 import { Dialog } from "@base-ui/react/dialog"
 import { Menu } from "@base-ui/react/menu"
-import { Check, Copy, Download, IdCard, Loader2, QrCode, Share2, X } from "lucide-react"
+import { Check, Copy, IdCard, QrCode, Share2, X } from "lucide-react"
 import * as React from "react"
 
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
-import { descargarPdf, descargarVCard, nombreArchivoDesde } from "@/lib/exportar-tarjeta"
+import { descargarVCard } from "@/lib/exportar-tarjeta"
 import type { DatosContacto } from "@/lib/types"
 
 interface AccionesTarjetaProps {
-  /** Ref al elemento raíz de la <TarjetaCard> real (forwardRef) — se usa
-   *  para exportar el PDF con html2pdf. */
-  cardRef: React.RefObject<HTMLElement | null>
   slug: string
   titulo: string
   datosContacto: DatosContacto
   /** Override de posicionamiento del botón — default `fixed` (viewport),
-   *  igual que compartir-tarjeta.tsx/tarjeta-qr.tsx de siempre. La tarjeta
-   *  pública (`[slug]/page.tsx`) pasa `sticky` acá para que el botón no
-   *  quede flotando sobre el footer al llegar al final del scroll (mismo
-   *  criterio ya usado con los botones separados que este componente
-   *  reemplaza). */
+   *  igual que compartir-tarjeta.tsx/tarjeta-qr.tsx de siempre. Siempre
+   *  `fixed` a propósito (nunca `sticky`): el botón debe mantenerse en el
+   *  mismo lugar de la pantalla sin importar el scroll, decisión explícita
+   *  del cliente aunque eso implique que puede solaparse visualmente con
+   *  el footer al llegar al final — es un solo círculo chico en la
+   *  esquina, no dos botones anchos como antes. */
   className?: string
 }
 
@@ -41,10 +39,9 @@ function detectarShareNativoServidor() {
   return false
 }
 
-export function AccionesTarjeta({ cardRef, slug, titulo, datosContacto, className }: AccionesTarjetaProps) {
+export function AccionesTarjeta({ slug, titulo, datosContacto, className }: AccionesTarjetaProps) {
   const [copiado, setCopiado] = React.useState(false)
   const [qrAbierto, setQrAbierto] = React.useState(false)
-  const [generandoPdf, setGenerandoPdf] = React.useState(false)
   const tieneShareNativo = React.useSyncExternalStore(
     suscribirseSinCambios,
     detectarShareNativo,
@@ -67,16 +64,6 @@ export function AccionesTarjeta({ cardRef, slug, titulo, datosContacto, classNam
     await navigator.clipboard.writeText(obtenerUrl())
     setCopiado(true)
     setTimeout(() => setCopiado(false), 2000)
-  }
-
-  async function handleDescargarPdf() {
-    if (!cardRef.current || generandoPdf) return
-    setGenerandoPdf(true)
-    try {
-      await descargarPdf(cardRef.current, nombreArchivoDesde(titulo))
-    } finally {
-      setGenerandoPdf(false)
-    }
   }
 
   const url = obtenerUrl()
@@ -141,15 +128,6 @@ export function AccionesTarjeta({ cardRef, slug, titulo, datosContacto, classNam
               </Menu.Item>
               <Menu.Item onClick={() => descargarVCard(datosContacto)} className={itemClase}>
                 <IdCard className="size-4" /> Guardar contacto
-              </Menu.Item>
-              <Menu.Item
-                onClick={handleDescargarPdf}
-                closeOnClick={false}
-                disabled={generandoPdf}
-                className={itemClase}
-              >
-                {generandoPdf ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-                {generandoPdf ? "Generando..." : "Descargar PDF"}
               </Menu.Item>
             </Menu.Popup>
           </Menu.Positioner>

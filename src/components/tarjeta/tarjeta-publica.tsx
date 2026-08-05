@@ -1,7 +1,3 @@
-"use client"
-
-import * as React from "react"
-
 import { AccionesTarjeta } from "@/components/tarjeta/acciones-tarjeta"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import type { ServicioAgendable, Tarjeta } from "@/lib/types"
@@ -12,19 +8,13 @@ interface TarjetaPublicaProps {
   agendaServicios: ServicioAgendable[]
 }
 
-// Client component aparte de [slug]/page.tsx (server component, no puede
-// usar useRef) — el ref al <article> real de TarjetaCard se comparte entre
-// dos elementos hermanos (la tarjeta y el FAB de AccionesTarjeta, que lo
-// necesita para exportar el PDF), así que hace falta un ancestro cliente
-// común que lo cree una sola vez.
-//
-// La estructura de los 2 divs de acá abajo es EXACTAMENTE la misma que
-// tenía [slug]/page.tsx antes de este componente (centrado+blobs, después
-// el FAB) — ya verificada para que el botón (antes 2 botones sueltos, ver
-// CLAUDE.md) quede `sticky` dentro del contenedor que termina justo antes
-// del <footer> en vez de `fixed` tapándolo al llegar al final del scroll.
+// Server component: ya no necesita ningún estado propio (el FAB dejó de
+// necesitar un ref compartido al <article>, ver acciones-tarjeta.tsx), así
+// que no hace falta "use client" acá — TarjetaCard y AccionesTarjeta ya son
+// client components por su cuenta, un padre server puede renderizarlos
+// igual. Separado de [slug]/page.tsx solo para que el layout
+// mobile-full-bleed de acá abajo quede documentado en un solo lugar.
 export function TarjetaPublica({ tarjeta, slug, agendaServicios }: TarjetaPublicaProps) {
-  const cardRef = React.useRef<HTMLElement>(null)
   const { colorPrimario, colorSecundario } = tarjeta.identidad_visual
   const nombrePrincipal = tarjeta.datos_contacto.nombre
 
@@ -46,7 +36,6 @@ export function TarjetaPublica({ tarjeta, slug, agendaServicios }: TarjetaPublic
         />
 
         <TarjetaCard
-          ref={cardRef}
           tipo={tarjeta.tipo}
           datosContacto={tarjeta.datos_contacto}
           identidadVisual={tarjeta.identidad_visual}
@@ -60,15 +49,11 @@ export function TarjetaPublica({ tarjeta, slug, agendaServicios }: TarjetaPublic
         />
       </div>
 
-      <div className="sticky bottom-0 z-40 flex justify-end px-6 pb-6">
-        <AccionesTarjeta
-          cardRef={cardRef}
-          slug={slug}
-          titulo={nombrePrincipal || "Linkard"}
-          datosContacto={tarjeta.datos_contacto}
-          className="relative"
-        />
-      </div>
+      {/* Siempre `fixed` (default de AccionesTarjeta, sin override acá) —
+          el botón se mantiene en el mismo lugar de la pantalla sin importar
+          el scroll, decisión explícita del cliente (antes era `sticky`
+          dentro de un contenedor que terminaba antes del footer). */}
+      <AccionesTarjeta slug={slug} titulo={nombrePrincipal || "Linkard"} datosContacto={tarjeta.datos_contacto} />
     </>
   )
 }
