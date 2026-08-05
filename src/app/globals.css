@@ -186,3 +186,49 @@
     }
   }
 }
+
+/* Anillo giratorio sutil del FAB de acciones (compartir/QR/PDF/contacto,
+   ver acciones-tarjeta.tsx) — un "destello" angosto que recorre el borde en
+   vez de un halo parejo. `@property` registra --fab-glow-angle como <angle>
+   animable; si el navegador no lo soporta, el degradé queda estático en
+   vez de girar — degradación segura, sin JS de por medio. */
+@property --fab-glow-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes fab-glow-spin {
+  to {
+    --fab-glow-angle: 360deg;
+  }
+}
+
+.fab-glow::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  border-radius: 9999px;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--fab-glow-angle),
+    transparent 0deg,
+    rgba(255, 255, 255, 0.9) 18deg,
+    transparent 55deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: fab-glow-spin 3s linear infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fab-glow::before {
+    animation: none;
+  }
+}

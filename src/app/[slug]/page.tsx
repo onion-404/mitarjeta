@@ -4,9 +4,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { Logo } from "@/components/logo"
-import { CompartirTarjeta } from "@/components/tarjeta/compartir-tarjeta"
-import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
-import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
+import { TarjetaPublica } from "@/components/tarjeta/tarjeta-publica"
 import { buttonVariants } from "@/components/ui/button"
 import { getServiciosAgendablesActivos, getTarjetaPublicada } from "@/lib/tarjetas"
 
@@ -68,58 +66,15 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
     )
   }
 
-  const { colorPrimario, colorSecundario } = tarjeta.identidad_visual
-  const nombrePrincipal = tarjeta.datos_contacto.nombre
   const agendaServicios = await getServiciosAgendablesActivos(tarjeta.id)
 
   return (
     <div className="relative flex w-full flex-1 flex-col overflow-hidden bg-zinc-50 dark:bg-black">
-      {/* Este wrapper agrupa el contenido scrolleable de la tarjeta + la barra
-         de acciones (QR/compartir) y termina justo antes del <footer>. Los
-         botones de abajo son `sticky` (no `fixed`): se mantienen pegados al
-         fondo del viewport mientras se scrollea la tarjeta, pero no pueden
-         salir de los límites de ESTE contenedor — al llegar al final del
-         contenido (justo antes del footer), dejan de "flotar" y el footer
-         queda visible sin overlap. */}
-      <div className="relative flex flex-1 flex-col">
-        <div className="relative flex flex-1 items-center justify-center px-4 py-16">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -left-24 -top-24 size-72 rounded-full opacity-40 blur-3xl"
-            style={{ backgroundColor: colorPrimario || "#6366f1" }}
-          />
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -bottom-24 -right-24 size-72 rounded-full opacity-40 blur-3xl"
-            style={{ backgroundColor: colorSecundario || "#a855f7" }}
-          />
-
-          <TarjetaCard
-            tipo={tarjeta.tipo}
-            datosContacto={tarjeta.datos_contacto}
-            identidadVisual={tarjeta.identidad_visual}
-            slug={slug}
-            agendaServicios={agendaServicios}
-            permitirAgendar
-            tarjetaId={tarjeta.id}
-            zonaHoraria={tarjeta.zona_horaria}
-            mostrarAcciones
-            className="relative"
-          />
-        </div>
-
-        <div className="sticky bottom-0 z-40 flex items-end justify-between px-6 pb-6">
-          <CompartirTarjeta
-            slug={slug}
-            titulo={nombrePrincipal || "Linkard"}
-            className="flex items-center gap-2 rounded-full bg-foreground px-5 py-3.5 text-sm font-semibold text-background shadow-xl transition-transform hover:scale-105 data-popup-open:scale-105"
-          />
-          <TarjetaQr
-            slug={slug}
-            className="flex size-14 items-center justify-center rounded-full bg-foreground text-background shadow-xl transition-transform hover:scale-105"
-          />
-        </div>
-      </div>
+      {/* TarjetaPublica (client): agrupa el contenido scrolleable de la
+         tarjeta + el FAB de acciones (compartir/QR/PDF/contacto) y termina
+         justo antes del <footer> — ver ese componente para el detalle de
+         layout mobile-full-bleed + el motivo de sticky en vez de fixed. */}
+      <TarjetaPublica tarjeta={tarjeta} slug={slug} agendaServicios={agendaServicios} />
 
       <footer className="relative flex flex-col items-center gap-2 border-t border-border/60 px-4 py-5 text-center text-xs text-muted-foreground">
         <Logo size="sm" />

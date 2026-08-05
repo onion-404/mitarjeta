@@ -19,6 +19,7 @@ import {
 import Link from "next/link"
 import * as React from "react"
 
+import { AccionesTarjeta } from "@/components/tarjeta/acciones-tarjeta"
 import { AgendaServicios } from "@/components/tarjeta/agenda-servicios"
 import { EstadisticasTarjeta } from "@/components/tarjeta/estadisticas-tarjeta"
 import { Button } from "@/components/ui/button"
@@ -28,13 +29,13 @@ import { CompartirTarjeta } from "@/components/tarjeta/compartir-tarjeta"
 import { OpcionPersonalizacion, SwatchDivisor, SwatchForma } from "@/components/tarjeta/opcion-personalizacion"
 import { PlantillasGaleria } from "@/components/tarjeta/plantillas-galeria"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
-import { RecortarAvatar } from "@/components/tarjeta/recortar-avatar"
 import { ReposicionarImagen } from "@/components/tarjeta/reposicionar-imagen"
 import { SelectorTipografia } from "@/components/tarjeta/selector-tipografia"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
 import { BANNER_PRESETS } from "@/lib/banner-presets"
 import { validarCupon } from "@/lib/cupones"
+import { estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import {
   DIVISORES_BANNER,
   FORMAS_AVATAR,
@@ -395,7 +396,15 @@ export function TarjetaForm({
     visualInicial?.avatarUrl ?? ""
   )
   const [avatarInputKey, setAvatarInputKey] = React.useState(0)
-  const [avatarPendiente, setAvatarPendiente] = React.useState<File | null>(null)
+  // Ancla de reposicionamiento + zoom del avatar (mismo mecanismo que
+  // banner/fondoImagen abajo) — reemplaza el recorte destructivo que hacía
+  // RecortarAvatar: la foto se sube completa (sin recortar a cuadrado) y se
+  // encuadra por CSS, así se puede reabrir "Reposicionar" en cualquier
+  // momento sin volver a elegir el archivo. Sin gating (nunca fue paga).
+  const [avatarPosicion, setAvatarPosicion] = React.useState(
+    visualInicial?.avatarPosicion ?? { x: 50, y: 50 }
+  )
+  const [reposicionandoAvatar, setReposicionandoAvatar] = React.useState(false)
 
   const [bannerFile, setBannerFile] = React.useState<File | null>(null)
   const [bannerPreview, setBannerPreview] = React.useState("")
@@ -410,6 +419,7 @@ export function TarjetaForm({
     visualInicial?.bannerPosicion ?? { x: 50, y: 50 }
   )
   const [reposicionandoBanner, setReposicionandoBanner] = React.useState(false)
+  const [bannerAltura, setBannerAltura] = React.useState(visualInicial?.bannerAltura ?? 192)
 
   // Imagen de fondo de TODA la tarjeta (banner + detrás del panel) —
   // mutuamente excluyente con el banner de color/preset/upload de arriba y
@@ -430,6 +440,10 @@ export function TarjetaForm({
   const avatarAbortRef = React.useRef<AbortController | null>(null)
   const bannerAbortRef = React.useRef<AbortController | null>(null)
   const previewRef = React.useRef<HTMLDivElement>(null)
+  // Ref al <article> real del preview "Ver tarjeta" (desktop) — lo necesita
+  // AccionesTarjeta para exportar el PDF (mismo mecanismo que TarjetaPublica
+  // en la tarjeta pública real, ver ese componente).
+  const previewVerCardRef = React.useRef<HTMLElement>(null)
 
   function scrollPreviewTo(campo: string) {
     if (typeof window !== "undefined" && window.innerWidth < 1024) return
@@ -914,22 +928,19 @@ export function TarjetaForm({
       event.target.value = ""
       return
     }
-    setAvatarPendiente(file)
-  }
-
-  function handleRecorteConfirmado(archivo: File) {
-    setAvatarFile(archivo)
+    setAvatarFile(file)
+    setAvatarUrlExistente("")
+    // Reinicia el encuadre para la foto nueva — el de la foto anterior no
+    // tiene por qué seguir siendo el correcto.
+    setAvatarPosicion({ x: 50, y: 50 })
     setAvatarPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev)
-      return URL.createObjectURL(archivo)
+      return URL.createObjectURL(file)
     })
-    setAvatarPendiente(null)
-    setAvatarInputKey((k) => k + 1)
-  }
-
-  function handleRecorteCancelado() {
-    setAvatarPendiente(null)
-    setAvatarInputKey((k) => k + 1)
+    // Abre el diálogo de encuadre apenas se elige el archivo — mismo
+    // momento en el que antes aparecía el recorte destructivo, pero ahora
+    // reabrible después con el botón "Reposicionar" (ver más abajo).
+    setReposicionandoAvatar(true)
   }
 
   function quitarAvatar() {
@@ -1258,6 +1269,7 @@ export function TarjetaForm({
       colorPrimario,
       colorSecundario,
       avatarUrl,
+      avatarPosicion,
       bannerUrl,
       bannerPreset: bannerUrl ? undefined : bannerPresetId,
       brochureUrl,
@@ -1279,6 +1291,7 @@ export function TarjetaForm({
       glassmorfismo,
       plantillaBase,
       bannerPosicion,
+      bannerAltura: bannerAltura !== 192 ? bannerAltura : undefined,
       fondoImagenUrl: fondoImagenUrlFinal,
       fondoImagenPosicion: fondoImagenUrlFinal ? fondoImagenPosicion : undefined,
       fondoTarjetaModo: fondoTarjetaActivo ? fondoTarjetaModo : undefined,
@@ -1505,6 +1518,7 @@ export function TarjetaForm({
     colorPrimario,
     colorSecundario,
     avatarUrl: avatarMostrado,
+    avatarPosicion,
     bannerUrl: bannerMostrado,
     bannerPreset: bannerMostrado ? undefined : bannerPresetId,
     brochureUrl: brochureMostrado,
@@ -1526,6 +1540,7 @@ export function TarjetaForm({
     glassmorfismo,
     plantillaBase,
     bannerPosicion,
+    bannerAltura: bannerAltura !== 192 ? bannerAltura : undefined,
     fondoImagenUrl: fondoImagenMostrado || undefined,
     fondoImagenPosicion: fondoImagenMostrado ? fondoImagenPosicion : undefined,
     fondoTarjetaModo: fondoTarjetaActivo ? fondoTarjetaModo : undefined,
@@ -1783,12 +1798,17 @@ export function TarjetaForm({
               />
             </label>
             <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2 sm:col-span-2">
-              <span className="text-xs text-muted-foreground">Texto general</span>
+              <span className="flex flex-col text-xs text-muted-foreground">
+                Textos secundarios
+                <span className="text-[10px] text-muted-foreground/70">
+                  Rol/bio, dirección, horarios, secciones y servicios/productos
+                </span>
+              </span>
               <input
                 type="color"
                 value={colorTextoGeneral}
                 onChange={(e) => setColorTextoGeneral(e.target.value)}
-                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                className="size-8 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
               />
             </label>
           </div>
@@ -2122,6 +2142,7 @@ export function TarjetaForm({
               <img
                 src={avatarMostrado}
                 alt="Vista previa de la foto"
+                style={estiloImagenPosicionada(avatarPosicion)}
                 className="size-12 rounded-full border border-border object-cover"
               />
               <button
@@ -2146,6 +2167,15 @@ export function TarjetaForm({
             )}
           />
         </div>
+        {avatarMostrado && (
+          <button
+            type="button"
+            onClick={() => setReposicionandoAvatar(true)}
+            className="inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-background/50 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+          >
+            <Move className="size-3.5" /> Reposicionar
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -2240,6 +2270,19 @@ export function TarjetaForm({
             <Move className="size-3.5" /> Reposicionar
           </button>
         )}
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground">Altura del banner ({bannerAltura}px)</span>
+          <input
+            type="range"
+            min={140}
+            max={320}
+            step={8}
+            value={bannerAltura}
+            onChange={(e) => setBannerAltura(Number(e.target.value))}
+            onFocus={() => scrollPreviewTo("banner")}
+            className="w-full cursor-pointer accent-foreground"
+          />
+        </label>
       </div>
 
       <div className="flex flex-col gap-2 rounded-xl border border-border bg-background/50 p-3">
@@ -2323,7 +2366,7 @@ export function TarjetaForm({
           abierto={reposicionandoBanner}
           imagenUrl={bannerMostrado}
           valorInicial={bannerPosicion}
-          alto={192}
+          alto={bannerAltura}
           onCancelar={() => setReposicionandoBanner(false)}
           onConfirmar={(pos) => {
             setBannerPosicion(pos)
@@ -3067,18 +3110,20 @@ export function TarjetaForm({
       {esEdicion && vista === "ver" && tarjeta && (
         <div className="relative mx-auto hidden w-full max-w-6xl flex-1 items-center justify-center px-4 py-10 lg:flex">
           <TarjetaCard
+            ref={previewVerCardRef}
             tipo={tipo}
             datosContacto={datosContactoActual}
             identidadVisual={identidadVisualActual}
             slug={slugGuardado}
             agendaServicios={agendaServiciosPreview}
-            mostrarAcciones
+            pantallaCompleta
             className="relative"
           />
-          <TarjetaQr slug={slugGuardado} />
-          <CompartirTarjeta
+          <AccionesTarjeta
+            cardRef={previewVerCardRef}
             slug={slugGuardado}
             titulo={nombre || "Linkard"}
+            datosContacto={datosContactoActual}
           />
         </div>
       )}
@@ -3313,11 +3358,19 @@ export function TarjetaForm({
         )}
       </div>
 
-      <RecortarAvatar
-        archivo={avatarPendiente}
-        onCancelar={handleRecorteCancelado}
-        onConfirmar={handleRecorteConfirmado}
-      />
+      {avatarMostrado && (
+        <ReposicionarImagen
+          abierto={reposicionandoAvatar}
+          imagenUrl={avatarMostrado}
+          valorInicial={avatarPosicion}
+          alto={280}
+          onCancelar={() => setReposicionandoAvatar(false)}
+          onConfirmar={(pos) => {
+            setAvatarPosicion(pos)
+            setReposicionandoAvatar(false)
+          }}
+        />
+      )}
     </div>
   )
 }

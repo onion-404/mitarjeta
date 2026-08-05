@@ -370,6 +370,11 @@ export function calcularBloqueos(
     if (b) bloqueos.push({ ...b, campo: "Peso del título", valorEtiqueta: String(draft.tituloPeso) })
   }
 
+  if (draft.bannerAltura !== undefined) {
+    const b = estaBloqueada("basica", draft.bannerAltura, base.bannerAltura, features)
+    if (b) bloqueos.push({ ...b, campo: "Altura del banner", valorEtiqueta: `${draft.bannerAltura}px` })
+  }
+
   if (draft.glassmorfismo) {
     const b = estaBloqueada("avanzada", true, base.glassmorfismo ?? false, features)
     if (b) bloqueos.push({ ...b, campo: "Efecto vidrio", valorEtiqueta: "Activado" })

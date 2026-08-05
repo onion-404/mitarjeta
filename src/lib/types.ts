@@ -117,6 +117,17 @@ export interface DatosContacto {
   redes?: RedSocial[]
 }
 
+/** Ancla de reposicionamiento + zoom de una imagen recortable (avatar,
+ *  banner, imagen de fondo) — 0-100 cada eje, `escala` opcional (1 = sin
+ *  zoom extra sobre el object-fit:cover de base, hasta 2.5). Sin `escala`
+ *  se asume 1, así una tarjeta que nunca usó el zoom se ve exactamente
+ *  igual que antes de agregarlo. */
+export interface PosicionImagen {
+  x: number
+  y: number
+  escala?: number
+}
+
 export interface IdentidadVisual {
   colorPrimario?: string
   colorSecundario?: string
@@ -126,6 +137,13 @@ export interface IdentidadVisual {
   brochureUrl?: string
   temaModo?: TemaModo
   avatarForma?: AvatarForma
+  /** Ancla de reposicionamiento + zoom del avatar (mismo mecanismo que
+   *  bannerPosicion/fondoImagenPosicion) — reemplaza el recorte
+   *  destructivo que hacía RecortarAvatar: la foto se sube completa y se
+   *  encuadra por CSS, así se puede reabrir y reajustar en cualquier
+   *  momento sin volver a subir el archivo. Sin gating (la posición nunca
+   *  fue una feature paga). */
+  avatarPosicion?: PosicionImagen
   estiloTipografia?: EstiloTipografia
   // --- Personalización avanzada (gating por plan, ver lib/personalizacion.ts) ---
   /** Color de botones — default: colorPrimario (reproduce el look actual si no está seteado). */
@@ -148,13 +166,23 @@ export interface IdentidadVisual {
    *  foto de portada" — reemplaza el object-position fijo (50%,50%) de
    *  siempre. Sin este campo, el banner se sigue viendo exactamente igual
    *  que antes (fallback a 50/50). */
-  bannerPosicion?: { x: number; y: number }
+  bannerPosicion?: PosicionImagen
+  /** Alto del banner en px — rango sugerido en el editor 140-320, default
+   *  192 (equivalente al `h-48` fijo de siempre) si no está seteado.
+   *  Gating: personalizacion_libre, mismo criterio que tituloTamano. */
+  bannerAltura?: number
   /** Imagen de fondo de TODA la tarjeta (banner + detrás del panel de
    *  contenido) — mutuamente excluyente con bannerUrl/bannerPreset/degradé
    *  de banner Y con fondoTarjeta* de abajo: si está seteada, tiene
-   *  prioridad sobre ambos en el render (gating: personalizacion_avanzada). */
+   *  prioridad sobre ambos en el render (gating: personalizacion_avanzada).
+   *  El layer que la dibuja usa una altura FIJA (constante, no `inset-0`
+   *  atado al alto dinámico del panel) para que `object-fit:cover` calcule
+   *  su escala una sola vez contra esa referencia estable — con `inset-0`
+   *  (alto = el del panel, que crece con agenda/servicios/productos) el
+   *  encuadre se recalculaba en cada guardado según cuánto contenido
+   *  hubiera, "moviendo" la imagen sin que el dueño la haya tocado. */
   fondoImagenUrl?: string
-  fondoImagenPosicion?: { x: number; y: number }
+  fondoImagenPosicion?: PosicionImagen
   /** Fondo del panel de contenido (blanco/oscuro por defecto según
    *  temaModo) — separado a propósito del fondo del banner (colorPrimario/
    *  colorSecundario) para no repetir la confusión de que "Fondo" en

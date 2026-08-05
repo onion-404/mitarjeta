@@ -1,15 +1,14 @@
 "use client"
 
 import { Dialog } from "@base-ui/react/dialog"
-import { Move } from "lucide-react"
+import { Move, ZoomIn } from "lucide-react"
 import * as React from "react"
 
 import { Button } from "@/components/ui/button"
+import { ESCALA_MAX, ESCALA_MIN } from "@/lib/imagen-posicion"
+import type { PosicionImagen } from "@/lib/types"
 
-interface Posicion {
-  x: number
-  y: number
-}
+type Posicion = PosicionImagen
 
 interface ReposicionarImagenProps {
   abierto: boolean
@@ -17,9 +16,10 @@ interface ReposicionarImagenProps {
   valorInicial: Posicion
   /** Alto (px) de la caja de preview — el ancho toma el disponible del
    *  modal. Para el banner, usar la misma proporción que el banner real
-   *  (ancho completo × 192px) para que el ajuste sea 1:1 con lo que se ve
-   *  después; para la imagen de fondo de toda la tarjeta no hay un alto
-   *  real único (depende del contenido), se usa uno representativo. */
+   *  (ancho completo × altura real elegida) para que el ajuste sea 1:1 con
+   *  lo que se ve después; para la imagen de fondo de toda la tarjeta no
+   *  hay un alto real único (depende del contenido), se usa uno
+   *  representativo. */
   alto: number
   onCancelar: () => void
   onConfirmar: (posicion: Posicion) => void
@@ -45,6 +45,7 @@ export function ReposicionarImagen({
   onConfirmar,
 }: ReposicionarImagenProps) {
   const [posicion, setPosicion] = React.useState<Posicion>(valorInicial)
+  const escala = posicion.escala ?? ESCALA_MIN
   const containerRef = React.useRef<HTMLDivElement>(null)
   const naturalSizeRef = React.useRef({ w: 0, h: 0 })
   const dragRef = React.useRef<{
@@ -75,14 +76,22 @@ export function ReposicionarImagen({
     }
   }
 
+  // El "sobrante" de imagen para el arrastre se calcula contra la escala
+  // BASE de object-fit:cover únicamente (sin el zoom extra del slider) —
+  // el zoom se aplica después como un `transform: scale()` puramente
+  // visual sobre esa misma caja (ver estiloImagenPosicionada), así que el
+  // sobrante real en píxeles de pantalla queda multiplicado por `escala`;
+  // se compensa dividiendo el delta del cursor por `escala` en
+  // handlePointerMove para que el arrastre se sienta 1:1 con el cursor
+  // también con zoom aplicado.
   function calcularOverflow() {
     const caja = containerRef.current?.getBoundingClientRect()
     const { w: naturalW, h: naturalH } = naturalSizeRef.current
     if (!caja || !naturalW || !naturalH) return { overflowX: 0, overflowY: 0 }
-    const escala = Math.max(caja.width / naturalW, caja.height / naturalH)
+    const escalaBase = Math.max(caja.width / naturalW, caja.height / naturalH)
     return {
-      overflowX: Math.max(naturalW * escala - caja.width, 0),
-      overflowY: Math.max(naturalH * escala - caja.height, 0),
+      overflowX: Math.max(naturalW * escalaBase - caja.width, 0),
+      overflowY: Math.max(naturalH * escalaBase - caja.height, 0),
     }
   }
 
@@ -113,14 +122,15 @@ export function ReposicionarImagen({
   function handlePointerMove(event: React.PointerEvent<HTMLImageElement>) {
     const drag = dragRef.current
     if (!drag?.activo) return
-    const dx = event.clientX - drag.startX
-    const dy = event.clientY - drag.startY
+    const dx = (event.clientX - drag.startX) / escala
+    const dy = (event.clientY - drag.startY) / escala
     const nuevoOffsetX = clamp(drag.startOffsetX + dx, -drag.overflowX, 0)
     const nuevoOffsetY = clamp(drag.startOffsetY + dy, -drag.overflowY, 0)
-    setPosicion({
+    setPosicion((prev) => ({
+      ...prev,
       x: porcentajeDesdeOffset(nuevoOffsetX, drag.overflowX),
       y: porcentajeDesdeOffset(nuevoOffsetY, drag.overflowY),
-    })
+    }))
   }
 
   function handlePointerUp(event: React.PointerEvent<HTMLImageElement>) {
@@ -153,15 +163,31 @@ export function ReposicionarImagen({
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               className="absolute inset-0 size-full cursor-grab touch-none object-cover select-none active:cursor-grabbing"
-              style={{ objectPosition: `${posicion.x}% ${posicion.y}%` }}
+              style={{ objectPosition: `${posicion.x}% ${posicion.y}%`, transform: `scale(${escala})`, transformOrigin: `${posicion.x}% ${posicion.y}%` }}
               draggable={false}
             />
           </div>
+          <label className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
+            <ZoomIn className="size-4 shrink-0" />
+            <input
+              type="range"
+              min={ESCALA_MIN}
+              max={ESCALA_MAX}
+              step={0.05}
+              value={escala}
+              onChange={(e) => setPosicion((prev) => ({ ...prev, escala: Number(e.target.value) }))}
+              className="w-full accent-foreground"
+            />
+          </label>
           <div className="mt-4 flex gap-2">
             <Button type="button" variant="outline" className="flex-1" onClick={onCancelar}>
               Cancelar
             </Button>
-            <Button type="button" className="flex-1" onClick={() => onConfirmar(posicion)}>
+            <Button
+              type="button"
+              className="flex-1"
+              onClick={() => onConfirmar(escala !== ESCALA_MIN ? posicion : { x: posicion.x, y: posicion.y })}
+            >
               Listo
             </Button>
           </div>

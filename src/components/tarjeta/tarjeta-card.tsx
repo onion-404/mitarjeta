@@ -3,11 +3,9 @@
 import {
   ChevronDown,
   Clock,
-  Download,
   ExternalLink,
   FileText,
   Globe,
-  IdCard,
   Mail,
   MapPin,
   Phone,
@@ -18,6 +16,7 @@ import * as React from "react"
 
 import { obtenerBannerPreset } from "@/lib/banner-presets"
 import { obtenerColorContraste } from "@/lib/contraste"
+import { estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import { DIVISORES_BANNER, ESTILOS_TIPOGRAFIA } from "@/lib/personalizacion"
 import { obtenerPlataforma } from "@/lib/redes"
 import { registrarEvento, type TipoEventoCliente } from "@/lib/track-evento"
@@ -28,6 +27,13 @@ import { AvatarForma } from "@/components/tarjeta/avatar-forma"
 import { ReservarServicio } from "@/components/tarjeta/reservar-servicio"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 
+// Alto fijo (no atado al alto dinámico del panel) del layer de "imagen de
+// fondo de toda la tarjeta" — ver la nota larga en IdentidadVisual.fondoImagenPosicion
+// (lib/types.ts) sobre por qué no puede ser `inset-0`. Generoso a propósito:
+// ninguna tarjeta real (agenda + varias secciones de servicios + productos)
+// debería superar esto de alto.
+const ALTO_FONDO_IMAGEN = 3000
+
 interface TarjetaCardProps {
   tipo: TarjetaTipo
   datosContacto: DatosContacto
@@ -37,7 +43,11 @@ interface TarjetaCardProps {
    *  crear), el badge no se muestra. */
   slug?: string
   className?: string
-  mostrarAcciones?: boolean
+  /** Ancho completo + sin rounded/border/shadow por debajo de `sm:` (la
+   *  tarjeta pública real, `[slug]/page.tsx`) — el resto de los consumidores
+   *  (demo del home, preview del editor) no lo pasan y se ven exactamente
+   *  igual que siempre en cualquier viewport. */
+  pantallaCompleta?: boolean
   /** Servicios agendables activos, para la sección "Agendar" (no viene de datosContacto: son filas propias, no JSONB). */
   agendaServicios?: ServicioAgendable[]
   /** Habilita la reserva interactiva por servicio (solo la tarjeta pública real la pasa;
@@ -82,45 +92,28 @@ function esUrlOptimizable(url: string) {
   return url.startsWith("http://") || url.startsWith("https://")
 }
 
-// Tipo único de tarjeta (ver nota en lib/types.ts): ya no bifurca por
-// personal/empresarial — nombre ("Título"), empresa ("Rol o descripción") y
-// puesto ("Bio") son los mismos 3 campos para cualquier tarjeta.
-function construirVCard(datos: DatosContacto) {
-  const nombrePrincipal = datos.nombre
-
-  const lineas = [
-    "BEGIN:VCARD",
-    "VERSION:3.0",
-    `FN:${nombrePrincipal || "Sin nombre"}`,
-    datos.empresa ? `TITLE:${datos.empresa}` : "",
-    datos.puesto ? `NOTE:${datos.puesto}` : "",
-    datos.telefono ? `TEL;TYPE=CELL,VOICE:${datos.telefono}` : "",
-    datos.whatsapp && datos.whatsapp !== datos.telefono
-      ? `TEL;TYPE=CELL:${datos.whatsapp}`
-      : "",
-    datos.email ? `EMAIL:${datos.email}` : "",
-    datos.direccion ? `ADR:;;${datos.direccion}` : "",
-    "END:VCARD",
-  ].filter(Boolean)
-
-  return lineas.join("\r\n")
-}
-
-export function TarjetaCard({
-  tipo,
-  datosContacto,
-  identidadVisual,
-  slug,
-  className,
-  mostrarAcciones = false,
-  agendaServicios,
-  permitirAgendar = false,
-  tarjetaId,
-  zonaHoraria,
-}: TarjetaCardProps) {
+// forwardRef: expone el <article> real a quien renderiza TarjetaCard — lo
+// necesita AccionesTarjeta (compartir/QR/PDF/contacto, ver ese archivo) para
+// exportar el PDF con html2pdf, ya que esas acciones ahora viven en un FAB
+// separado en vez de adentro de este componente (así el mismo botón sirve
+// tanto para la tarjeta pública real como para el preview "Ver tarjeta" del
+// editor, sin duplicar la lógica de compartir/QR/PDF/vCard en cada lugar).
+export const TarjetaCard = React.forwardRef<HTMLElement, TarjetaCardProps>(function TarjetaCard(
+  {
+    tipo,
+    datosContacto,
+    identidadVisual,
+    slug,
+    className,
+    pantallaCompleta = false,
+    agendaServicios,
+    permitirAgendar = false,
+    tarjetaId,
+    zonaHoraria,
+  },
+  ref
+) {
   const agendaInteractiva = permitirAgendar && Boolean(tarjetaId) && Boolean(zonaHoraria)
-  const cardRef = React.useRef<HTMLElement>(null)
-  const [descargandoPdf, setDescargandoPdf] = React.useState(false)
 
   // Solo la tarjeta pública real pasa tarjetaId (el preview del editor y el
   // demo del home no) — track() queda en no-op ahí, sin pegarle a /api/eventos.
@@ -157,6 +150,7 @@ export function TarjetaCard({
     colorPrimario,
     colorSecundario,
     avatarUrl,
+    avatarPosicion,
     bannerUrl,
     bannerPreset,
     brochureUrl,
@@ -177,6 +171,7 @@ export function TarjetaCard({
     divisorBanner,
     glassmorfismo,
     bannerPosicion,
+    bannerAltura,
     fondoImagenUrl,
     fondoImagenPosicion,
     fondoTarjetaModo,
@@ -264,8 +259,9 @@ export function TarjetaCard({
   // activarla — solo se ignoran en el render, así desactivarla no pierde
   // la configuración previa.
   const tieneFondoImagen = Boolean(fondoImagenUrl)
-  const posicionBanner = `${bannerPosicion?.x ?? 50}% ${bannerPosicion?.y ?? 50}%`
-  const posicionFondoImagen = `${fondoImagenPosicion?.x ?? 50}% ${fondoImagenPosicion?.y ?? 50}%`
+  const estiloBannerImagen = estiloImagenPosicionada(bannerPosicion)
+  const estiloFondoImagen = estiloImagenPosicionada(fondoImagenPosicion)
+  const alturaBanner = bannerAltura ?? 192
 
   // Fondo del panel de contenido (separado del fondo del banner de arriba).
   const fondoTarjetaInline =
@@ -334,52 +330,25 @@ export function TarjetaCard({
       : "border-[rgba(0,0,0,0.05)] bg-[rgba(255,255,255,0.8)] text-[#3f3f46] backdrop-blur dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#f4f4f5]"
   )
 
-  const nombreArchivo = (nombrePrincipal || "tarjeta")
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, "-")
-
-  function handleGuardarContacto() {
-    const contenido = construirVCard(datosContacto)
-    const blob = new Blob([contenido], { type: "text/vcard;charset=utf-8" })
-    const url = URL.createObjectURL(blob)
-    const enlace = document.createElement("a")
-    enlace.href = url
-    enlace.download = `${nombreArchivo}.vcf`
-    enlace.click()
-    URL.revokeObjectURL(url)
-  }
-
-  async function handleDescargarPdf() {
-    if (!cardRef.current || descargandoPdf) return
-    setDescargandoPdf(true)
-    try {
-      const html2pdf = (await import("html2pdf.js")).default
-      await html2pdf()
-        .from(cardRef.current)
-        .set({
-          filename: `${nombreArchivo}.pdf`,
-          margin: 0.2,
-          jsPDF: { unit: "in", format: [4, 6], orientation: "portrait" },
-          html2canvas: { scale: 2, backgroundColor: "#ffffff" },
-        })
-        .save()
-    } finally {
-      setDescargandoPdf(false)
-    }
-  }
-
   return (
     <div className={cn("flex flex-col items-center gap-4", esOscuro && "dark")}>
       <article
-        ref={cardRef}
+        ref={ref}
         className={cn(
-          "relative w-full min-w-[320px] max-w-sm overflow-hidden rounded-[2rem] border border-[rgba(0,0,0,0.05)] bg-white shadow-[0_25px_60px_-20px_rgba(0,0,0,0.35)] dark:border-[rgba(255,255,255,0.1)] dark:bg-[#18181b]",
+          "relative min-w-[320px] overflow-hidden border border-[rgba(0,0,0,0.05)] bg-white shadow-[0_25px_60px_-20px_rgba(0,0,0,0.35)] dark:border-[rgba(255,255,255,0.1)] dark:bg-[#18181b]",
+          pantallaCompleta
+            ? "w-full rounded-none border-0 shadow-none sm:max-w-sm sm:rounded-[2rem] sm:border sm:shadow-[0_25px_60px_-20px_rgba(0,0,0,0.35)]"
+            : "w-full max-w-sm rounded-[2rem]",
           className
         )}
       >
         {tieneFondoImagen && (
-          <div className="absolute inset-0 z-0" aria-hidden>
+          // Alto FIJO (ALTO_FONDO_IMAGEN), no `inset-0` atado al alto
+          // dinámico del panel — ver el comentario largo en
+          // IdentidadVisual.fondoImagenPosicion (lib/types.ts). El
+          // `<article>` ya recorta con overflow-hidden todo lo que exceda
+          // el alto real de la tarjeta, así que esto no desborda nada.
+          <div className="absolute inset-x-0 top-0 z-0" style={{ height: ALTO_FONDO_IMAGEN }} aria-hidden>
             <Image
               src={fondoImagenUrl!}
               alt=""
@@ -388,12 +357,16 @@ export function TarjetaCard({
               sizes="(max-width: 640px) 100vw, 384px"
               unoptimized={!esUrlOptimizable(fondoImagenUrl!)}
               className="object-cover"
-              style={{ objectPosition: posicionFondoImagen }}
+              style={estiloFondoImagen}
             />
           </div>
         )}
 
-        <div data-campo="banner" className="relative z-10 h-48 w-full overflow-hidden">
+        <div
+          data-campo="banner"
+          className="relative z-10 w-full overflow-hidden"
+          style={{ height: alturaBanner }}
+        >
           {!tieneFondoImagen &&
             (bannerUrl ? (
               <Image
@@ -404,7 +377,7 @@ export function TarjetaCard({
                 sizes="(max-width: 640px) 100vw, 384px"
                 unoptimized={!esUrlOptimizable(bannerUrl)}
                 className="object-cover"
-                style={{ objectPosition: posicionBanner }}
+                style={estiloBannerImagen}
               />
             ) : (
               <div
@@ -422,7 +395,7 @@ export function TarjetaCard({
           style={{ ...estiloDivisor, ...(tieneFondoImagen ? undefined : { background: fondoTarjetaInline }) }}
           className={cn(
             "relative z-10 -mt-14 border-t px-6 pb-7 pt-3 text-center shadow-[0_-8px_30px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl",
-            !estiloDivisor && "rounded-t-[2rem]",
+            !estiloDivisor && (pantallaCompleta ? "rounded-none sm:rounded-t-[2rem]" : "rounded-t-[2rem]"),
             tieneFondoImagen
               ? "border-[rgba(255,255,255,0.3)] bg-[rgba(255,255,255,0.55)] dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(24,24,27,0.55)]"
               : fondoTarjetaInline
@@ -436,6 +409,7 @@ export function TarjetaCard({
                 forma={avatarForma}
                 tamanoPx={96}
                 imagenUrl={avatarUrl}
+                imagenPosicion={avatarPosicion}
                 alt={nombrePrincipal ?? "Avatar"}
                 iniciales={iniciales(nombrePrincipal)}
                 unoptimized={avatarUrl ? !esUrlOptimizable(avatarUrl) : undefined}
@@ -472,7 +446,7 @@ export function TarjetaCard({
           </h1>
           {empresa?.trim() && (
             <p
-              style={{ fontFamily: fuenteCuerpo }}
+              style={{ fontFamily: fuenteCuerpo, ...estiloTextoGeneral }}
               className="text-sm font-medium text-[#3f3f46] dark:text-[#d4d4d8]"
             >
               {empresa}
@@ -481,7 +455,7 @@ export function TarjetaCard({
           {puesto?.trim() && (
             <p
               data-campo="bio"
-              style={{ fontFamily: fuenteCuerpo }}
+              style={{ fontFamily: fuenteCuerpo, ...estiloTextoGeneral }}
               className="mt-1.5 max-w-xs text-sm whitespace-pre-line text-[#52525b] dark:text-[#a1a1aa]"
             >
               {puesto}
@@ -489,15 +463,21 @@ export function TarjetaCard({
           )}
 
           {(direccion?.trim() || horarios?.trim()) && (
-            <div data-campo="ubicacion" className="mt-3 flex flex-col items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]">
+            <div
+              data-campo="ubicacion"
+              style={estiloTextoGeneral}
+              className="mt-3 flex flex-col items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]"
+            >
               {direccion?.trim() && (
-                <span className="inline-flex items-center gap-1">
-                  <MapPin className="size-3.5" /> {direccion}
+                <span className="inline-flex items-start gap-1">
+                  <MapPin className="mt-0.5 size-3.5 shrink-0" />
+                  <span>{direccion}</span>
                 </span>
               )}
               {horarios?.trim() && (
-                <span className="inline-flex items-center gap-1">
-                  <Clock className="size-3.5" /> {horarios}
+                <span className="inline-flex items-start gap-1">
+                  <Clock className="mt-0.5 size-3.5 shrink-0" />
+                  <span>{horarios}</span>
                 </span>
               )}
             </div>
@@ -613,7 +593,7 @@ export function TarjetaCard({
                       className="flex w-full items-center justify-between gap-2"
                     >
                       <h2
-                        style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+                        style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
                         className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
                       >
                         {tituloSeccion} ({seccion.items.length})
@@ -627,7 +607,7 @@ export function TarjetaCard({
                     </button>
                   ) : (
                     <h2
-                      style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+                      style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
                       className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
                     >
                       {tituloSeccion}
@@ -654,7 +634,7 @@ export function TarjetaCard({
                           ) : (
                             <div className="aspect-square w-full bg-[#f4f4f5] dark:bg-[#27272a]" />
                           )}
-                          <div className="px-1.5 py-1.5 text-center">
+                          <div style={estiloTextoGeneral} className="px-1.5 py-1.5 text-center">
                             <p className="truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]">
                               {item.titulo}
                             </p>
@@ -710,14 +690,14 @@ export function TarjetaCard({
             (descripcionServicios?.trim() || servicios?.length || brochureUrl) && (
               <div data-campo="servicios-0" className="mt-5 w-full text-left">
                 <h2
-                  style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+                  style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
                   className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
                 >
                   {tituloServicios?.trim() || "Servicios"}
                 </h2>
                 {descripcionServicios?.trim() && (
                   <p
-                    style={{ fontFamily: fuenteCuerpo }}
+                    style={{ fontFamily: fuenteCuerpo, ...estiloTextoGeneral }}
                     className="mt-1.5 text-sm text-[#3f3f46] dark:text-[#d4d4d8]"
                   >
                     {descripcionServicios}
@@ -731,6 +711,7 @@ export function TarjetaCard({
                       return (
                         <div
                           key={index}
+                          style={estiloTextoGeneral}
                           className="overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
                         >
                           <button
@@ -781,7 +762,7 @@ export function TarjetaCard({
           {Boolean(agendaServicios?.length) && (
             <div data-campo="agenda" className="mt-5 w-full text-left">
               <h2
-                style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+                style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
                 className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
               >
                 Agendar
@@ -798,6 +779,7 @@ export function TarjetaCard({
                   ) : (
                     <div
                       key={servicio.id}
+                      style={estiloTextoGeneral}
                       className="flex items-center justify-between gap-3 rounded-xl border border-[rgba(0,0,0,0.05)] p-3 dark:border-[rgba(255,255,255,0.08)]"
                     >
                       <div className="min-w-0">
@@ -828,7 +810,7 @@ export function TarjetaCard({
                 className="flex w-full items-center justify-between gap-2"
               >
                 <h2
-                  style={fuenteEncabezado ? { fontFamily: fuenteEncabezado } : undefined}
+                  style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
                   className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
                 >
                   {tituloProductos?.trim() || "Productos"} ({productos?.length ?? 0})
@@ -861,7 +843,7 @@ export function TarjetaCard({
                       ) : (
                         <div className="aspect-square w-full bg-[#f4f4f5] dark:bg-[#27272a]" />
                       )}
-                      <div className="px-1.5 py-1.5 text-center">
+                      <div style={estiloTextoGeneral} className="px-1.5 py-1.5 text-center">
                         <p className="truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]">
                           {producto.titulo}
                         </p>
@@ -897,31 +879,8 @@ export function TarjetaCard({
           )}
         </div>
       </article>
-
-      {mostrarAcciones && (
-        <div className="flex w-full max-w-sm flex-wrap items-center justify-center gap-2.5">
-          <button
-            type="button"
-            onClick={handleGuardarContacto}
-            style={estiloCta}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
-              !estiloCta && "bg-foreground text-background"
-            )}
-          >
-            <IdCard className="size-3.5" /> Guardar contacto
-          </button>
-          <button
-            type="button"
-            onClick={handleDescargarPdf}
-            disabled={descargandoPdf}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
-          >
-            <Download className="size-3.5" />
-            {descargandoPdf ? "Generando..." : "Descargar PDF"}
-          </button>
-        </div>
-      )}
     </div>
   )
-}
+})
+
+TarjetaCard.displayName = "TarjetaCard"

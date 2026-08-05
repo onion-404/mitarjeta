@@ -1,8 +1,9 @@
 import Image from "next/image"
 import type { ReactNode } from "react"
 
+import { estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import { FORMAS_AVATAR } from "@/lib/personalizacion"
-import type { AvatarForma as AvatarFormaId } from "@/lib/types"
+import type { AvatarForma as AvatarFormaId, PosicionImagen } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 // "cuadrado" es legacy (ver lib/personalizacion.ts — el picker ya no la
@@ -21,6 +22,9 @@ interface AvatarFormaProps {
   forma: AvatarFormaId | undefined
   tamanoPx: number
   imagenUrl?: string
+  /** Ancla de reposicionamiento + zoom (ver ReposicionarImagen) — sin esto,
+   *  se ve exactamente igual que antes (centrado, sin zoom). */
+  imagenPosicion?: PosicionImagen
   alt: string
   iniciales: ReactNode
   unoptimized?: boolean
@@ -32,7 +36,15 @@ interface AvatarFormaProps {
 // un ring-*/box-shadow normal no abraza un hexágono/blob/corazón/estrella,
 // se ve como un halo rectangular (verificado renderizado antes de
 // implementar esto, ver CLAUDE.md).
-export function AvatarForma({ forma, tamanoPx, imagenUrl, alt, iniciales, unoptimized }: AvatarFormaProps) {
+export function AvatarForma({
+  forma,
+  tamanoPx,
+  imagenUrl,
+  imagenPosicion,
+  alt,
+  iniciales,
+  unoptimized,
+}: AvatarFormaProps) {
   const claseLegacy = forma ? CLASE_LEGACY[forma] : undefined
   const meta = FORMAS_AVATAR.find((f) => f.id === forma)
 
@@ -44,6 +56,7 @@ export function AvatarForma({ forma, tamanoPx, imagenUrl, alt, iniciales, unopti
       sizes={`${tamanoPx}px`}
       unoptimized={unoptimized}
       className="object-cover"
+      style={estiloImagenPosicionada(imagenPosicion)}
     />
   ) : (
     <span className="flex size-full items-center justify-center bg-[#f4f4f5] dark:bg-[#27272a]">
