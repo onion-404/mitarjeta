@@ -29,18 +29,6 @@ async function cargarImagenBase64(url: string): Promise<string | null> {
   }
 }
 
-/** Corta a `maxLargo` caracteres (respetando palabras enteras cuando se
- *  puede) — la imagen OG es de alto fijo, no hay wrap/line-clamp confiable
- *  para un párrafo largo de Bio acá. */
-function recortarTexto(valor: string | undefined, maxLargo: number): string | undefined {
-  const texto = valor?.trim()
-  if (!texto) return undefined
-  if (texto.length <= maxLargo) return texto
-  const cortado = texto.slice(0, maxLargo)
-  const ultimoEspacio = cortado.lastIndexOf(" ")
-  return `${(ultimoEspacio > maxLargo * 0.6 ? cortado.slice(0, ultimoEspacio) : cortado).trim()}…`
-}
-
 interface Props {
   params: Promise<{ slug: string }>
 }
@@ -64,12 +52,16 @@ export default async function Image({ params }: Props) {
   // se mostraba en la miniatura, solo el rol/empresa. Reportado por el
   // cliente probando el share real: una tarjeta con ambos campos no
   // mostraba la Bio, otra que solo tenía Bio (sin "empresa") sí. Ahora los
-  // dos se muestran siempre que existan, cada uno en su propia línea — la
-  // Bio truncada a una sola línea (con `recortarTexto`) porque el lienzo
-  // de la imagen OG es de alto fijo (630px) y Satori no soporta
-  // text-overflow/line-clamp de forma confiable.
+  // dos se muestran siempre que existan, cada uno en su propia línea. La
+  // Bio se muestra COMPLETA (sin truncar) — el editor ya la limita a 160
+  // caracteres (ver TarjetaForm), así que el peor caso real son ~4 líneas
+  // envueltas dentro del `maxWidth` de la columna, que entran sin
+  // desbordar el lienzo de 630px de alto (verificado con una Bio de 160
+  // caracteres real). Un truncado con "…" se probó primero y el cliente
+  // pidió texto completo — se sacó por completo, no solo se agrandó el
+  // límite.
   const subtitulo = tarjeta.datos_contacto.empresa
-  const bio = recortarTexto(tarjeta.datos_contacto.puesto, 90)
+  const bio = tarjeta.datos_contacto.puesto?.trim() || undefined
 
   const { colorPrimario, colorSecundario, avatarUrl } = tarjeta.identidad_visual
   const fondo =
@@ -153,7 +145,16 @@ export default async function Image({ params }: Props) {
               </span>
             ) : null}
             {bio ? (
-              <span style={{ marginTop: 10, fontSize: 24, color: colorTextoSuave }}>{bio}</span>
+              <span
+                style={{
+                  marginTop: 10,
+                  fontSize: 24,
+                  lineHeight: 1.35,
+                  color: colorTextoSuave,
+                }}
+              >
+                {bio}
+              </span>
             ) : null}
           </div>
         </div>

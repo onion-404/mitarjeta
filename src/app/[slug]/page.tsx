@@ -18,12 +18,42 @@ export async function generateMetadata({
 }: TarjetaPageProps): Promise<Metadata> {
   const { slug } = await params
   const tarjeta = await getTarjetaPublicada(slug)
-  const nombre = tarjeta?.datos_contacto.nombre
-  const subtitulo = tarjeta?.datos_contacto.empresa || tarjeta?.datos_contacto.puesto
+
+  if (!tarjeta) return { title: "Tarjeta no encontrada" }
+
+  const nombre = tarjeta.datos_contacto.nombre?.trim() || "Tarjeta digital"
+  const titulo = `${nombre} · Linkard`
+  // La descripción se arma SIEMPRE con la info de la propia tarjeta (rol +
+  // bio, cuando existan) — nunca con el copy de marketing genérico del
+  // layout raíz ("Crea tu tarjeta de presentación..."). El dueño está
+  // pagando un plan; no tiene sentido publicitarle Linkard a SUS propios
+  // visitantes en la vista previa que se comparte por WhatsApp/redes.
+  // Bug real corregido acá: antes solo se seteaban `title`/`description`
+  // (los tags genéricos) — WhatsApp/Telegram/Twitter/iMessage leen
+  // `og:title`/`og:description` (de `openGraph`) y `twitter:title`/
+  // `twitter:description` (de `twitter`), que NUNCA se sobreescribían acá
+  // y por eso seguían mostrando el copy genérico heredado del layout raíz
+  // sin importar qué dijera `description`.
+  const partes = [tarjeta.datos_contacto.empresa?.trim(), tarjeta.datos_contacto.puesto?.trim()].filter(
+    (parte): parte is string => Boolean(parte)
+  )
+  const descripcion = partes.length > 0 ? partes.join(" — ") : `Tarjeta digital de ${nombre} en Linkard.`
 
   return {
-    title: nombre ? `${nombre} · Linkard` : "Tarjeta no encontrada",
-    description: subtitulo,
+    title: titulo,
+    description: descripcion,
+    openGraph: {
+      title: titulo,
+      description: descripcion,
+      siteName: "Linkard",
+      locale: "es_MX",
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: titulo,
+      description: descripcion,
+    },
   }
 }
 

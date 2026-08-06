@@ -816,19 +816,45 @@ real desde esta sesión salvo que se indique lo contrario):
   caso más común), la miniatura solo mostraba `empresa`, la Bio nunca aparecía; una tarjeta
   con SOLO `puesto` (sin `empresa`) sí la mostraba vía el fallback — de ahí la inconsistencia
   reportada ("en una sale, en otra no"). Fix: `empresa` y `puesto` ahora son dos líneas
-  independientes, ambas se muestran siempre que existan (ya no es un fallback exclusivo). La
-  Bio se trunca a 90 caracteres con `recortarTexto()` (nuevo helper local, corta en el último
-  espacio antes del límite cuando puede, agrega "…") — el lienzo de la imagen OG es de alto
-  fijo (630px) y Satori (el renderer de `next/og`) no soporta `text-overflow`/line-clamp de
-  forma confiable, así que el corte es manual. Nota: el texto SÍ hace wrap natural dentro del
-  ancho del contenedor cuando entra en 2 líneas sin necesidad de truncar — el límite de 90
-  caracteres es una red de seguridad para bios largas, no el mecanismo principal.
-  - Verificado generando la imagen real (`curl .../opengraph-image`) con bio corta (una línea,
-    sin cortar) y bio larga (trunca prolijo en un límite de palabra, sin desbordar el lienzo).
-  - `generateMetadata()` en `[slug]/page.tsx` (el `<meta name="description">`, NO la imagen)
-    tiene el mismo patrón `empresa || puesto` — se dejó como está a propósito: ahí sí es un
-    campo de resumen de una sola línea por naturaleza (no el bug reportado), no hace falta
-    combinarlos.
+  independientes, ambas se muestran siempre que existan (ya no es un fallback exclusivo).
+  **Iteración descartada en la misma sesión**: primero se truncó la Bio a 90 caracteres con
+  "…" (por las dudas de que un párrafo largo desbordara el lienzo de 630px de alto) — el
+  cliente probó y pidió el texto COMPLETO, sin cortar. Se sacó el truncado por completo (no
+  se subió el límite, se eliminó la función `recortarTexto()` entera): la Bio se muestra tal
+  cual (`whiteSpace` normal, wrap natural dentro del `maxWidth` de la columna,
+  `lineHeight: 1.35`). El editor ya limita la Bio a 160 caracteres (`TarjetaForm`), así que el
+  peor caso real es ~3 líneas envueltas, que entran cómodas en el lienzo sin desbordar —
+  confirmado generando la imagen real con nombre largo + rol largo + Bio en el límite de 160
+  caracteres a la vez (el combo más exigente posible).
+  - `generateMetadata()` en `[slug]/page.tsx` en ese momento seguía con el mismo patrón
+    `empresa || puesto` para el `<meta name="description">` — arreglado en la iteración
+    siguiente (ver bullet de abajo), no quedó así.
+
+## `generateMetadata` de `[slug]/page.tsx` — bug real de fondo: el copy de marketing de Linkard tapaba la info de la propia tarjeta al compartir (2026-08-05, mismo día)
+- **Reporte del cliente**: al compartir el link por WhatsApp, la vista previa mostraba
+  "Linkard · Tarjeta digital en segundos" / "Crea tu tarjeta de presentación..." — el copy de
+  MARKETING del sitio, no la info de la tarjeta — sobre una tarjeta con un plan pago. Pidió
+  que el texto debajo de la imagen se arme con título + rol + bio (cuando existan).
+- **Causa real (no era caché de WhatsApp, era un bug de metadata)**: `generateMetadata()` acá
+  solo seteaba `title`/`description` (los tags genéricos, `<title>`/`<meta name="description">`).
+  Pero WhatsApp/Telegram/Twitter/iMessage — los que arman la vista previa de un link
+  compartido — leen `og:title`/`og:description` (del objeto `openGraph`) y `twitter:title`/
+  `twitter:description` (del objeto `twitter`), NUNCA `title`/`description` a secas. Como acá
+  nunca se seteaban esos dos objetos, Next.js los heredaba TAL CUAL del layout raíz
+  (`src/app/layout.tsx`, que sí trae `openGraph`/`twitter` con el copy de marketing del
+  sitio) — sin importar qué dijera el `description` de la tarjeta.
+- **Fix**: `generateMetadata()` arma un `titulo` (`"${nombre} · Linkard"`) y una `descripcion`
+  (`[empresa, puesto].filter(Boolean).join(" — ")`, con fallback a `"Tarjeta digital de
+  {nombre} en Linkard."` — nunca copy de marketing, ni siquiera sin rol/bio) UNA sola vez, y
+  los aplica a los 3 lugares: `title`/`description` de siempre, MÁS `openGraph.{title,
+  description, siteName, locale, type}` y `twitter.{card, title, description}` explícitos
+  (replican el resto de esos objetos tal cual el layout raíz — `siteName: "Linkard"`,
+  `locale: "es_MX"`, `type: "website"`, `card: "summary_large_image"` — para no perder esos
+  campos al dejar de heredarlos).
+- Verificado con `curl` real contra el HTML servido (no una suposición): confirmado que
+  `og:title`/`og:description`/`twitter:title`/`twitter:description` cambian según la tarjeta
+  (rol + bio combinados) y que el fallback sin rol/bio usa el nombre de la persona, nunca
+  marketing. `tsc --noEmit`/`eslint` limpios.
 
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴 Migración `20260801000000_add_tarjeta_slug_historial.sql` sin aplicar — límite de slug
