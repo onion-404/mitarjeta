@@ -102,13 +102,16 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
   // El footer sigue el tema elegido en LA TARJETA (temaModo/fondoTarjetaColor,
   // vía esTarjetaOscura — mismo criterio que ya usa TarjetaCard para
   // togglear su propio `.dark`) — pedido explícito del cliente: blanco con
-  // tema claro, negro con tema oscuro. La imagen de fondo de la tarjeta
-  // (mobile, `fixed`) bleedeando detrás del footer sigue ganando por
-  // encima (scrim con blur en vez de negro plano, necesario para
-  // legibilidad sin importar qué tan clara/oscura sea la foto).
+  // tema claro, negro con tema oscuro, SIEMPRE (bug real: la versión
+  // anterior forzaba negro cada vez que la tarjeta tenía imagen de fondo,
+  // sin importar el tema — confirmado con una tarjeta real en producción
+  // con tema claro + imagen de fondo que igual mostraba el footer negro).
+  // La imagen de fondo de la tarjeta (mobile, `fixed`) bleedeando detrás
+  // del footer sigue necesitando un scrim propio para legibilidad sobre
+  // una foto arbitraria — pero el TONO de ese scrim ahora sigue al tema
+  // en vez de ser negro fijo.
   const tieneFondoImagen = Boolean(tarjeta.identidad_visual.fondoImagenUrl)
-  const tarjetaOscura = esTarjetaOscura(tarjeta.identidad_visual)
-  const footerOscuro = tieneFondoImagen || tarjetaOscura
+  const footerOscuro = esTarjetaOscura(tarjeta.identidad_visual)
 
   return (
     <div className="relative flex w-full flex-1 flex-col overflow-hidden bg-zinc-50 dark:bg-black">
@@ -121,13 +124,15 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
       <footer
         className={cn(
           "relative flex flex-col items-center gap-2 border-t px-4 py-5 text-center text-xs",
-          // Con imagen de fondo detrás (bleed), un scrim propio asegura
-          // legibilidad sin importar qué tan clara/oscura sea la imagen —
-          // sin esto, blanco/negro plano sobre una foto cualquiera es
-          // ilegible la mitad de las veces.
+          // Con imagen de fondo detrás (bleed), un scrim propio (translúcido +
+          // blur, tono según el tema) asegura legibilidad sin importar qué
+          // tan clara/oscura sea la imagen — sin esto, blanco/negro plano
+          // sobre una foto cualquiera es ilegible la mitad de las veces.
           tieneFondoImagen
-            ? "border-white/15 bg-black/45 text-white/90 backdrop-blur-sm"
-            : tarjetaOscura
+            ? footerOscuro
+              ? "border-white/15 bg-black/45 text-white/90 backdrop-blur-sm"
+              : "border-black/5 bg-white/70 text-zinc-700 backdrop-blur-sm"
+            : footerOscuro
               ? "border-white/10 bg-black text-white/70"
               : "border-border/60 bg-white text-muted-foreground"
         )}
