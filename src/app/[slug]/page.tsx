@@ -7,6 +7,7 @@ import { Logo } from "@/components/logo"
 import { TarjetaPublica } from "@/components/tarjeta/tarjeta-publica"
 import { buttonVariants } from "@/components/ui/button"
 import { getServiciosAgendablesActivos, getTarjetaPublicada } from "@/lib/tarjetas"
+import { cn } from "@/lib/utils"
 
 interface TarjetaPageProps {
   params: Promise<{ slug: string }>
@@ -67,6 +68,18 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
   }
 
   const agendaServicios = await getServiciosAgendablesActivos(tarjeta.id)
+  // El footer NO hereda el tema (temaModo/fondoTarjetaColor) de la tarjeta —
+  // ese tema solo aplica al panel de la card (el toggle `.dark` vive
+  // adentro de TarjetaCard, ver esOscuro ahí), el footer sigue siendo del
+  // SITIO, con su propio fondo claro (`bg-zinc-50`) que ya se adapta solo
+  // al modo claro/oscuro del sistema operativo vía CSS — forzar el logo a
+  // blanco ahí sería logo blanco sobre fondo claro, invisible (bug real
+  // encontrado en verificación visual). El único caso real en que el
+  // footer deja de ser "su propio fondo claro" es cuando la imagen de
+  // fondo de la tarjeta (mobile, `fixed`) bleedea detrás de él — ahí sí
+  // hace falta forzar blanco + el scrim de abajo, sin importar el tema.
+  const tieneFondoImagen = Boolean(tarjeta.identidad_visual.fondoImagenUrl)
+  const footerOscuro = tieneFondoImagen
 
   return (
     <div className="relative flex w-full flex-1 flex-col overflow-hidden bg-zinc-50 dark:bg-black">
@@ -76,8 +89,19 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
          layout mobile-full-bleed + el motivo de sticky en vez de fixed. */}
       <TarjetaPublica tarjeta={tarjeta} slug={slug} agendaServicios={agendaServicios} />
 
-      <footer className="relative flex flex-col items-center gap-2 border-t border-border/60 px-4 py-5 text-center text-xs text-muted-foreground">
-        <Logo size="sm" />
+      <footer
+        className={cn(
+          "relative flex flex-col items-center gap-2 border-t px-4 py-5 text-center text-xs",
+          // Con imagen de fondo detrás (bleed), un scrim propio asegura
+          // legibilidad sin importar qué tan clara/oscura sea la imagen —
+          // sin esto, `text-muted-foreground` sobre una foto cualquiera es
+          // ilegible la mitad de las veces.
+          tieneFondoImagen
+            ? "border-white/15 bg-black/45 text-white/90 backdrop-blur-sm"
+            : "border-border/60 text-muted-foreground"
+        )}
+      >
+        <Logo size="sm" oscuro={footerOscuro} />
         <p className="flex flex-col items-center gap-2">
           <span>© {new Date().getFullYear()}</span>
           <Link

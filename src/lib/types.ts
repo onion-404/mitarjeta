@@ -70,6 +70,36 @@ export interface SeccionServicios {
   items: Producto[]
 }
 
+/** "imagen" = `imagenUrl` (subida a Cloudinary), "icono" = `iconoId` (uno
+ *  de BOTON_ICONOS, lib/boton-cta.ts) — mutuamente excluyentes, elegidos
+ *  por el dueño en el editor. */
+export type BotonCtaIconoTipo = "imagen" | "icono"
+
+/** Botón CTA de ancho completo (uno por línea) — sección "Botón" del
+ *  editor, ver lib/boton-cta.ts para texturas/íconos curados y el helper
+ *  de armado de link de WhatsApp. `id` es un identificador estable propio
+ *  (no correlativo al índice del array, así el 3-puntos/modal no se
+ *  confunde si se reordena o borra un botón antes que otro). */
+export interface BotonCta {
+  id: string
+  titulo: string
+  subtitulo?: string
+  url: string
+  iconoTipo?: BotonCtaIconoTipo
+  imagenUrl?: string
+  iconoId?: string
+  /** Sin valor: usa colorBotones (mismo default que el resto de los CTA). */
+  colorFondo?: string
+  /** id de BOTON_TEXTURAS — "ninguna"/undefined = sin textura. */
+  textura?: string
+  colorBorde?: string
+}
+
+/** Secciones cuyo ORDEN de aparición en la tarjeta pública el dueño puede
+ *  cambiar (ver IdentidadVisual.ordenSecciones) — no incluye "video" ni
+ *  "redes"/"contacto", que siguen en posición fija. */
+export type SeccionOrdenable = "servicios" | "agenda" | "productos" | "botones"
+
 // Tipo único de tarjeta (2026-08-01): el editor ya no distingue
 // personal/empresarial (ver tarjeta-form.tsx) — todos estos campos son
 // comunes a cualquier tarjeta. `nombre` = "Título", `empresa` = "Rol o
@@ -115,6 +145,8 @@ export interface DatosContacto {
   seccionesServicios?: SeccionServicios[]
   productos?: Producto[]
   redes?: RedSocial[]
+  /** Botones CTA de ancho completo, uno por línea — ver BotonCta arriba. */
+  botones?: BotonCta[]
 }
 
 /** Ancla de reposicionamiento + zoom de una imagen recortable (avatar,
@@ -212,6 +244,24 @@ export interface IdentidadVisual {
   /** Título personalizable de la sección "Productos" — vacío/undefined usa
    *  el default ("Productos"). */
   tituloProductos?: string
+  /** Ícono del badge "@enlace" (debajo del avatar) — opcional. `undefined`
+   *  = mostrado (compatibilidad: toda tarjeta vieja se veía con el ícono
+   *  Sparkles siempre puesto, así que "sin definir" no puede significar
+   *  "oculto"). `false` = sin ícono. `badgeIconoId` reusa el mismo set
+   *  curado que BotonCta (BOTON_ICONOS, lib/boton-cta.ts); sin valor =
+   *  "sparkles" (el ícono de siempre). */
+  badgeIconoActivo?: boolean
+  badgeIconoId?: string
+  /** Color de la línea "Rol o descripción" (`empresa`, la tipografía
+   *  secundaria bajo el título) — mismo criterio que `colorTitulo`: default
+   *  auto-contraste si no está seteado. Gating: personalizacion_libre. */
+  colorTextoSecundario?: string
+  /** Orden de aparición de las secciones opcionales en la tarjeta pública
+   *  — el dueño lo reordena con flechas ↑/↓ en el editor. Sin este campo
+   *  (tarjeta vieja o nunca tocado), se usa ORDEN_SECCIONES_DEFAULT
+   *  (lib/boton-cta.ts), que reproduce el orden fijo de siempre
+   *  (servicios → agenda → productos), con "botones" al final. */
+  ordenSecciones?: SeccionOrdenable[]
 }
 
 export type MetodoPago = "mercado_pago" | "transferencia"

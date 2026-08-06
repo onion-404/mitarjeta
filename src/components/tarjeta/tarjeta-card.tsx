@@ -15,6 +15,7 @@ import Image from "next/image"
 import * as React from "react"
 
 import { obtenerBannerPreset } from "@/lib/banner-presets"
+import { obtenerBotonIcono, ordenSeccionesNormalizado } from "@/lib/boton-cta"
 import { obtenerColorContraste } from "@/lib/contraste"
 import { estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import { DIVISORES_BANNER, ESTILOS_TIPOGRAFIA } from "@/lib/personalizacion"
@@ -24,6 +25,7 @@ import { cn } from "@/lib/utils"
 import { obtenerYoutubeEmbedUrl } from "@/lib/youtube"
 import type { DatosContacto, IdentidadVisual, ServicioAgendable, TarjetaTipo } from "@/lib/types"
 import { AvatarForma } from "@/components/tarjeta/avatar-forma"
+import { BotonCtaModal, ContenidoBotonCta, estiloTexturaBoton } from "@/components/tarjeta/boton-cta-modal"
 import { ReservarServicio } from "@/components/tarjeta/reservar-servicio"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 
@@ -140,6 +142,7 @@ export function TarjetaCard({
     seccionesServicios,
     productos,
     redes,
+    botones,
   } = datosContacto
   const {
     colorPrimario,
@@ -176,7 +179,16 @@ export function TarjetaCard({
     fondoTarjetaDireccionGrados,
     tituloServicios,
     tituloProductos,
+    colorTextoSecundario,
+    ordenSecciones,
+    badgeIconoActivo,
+    badgeIconoId,
   } = identidadVisual
+  // Ícono del badge "@enlace" — opcional (default: mostrado, con Sparkles
+  // si no se eligió otro, para que una tarjeta vieja sin este campo se
+  // vea exactamente igual que siempre).
+  const IconoBadge =
+    badgeIconoActivo === false ? null : (obtenerBotonIcono(badgeIconoId)?.Icono ?? Sparkles)
   const [productosAbiertos, setProductosAbiertos] = React.useState(false)
   // Legacy: expandir/colapsar la descripción de un ítem en el modelo VIEJO de
   // Servicios (una sola lista título+descripción, sin precio/imagen/enlace).
@@ -338,6 +350,376 @@ export function TarjetaCard({
     ? ({ "--alto-min-divisor": `calc(100dvh - ${alturaBanner}px)` } as React.CSSProperties)
     : undefined
 
+  // Servicios/Agenda/Productos/Botones: extraídas a funciones (en vez de
+  // quedar embebidas directo en el JSX de más abajo) para poder recorrerlas
+  // en el ORDEN que eligió el dueño (identidadVisual.ordenSecciones, ver
+  // lib/boton-cta.ts) en lugar de un orden fijo por código.
+  function renderServicios(): React.ReactNode {
+    if (seccionesServicios?.length) {
+      // Modelo nuevo: N secciones tipo catálogo (mismo patrón visual que
+      // la grilla de "Productos" — título, precio, descripción, imagen,
+      // enlace por ítem). El folleto PDF sigue colgado de la sección [0].
+      return seccionesServicios.map((seccion, indiceSeccion) => {
+        const tituloSeccion =
+          seccion.titulo?.trim() || (indiceSeccion === 0 ? "Servicios" : `Sección ${indiceSeccion + 1}`)
+        const mostrarBrochure = indiceSeccion === 0 && Boolean(brochureUrl)
+        if (!seccion.items.length && !mostrarBrochure) return null
+        const abierta = seccionesServiciosAbiertas.has(indiceSeccion)
+        return (
+          <div key={indiceSeccion} data-campo={`servicios-${indiceSeccion}`} className="mt-5 w-full text-left">
+            {seccion.items.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => toggleSeccionServicios(indiceSeccion)}
+                className="flex w-full items-center justify-between gap-2"
+              >
+                <h2
+                  style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
+                  className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
+                >
+                  {tituloSeccion} ({seccion.items.length})
+                </h2>
+                <ChevronDown
+                  className={cn(
+                    "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
+                    abierta && "rotate-180"
+                  )}
+                />
+              </button>
+            ) : (
+              <h2
+                style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
+                className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
+              >
+                {tituloSeccion}
+              </h2>
+            )}
+            {abierta && seccion.items.length > 0 && (
+              <div className="mt-3 grid grid-cols-3 gap-2.5">
+                {seccion.items.map((item, index) => (
+                  <div
+                    key={index}
+                    className="flex flex-col overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
+                  >
+                    {item.imagenUrl ? (
+                      <div className="relative aspect-square w-full">
+                        <Image
+                          src={item.imagenUrl}
+                          alt={item.titulo}
+                          fill
+                          sizes="(max-width: 640px) 30vw, 128px"
+                          unoptimized={!esUrlOptimizable(item.imagenUrl)}
+                          className="object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="aspect-square w-full bg-[#f4f4f5] dark:bg-[#27272a]" />
+                    )}
+                    <div style={estiloTextoGeneral} className="px-1.5 py-1.5 text-center">
+                      <p className="truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]">
+                        {item.titulo}
+                      </p>
+                      {item.descripcion?.trim() && (
+                        <p className="mt-0.5 line-clamp-2 text-[10px] text-[#71717a] dark:text-[#a1a1aa]">
+                          {item.descripcion}
+                        </p>
+                      )}
+                      {item.precio?.trim() && (
+                        <p className="mt-0.5 text-[10px] font-semibold text-[#18181b] dark:text-[#fafafa]">
+                          ${item.precio}
+                        </p>
+                      )}
+                      {item.enlaceUrl?.trim() && (
+                        <a
+                          href={item.enlaceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-[#3f3f46] underline underline-offset-2 dark:text-[#d4d4d8]"
+                        >
+                          Ver más <ExternalLink className="size-2.5" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {mostrarBrochure && (
+              <a
+                href={brochureUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={estiloCta}
+                className={cn(
+                  "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
+                  !estiloCta && "bg-foreground text-background"
+                )}
+              >
+                <FileText className="size-3.5" /> Descargar folleto (PDF)
+              </a>
+            )}
+          </div>
+        )
+      })
+    }
+
+    // Legacy: tarjeta todavía no regrabada con el modelo nuevo — se
+    // mantiene el render viejo exacto (una sola lista título+descripción,
+    // con la descripción general y el folleto) para no perder contenido
+    // real ya publicado. En cuanto el dueño guarda una vez desde el
+    // editor, pasa a `seccionesServicios` y esta rama deja de usarse.
+    if (!(descripcionServicios?.trim() || servicios?.length || brochureUrl)) return null
+    return (
+      <div data-campo="servicios-0" className="mt-5 w-full text-left">
+        <h2
+          style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
+          className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
+        >
+          {tituloServicios?.trim() || "Servicios"}
+        </h2>
+        {descripcionServicios?.trim() && (
+          <p
+            style={{ fontFamily: fuenteCuerpo, ...estiloTextoGeneral }}
+            className="mt-1.5 text-sm text-[#3f3f46] dark:text-[#d4d4d8]"
+          >
+            {descripcionServicios}
+          </p>
+        )}
+        {Boolean(servicios?.length) && (
+          <div className="mt-3 flex flex-col gap-2">
+            {servicios?.map((servicio, index) => {
+              const abierto = serviciosAbiertos.has(index)
+              const tieneDescripcion = Boolean(servicio.descripcion?.trim())
+              return (
+                <div
+                  key={index}
+                  style={estiloTextoGeneral}
+                  className="overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
+                >
+                  <button
+                    type="button"
+                    onClick={() => tieneDescripcion && toggleServicio(index)}
+                    className="flex w-full items-center justify-between gap-2 bg-[rgba(24,24,27,0.03)] p-3 text-left dark:bg-[rgba(255,255,255,0.05)]"
+                  >
+                    <span className="flex items-center gap-1.5 text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
+                      {servicio.titulo}
+                    </span>
+                    {tieneDescripcion && (
+                      <ChevronDown
+                        className={cn(
+                          "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
+                          abierto && "rotate-180"
+                        )}
+                      />
+                    )}
+                  </button>
+                  {abierto && tieneDescripcion && (
+                    <p className="border-t border-[rgba(0,0,0,0.05)] p-3 text-xs text-[#71717a] dark:border-[rgba(255,255,255,0.08)] dark:text-[#a1a1aa]">
+                      {servicio.descripcion}
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+        {brochureUrl && (
+          <a
+            href={brochureUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={estiloCta}
+            className={cn(
+              "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
+              !estiloCta && "bg-foreground text-background"
+            )}
+          >
+            <FileText className="size-3.5" /> Descargar folleto (PDF)
+          </a>
+        )}
+      </div>
+    )
+  }
+
+  function renderAgenda(): React.ReactNode {
+    if (!agendaServicios?.length) return null
+    return (
+      <div data-campo="agenda" className="mt-5 w-full text-left">
+        <h2
+          style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
+          className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
+        >
+          Agendar
+        </h2>
+        <div className="mt-3 flex flex-col gap-2">
+          {agendaServicios.map((servicio) =>
+            agendaInteractiva ? (
+              <ReservarServicio
+                key={servicio.id}
+                tarjetaId={tarjetaId!}
+                zonaHoraria={zonaHoraria!}
+                servicio={servicio}
+              />
+            ) : (
+              <div
+                key={servicio.id}
+                style={estiloTextoGeneral}
+                className="flex items-center justify-between gap-3 rounded-xl border border-[rgba(0,0,0,0.05)] p-3 dark:border-[rgba(255,255,255,0.08)]"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
+                    {servicio.nombre}
+                  </p>
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]">
+                    <Clock className="size-3" /> {formatDuracion(servicio.duracion_minutos)}
+                    {" · "}
+                    {servicio.requiere_pago_inmediato ? "Pago al agendar" : "Pago contra entrega"}
+                  </p>
+                </div>
+                <span className="shrink-0 text-sm font-semibold text-[#18181b] dark:text-[#fafafa]">
+                  ${servicio.precio}
+                </span>
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  function renderProductos(): React.ReactNode {
+    if (!productos?.length) return null
+    return (
+      <div data-campo="productos" className="mt-5 w-full text-left">
+        <button
+          type="button"
+          onClick={() => setProductosAbiertos((valor) => !valor)}
+          className="flex w-full items-center justify-between gap-2"
+        >
+          <h2
+            style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
+            className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
+          >
+            {tituloProductos?.trim() || "Productos"} ({productos.length})
+          </h2>
+          <ChevronDown
+            className={cn(
+              "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
+              productosAbiertos && "rotate-180"
+            )}
+          />
+        </button>
+        {productosAbiertos && (
+          <div className="mt-3 grid grid-cols-3 gap-2.5">
+            {productos.map((producto, index) => (
+              <div
+                key={index}
+                className="flex flex-col overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
+              >
+                {producto.imagenUrl ? (
+                  <div className="relative aspect-square w-full">
+                    <Image
+                      src={producto.imagenUrl}
+                      alt={producto.titulo}
+                      fill
+                      sizes="(max-width: 640px) 30vw, 128px"
+                      unoptimized={!esUrlOptimizable(producto.imagenUrl)}
+                      className="object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="aspect-square w-full bg-[#f4f4f5] dark:bg-[#27272a]" />
+                )}
+                <div style={estiloTextoGeneral} className="px-1.5 py-1.5 text-center">
+                  <p className="truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]">
+                    {producto.titulo}
+                  </p>
+                  {producto.descripcion?.trim() && (
+                    <p className="mt-0.5 line-clamp-2 text-[10px] text-[#71717a] dark:text-[#a1a1aa]">
+                      {producto.descripcion}
+                    </p>
+                  )}
+                  {producto.precio?.trim() && (
+                    <p className="mt-0.5 text-[10px] font-semibold text-[#18181b] dark:text-[#fafafa]">
+                      ${producto.precio}
+                    </p>
+                  )}
+                  {producto.enlaceUrl?.trim() && (
+                    <a
+                      href={producto.enlaceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => track("click_producto", { producto_titulo: producto.titulo })}
+                      className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-[#3f3f46] underline underline-offset-2 dark:text-[#d4d4d8]"
+                    >
+                      Ver producto <ExternalLink className="size-2.5" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Botones CTA de ancho completo, uno por línea — cada uno reusa
+  // colorBotonesFinal como default de fondo (mismo criterio que el resto
+  // de los CTA de la tarjeta) y puede overridearlo con su propio color/
+  // borde/textura. El "⋮" (BotonCtaModal) es un elemento hermano del <a>,
+  // no un hijo — un <button> anidado dentro de un <a> es HTML inválido y
+  // además complica evitar que el click del menú dispare la navegación.
+  function renderBotones(): React.ReactNode {
+    const items = botones?.filter((boton) => boton.titulo?.trim() || boton.url?.trim()) ?? []
+    if (!items.length) return null
+    return (
+      <div data-campo="botones" className="mt-5 flex w-full flex-col gap-2.5">
+        {items.map((boton) => {
+          const colorFondoBoton = boton.colorFondo || colorBotonesFinal
+          const colorTextoBoton = boton.colorFondo ? obtenerColorContraste(boton.colorFondo) : colorTextoCta
+          const estiloBotonCta: React.CSSProperties = {
+            backgroundColor: colorFondoBoton ? `${colorFondoBoton}${alfaVidrio}` : undefined,
+            color: colorTextoBoton,
+            borderColor: boton.colorBorde,
+            ...estiloVidrio,
+            ...estiloTexturaBoton(boton.textura),
+          }
+          const tieneUrl = Boolean(boton.url?.trim())
+          return (
+            <div key={boton.id} className="relative">
+              <BotonCtaModal boton={boton} estiloCta={estiloBotonCta} />
+              <a
+                {...(tieneUrl
+                  ? { href: boton.url, target: "_blank", rel: "noopener noreferrer" }
+                  : {})}
+                onClick={() => track("click_enlace", { tipo_enlace: "boton_cta", boton_titulo: boton.titulo })}
+                style={estiloBotonCta}
+                className={cn(
+                  "flex w-full items-center gap-3 overflow-hidden rounded-2xl border py-3 pl-9 pr-4 text-left shadow-sm transition-all duration-200 ease-out",
+                  tieneUrl && "hover:-translate-y-0.5 hover:shadow-md active:translate-y-0",
+                  !boton.colorBorde && "border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.12)]",
+                  !colorFondoBoton &&
+                    "bg-[rgba(255,255,255,0.85)] text-[#18181b] dark:bg-[rgba(255,255,255,0.06)] dark:text-[#fafafa]"
+                )}
+              >
+                <ContenidoBotonCta boton={boton} />
+              </a>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const RENDER_SECCION: Record<string, () => React.ReactNode> = {
+    servicios: renderServicios,
+    agenda: renderAgenda,
+    productos: renderProductos,
+    botones: renderBotones,
+  }
+  const ordenFinal = ordenSeccionesNormalizado(ordenSecciones)
+
   return (
     <div className={cn("flex flex-col items-center gap-4", esOscuro && "dark")}>
       <article
@@ -358,7 +740,17 @@ export function TarjetaCard({
             // no depende en absoluto de cuánto crezca el contenido. Se
             // apaga en sm: (la card vuelve a ser chica y centrada, un
             // fondo a pantalla completa detrás no tendría sentido ahí).
-            <div className="fixed inset-0 z-0 sm:hidden" aria-hidden>
+            // Alto explícito en `100svh` (small viewport height, NO
+            // `inset-0`/`100dvh`): al llegar al final del scroll — donde
+            // vive el <footer>, fuera de este componente — el navegador
+            // mobile suele reaparecer su barra de herramientas, lo que
+            // recalcula un alto dinámico al vuelo y hacía que la imagen
+            // "saltara"/se reacomodara en ese instante (bug real
+            // reportado). `svh` usa el viewport más chico posible (barra
+            // siempre visible) y no cambia con ese reflow — el precio es
+            // que puede quedar un margen angosto debajo en el momento en
+            // que la barra se oculta, preferible al salto.
+            <div className="fixed inset-x-0 top-0 z-0 h-[100svh] sm:hidden" aria-hidden>
               <Image
                 src={fondoImagenUrl!}
                 alt=""
@@ -431,6 +823,36 @@ export function TarjetaCard({
             ))}
         </div>
 
+        {/* Avatar: SIEMPRE al frente de todo (banner y tarjeta de
+            contenido incluidos), sin excepción — por eso vive como
+            hermano posicionado absoluto con el z-index más alto, en vez de
+            hijo del panel de contenido (`data-campo="divisor"` más abajo).
+            La razón real: `clip-path` en un elemento recorta también a
+            TODOS sus descendientes — si el avatar fuera hijo del panel
+            (que lleva el clip-path del divisor), quedaba recortado
+            exactamente donde coincidía con la muesca de la forma,
+            "detrás" del banner que se revelaba ahí (bug real reportado).
+            Posición calculada a mano para calzar con el look de siempre
+            (mismo -mt-14 doble que tenía anidado: -56px de "subir sobre
+            el banner" + 12px del padding-top del panel + -56px propios =
+            -100px desde el borde inferior del banner). */}
+        <div
+          className="pointer-events-none absolute inset-x-0 z-20 flex justify-center"
+          style={{ top: alturaBanner - 100 }}
+        >
+          <div data-campo="avatar">
+            <AvatarForma
+              forma={avatarForma}
+              tamanoPx={96}
+              imagenUrl={avatarUrl}
+              imagenPosicion={avatarPosicion}
+              alt={nombrePrincipal ?? "Avatar"}
+              iniciales={iniciales(nombrePrincipal)}
+              unoptimized={avatarUrl ? !esUrlOptimizable(avatarUrl) : undefined}
+            />
+          </div>
+        </div>
+
         <div
           data-campo="divisor"
           style={{
@@ -440,7 +862,20 @@ export function TarjetaCard({
           }}
           className={cn(
             "relative z-10 -mt-14 border-t px-6 pb-7 pt-3 text-center shadow-[0_-8px_30px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl",
-            pantallaCompleta && "min-h-[var(--alto-min-divisor)] sm:min-h-0",
+            // Jerarquía de capas: banner atrás, esta tarjeta de contenido
+            // adelante (se superpone al banner con -mt-14, tapándolo salvo
+            // donde el clip-path del divisor la recorta). El avatar va
+            // SIEMPRE más adelante todavía que ambas — por eso ya NO vive
+            // acá adentro (ver el div absoluto z-20 justo arriba de este,
+            // hermano en vez de hijo): un `clip-path` en este div recorta
+            // también a sus descendientes, así que un avatar anidado acá
+            // quedaba recortado exactamente donde coincidía con la muesca
+            // del divisor (bug real reportado — "el avatar queda detrás
+            // del banner"). La FORMA (onda/diagonal/zigzag) es el borde
+            // superior de esta tarjeta — nunca se aplica al banner en sí
+            // (el banner nunca lleva clip-path) — y al recortarla queda
+            // visible el banner de atrás, tal cual es, sin ninguna capa de
+            // color agregada encima (sin colores, solo la forma).
             !estiloDivisor && (pantallaCompleta ? "rounded-2xl sm:rounded-t-[2rem]" : "rounded-t-[2rem]"),
             tieneFondoImagen
               ? "border-[rgba(255,255,255,0.3)] bg-[rgba(255,255,255,0.55)] dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(24,24,27,0.55)]"
@@ -449,19 +884,12 @@ export function TarjetaCard({
                 : "border-[rgba(255,255,255,0.5)] bg-[rgba(255,255,255,0.85)] dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(24,24,27,0.85)]"
           )}
         >
-          <div className="-mt-14 flex justify-center">
-            <div data-campo="avatar">
-              <AvatarForma
-                forma={avatarForma}
-                tamanoPx={96}
-                imagenUrl={avatarUrl}
-                imagenPosicion={avatarPosicion}
-                alt={nombrePrincipal ?? "Avatar"}
-                iniciales={iniciales(nombrePrincipal)}
-                unoptimized={avatarUrl ? !esUrlOptimizable(avatarUrl) : undefined}
-              />
-            </div>
-          </div>
+          {/* Espaciador: el avatar real ya no vive acá (ver el div
+              absoluto z-20 más arriba) pero el layout del panel sigue
+              necesitando el mismo hueco de siempre arriba del badge/
+              nombre — mismo alto que el wrapper que reemplazó (96px de
+              avatar - 14*4px de margen negativo que tenía = 40px netos). */}
+          <div className="h-10" aria-hidden />
 
           {slug?.trim() && (
             <span
@@ -472,7 +900,7 @@ export function TarjetaCard({
                   "bg-[rgba(24,24,27,0.05)] text-[#71717a] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#a1a1aa]"
               )}
             >
-              <Sparkles className="size-3" />
+              {IconoBadge && <IconoBadge className="size-3" />}
               @{slug.trim()}
             </span>
           )}
@@ -492,38 +920,67 @@ export function TarjetaCard({
           </h1>
           {empresa?.trim() && (
             <p
-              style={{ fontFamily: fuenteCuerpo, ...estiloTextoGeneral }}
+              style={{
+                fontFamily: fuenteCuerpo,
+                ...estiloTextoGeneral,
+                ...(colorTextoSecundario ? { color: colorTextoSecundario } : undefined),
+              }}
               className="text-sm font-medium text-[#3f3f46] dark:text-[#d4d4d8]"
             >
               {empresa}
             </p>
           )}
           {puesto?.trim() && (
-            <p
-              data-campo="bio"
-              style={{ fontFamily: fuenteCuerpo, ...estiloTextoGeneral }}
-              className="mt-1.5 max-w-xs text-sm whitespace-pre-line text-[#52525b] dark:text-[#a1a1aa]"
-            >
-              {puesto}
-            </p>
+            // Antes era un párrafo gris chico, del mismo peso visual (o
+            // menos) que la dirección/horario de abajo — para un texto
+            // relevante (la Bio es la presentación del dueño), eso lee
+            // como "sin jerarquía". Ahora: una regla corta con el color de
+            // acento de la tarjeta (mismo que botones/badges, siempre
+            // coherente con la identidad elegida) la introduce como un
+            // elemento de diseño deliberado, y el texto en sí sube de
+            // tamaño/peso/contraste — ya no compite en el mismo nivel que
+            // el dato de ubicación (que además ahora vive en su propia
+            // card, ver más abajo).
+            <div className="mt-3 flex flex-col items-center gap-1.5">
+              <span
+                aria-hidden
+                className="h-0.5 w-8 rounded-full"
+                style={{ backgroundColor: colorBotonesFinal || "#a1a1aa" }}
+              />
+              <p
+                data-campo="bio"
+                style={{ fontFamily: fuenteCuerpo, ...estiloTextoGeneral }}
+                className="max-w-xs text-[15px] leading-relaxed font-medium whitespace-pre-line text-[#3f3f46] dark:text-[#e4e4e7]"
+              >
+                {puesto}
+              </p>
+            </div>
           )}
 
           {(direccion?.trim() || horarios?.trim()) && (
+            // Card con borde propia (mismo lenguaje visual que agenda/
+            // servicios/productos) — antes esto era texto plano centrado
+            // pegado debajo de la Bio, sin ningún límite visual entre
+            // ambos: Bio, dirección y horario se leían como un solo bloque
+            // de texto gris. El borde + fondo tenue + alineación a la
+            // izquierda separan claramente "esto es un dato estructurado",
+            // no una continuación de la Bio. `whitespace-pre-line` en cada
+            // valor: el editor permite hasta 3 líneas por campo.
             <div
               data-campo="ubicacion"
               style={estiloTextoGeneral}
-              className="mt-3 flex flex-col items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]"
+              className="mt-4 flex w-full flex-col gap-1.5 rounded-xl border border-[rgba(0,0,0,0.05)] bg-[rgba(0,0,0,0.02)] px-3 py-2.5 text-left text-xs text-[#71717a] dark:border-[rgba(255,255,255,0.08)] dark:bg-[rgba(255,255,255,0.03)] dark:text-[#a1a1aa]"
             >
               {direccion?.trim() && (
-                <span className="inline-flex items-start gap-1">
+                <span className="inline-flex items-start gap-1.5">
                   <MapPin className="mt-0.5 size-3.5 shrink-0" />
-                  <span>{direccion}</span>
+                  <span className="whitespace-pre-line">{direccion}</span>
                 </span>
               )}
               {horarios?.trim() && (
-                <span className="inline-flex items-start gap-1">
+                <span className="inline-flex items-start gap-1.5">
                   <Clock className="mt-0.5 size-3.5 shrink-0" />
-                  <span>{horarios}</span>
+                  <span className="whitespace-pre-line">{horarios}</span>
                 </span>
               )}
             </div>
@@ -615,314 +1072,9 @@ export function TarjetaCard({
             </div>
           )}
 
-          {seccionesServicios?.length ? (
-            // Modelo nuevo: N secciones tipo catálogo (mismo patrón visual
-            // que la grilla de "Productos" de abajo — título, precio,
-            // descripción, imagen, enlace por ítem). El folleto PDF sigue
-            // colgado de la sección [0] únicamente.
-            seccionesServicios.map((seccion, indiceSeccion) => {
-              const tituloSeccion =
-                seccion.titulo?.trim() || (indiceSeccion === 0 ? "Servicios" : `Sección ${indiceSeccion + 1}`)
-              const mostrarBrochure = indiceSeccion === 0 && Boolean(brochureUrl)
-              if (!seccion.items.length && !mostrarBrochure) return null
-              const abierta = seccionesServiciosAbiertas.has(indiceSeccion)
-              return (
-                <div
-                  key={indiceSeccion}
-                  data-campo={`servicios-${indiceSeccion}`}
-                  className="mt-5 w-full text-left"
-                >
-                  {seccion.items.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleSeccionServicios(indiceSeccion)}
-                      className="flex w-full items-center justify-between gap-2"
-                    >
-                      <h2
-                        style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
-                        className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
-                      >
-                        {tituloSeccion} ({seccion.items.length})
-                      </h2>
-                      <ChevronDown
-                        className={cn(
-                          "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
-                          abierta && "rotate-180"
-                        )}
-                      />
-                    </button>
-                  ) : (
-                    <h2
-                      style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
-                      className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
-                    >
-                      {tituloSeccion}
-                    </h2>
-                  )}
-                  {abierta && seccion.items.length > 0 && (
-                    <div className="mt-3 grid grid-cols-3 gap-2.5">
-                      {seccion.items.map((item, index) => (
-                        <div
-                          key={index}
-                          className="flex flex-col overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
-                        >
-                          {item.imagenUrl ? (
-                            <div className="relative aspect-square w-full">
-                              <Image
-                                src={item.imagenUrl}
-                                alt={item.titulo}
-                                fill
-                                sizes="(max-width: 640px) 30vw, 128px"
-                                unoptimized={!esUrlOptimizable(item.imagenUrl)}
-                                className="object-cover"
-                              />
-                            </div>
-                          ) : (
-                            <div className="aspect-square w-full bg-[#f4f4f5] dark:bg-[#27272a]" />
-                          )}
-                          <div style={estiloTextoGeneral} className="px-1.5 py-1.5 text-center">
-                            <p className="truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]">
-                              {item.titulo}
-                            </p>
-                            {item.descripcion?.trim() && (
-                              <p className="mt-0.5 line-clamp-2 text-[10px] text-[#71717a] dark:text-[#a1a1aa]">
-                                {item.descripcion}
-                              </p>
-                            )}
-                            {item.precio?.trim() && (
-                              <p className="mt-0.5 text-[10px] font-semibold text-[#18181b] dark:text-[#fafafa]">
-                                ${item.precio}
-                              </p>
-                            )}
-                            {item.enlaceUrl?.trim() && (
-                              <a
-                                href={item.enlaceUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-[#3f3f46] underline underline-offset-2 dark:text-[#d4d4d8]"
-                              >
-                                Ver más <ExternalLink className="size-2.5" />
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {mostrarBrochure && (
-                    <a
-                      href={brochureUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={estiloCta}
-                      className={cn(
-                        "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
-                        !estiloCta && "bg-foreground text-background"
-                      )}
-                    >
-                      <FileText className="size-3.5" /> Descargar folleto (PDF)
-                    </a>
-                  )}
-                </div>
-              )
-            })
-          ) : (
-            // Legacy: tarjeta todavía no regrabada con el modelo nuevo — se
-            // mantiene el render viejo exacto (una sola lista título+
-            // descripción, con la descripción general y el folleto) para no
-            // perder contenido real ya publicado. En cuanto el dueño guarda
-            // una vez desde el editor, pasa a `seccionesServicios` y esta
-            // rama deja de usarse para esa tarjeta.
-            (descripcionServicios?.trim() || servicios?.length || brochureUrl) && (
-              <div data-campo="servicios-0" className="mt-5 w-full text-left">
-                <h2
-                  style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
-                  className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
-                >
-                  {tituloServicios?.trim() || "Servicios"}
-                </h2>
-                {descripcionServicios?.trim() && (
-                  <p
-                    style={{ fontFamily: fuenteCuerpo, ...estiloTextoGeneral }}
-                    className="mt-1.5 text-sm text-[#3f3f46] dark:text-[#d4d4d8]"
-                  >
-                    {descripcionServicios}
-                  </p>
-                )}
-                {Boolean(servicios?.length) && (
-                  <div className="mt-3 flex flex-col gap-2">
-                    {servicios?.map((servicio, index) => {
-                      const abierto = serviciosAbiertos.has(index)
-                      const tieneDescripcion = Boolean(servicio.descripcion?.trim())
-                      return (
-                        <div
-                          key={index}
-                          style={estiloTextoGeneral}
-                          className="overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => tieneDescripcion && toggleServicio(index)}
-                            className="flex w-full items-center justify-between gap-2 bg-[rgba(24,24,27,0.03)] p-3 text-left dark:bg-[rgba(255,255,255,0.05)]"
-                          >
-                            <span className="flex items-center gap-1.5 text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
-                              {servicio.titulo}
-                            </span>
-                            {tieneDescripcion && (
-                              <ChevronDown
-                                className={cn(
-                                  "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
-                                  abierto && "rotate-180"
-                                )}
-                              />
-                            )}
-                          </button>
-                          {abierto && tieneDescripcion && (
-                            <p className="border-t border-[rgba(0,0,0,0.05)] p-3 text-xs text-[#71717a] dark:border-[rgba(255,255,255,0.08)] dark:text-[#a1a1aa]">
-                              {servicio.descripcion}
-                            </p>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-                {brochureUrl && (
-                  <a
-                    href={brochureUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={estiloCta}
-                    className={cn(
-                      "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
-                      !estiloCta && "bg-foreground text-background"
-                    )}
-                  >
-                    <FileText className="size-3.5" /> Descargar folleto (PDF)
-                  </a>
-                )}
-              </div>
-            )
-          )}
-
-          {Boolean(agendaServicios?.length) && (
-            <div data-campo="agenda" className="mt-5 w-full text-left">
-              <h2
-                style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
-                className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
-              >
-                Agendar
-              </h2>
-              <div className="mt-3 flex flex-col gap-2">
-                {agendaServicios?.map((servicio) =>
-                  agendaInteractiva ? (
-                    <ReservarServicio
-                      key={servicio.id}
-                      tarjetaId={tarjetaId!}
-                      zonaHoraria={zonaHoraria!}
-                      servicio={servicio}
-                    />
-                  ) : (
-                    <div
-                      key={servicio.id}
-                      style={estiloTextoGeneral}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-[rgba(0,0,0,0.05)] p-3 dark:border-[rgba(255,255,255,0.08)]"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
-                          {servicio.nombre}
-                        </p>
-                        <p className="mt-0.5 flex items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]">
-                          <Clock className="size-3" /> {formatDuracion(servicio.duracion_minutos)}
-                          {" · "}
-                          {servicio.requiere_pago_inmediato ? "Pago al agendar" : "Pago contra entrega"}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-sm font-semibold text-[#18181b] dark:text-[#fafafa]">
-                        ${servicio.precio}
-                      </span>
-                    </div>
-                  )
-                )}
-              </div>
-            </div>
-          )}
-
-          {Boolean(productos?.length) && (
-            <div data-campo="productos" className="mt-5 w-full text-left">
-              <button
-                type="button"
-                onClick={() => setProductosAbiertos((valor) => !valor)}
-                className="flex w-full items-center justify-between gap-2"
-              >
-                <h2
-                  style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
-                  className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
-                >
-                  {tituloProductos?.trim() || "Productos"} ({productos?.length ?? 0})
-                </h2>
-                <ChevronDown
-                  className={cn(
-                    "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
-                    productosAbiertos && "rotate-180"
-                  )}
-                />
-              </button>
-              {productosAbiertos && (
-                <div className="mt-3 grid grid-cols-3 gap-2.5">
-                  {productos?.map((producto, index) => (
-                    <div
-                      key={index}
-                      className="flex flex-col overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
-                    >
-                      {producto.imagenUrl ? (
-                        <div className="relative aspect-square w-full">
-                          <Image
-                            src={producto.imagenUrl}
-                            alt={producto.titulo}
-                            fill
-                            sizes="(max-width: 640px) 30vw, 128px"
-                            unoptimized={!esUrlOptimizable(producto.imagenUrl)}
-                            className="object-cover"
-                          />
-                        </div>
-                      ) : (
-                        <div className="aspect-square w-full bg-[#f4f4f5] dark:bg-[#27272a]" />
-                      )}
-                      <div style={estiloTextoGeneral} className="px-1.5 py-1.5 text-center">
-                        <p className="truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]">
-                          {producto.titulo}
-                        </p>
-                        {producto.descripcion?.trim() && (
-                          <p className="mt-0.5 line-clamp-2 text-[10px] text-[#71717a] dark:text-[#a1a1aa]">
-                            {producto.descripcion}
-                          </p>
-                        )}
-                        {producto.precio?.trim() && (
-                          <p className="mt-0.5 text-[10px] font-semibold text-[#18181b] dark:text-[#fafafa]">
-                            ${producto.precio}
-                          </p>
-                        )}
-                        {producto.enlaceUrl?.trim() && (
-                          <a
-                            href={producto.enlaceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() =>
-                              track("click_producto", { producto_titulo: producto.titulo })
-                            }
-                            className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-[#3f3f46] underline underline-offset-2 dark:text-[#d4d4d8]"
-                          >
-                            Ver producto <ExternalLink className="size-2.5" />
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {ordenFinal.map((id) => (
+            <React.Fragment key={id}>{RENDER_SECCION[id]()}</React.Fragment>
+          ))}
         </div>
       </article>
     </div>

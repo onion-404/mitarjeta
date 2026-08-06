@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-08-04. Fuente de verdad para que una sesión nueva entienda el
+> Última actualización: 2026-08-05. Fuente de verdad para que una sesión nueva entienda el
 > estado real del proyecto sin releer el historial de chat. Actualizar cuando cambie algo de
 > lo que describe. **Para el detalle histórico de verificaciones, bugs encontrados en el
 > camino, capturas de pantalla y logs de sesiones anteriores, ver [HISTORIAL.md](HISTORIAL.md)
@@ -658,6 +658,158 @@ real desde esta sesión salvo que se indique lo contrario):
   `tsc --noEmit` + `eslint` limpios; Bloque A/B/C confirmados en navegador con tarjetas de
   prueba reales; el trigger de DB confirmado rechazando el 3er cambio con
   `tarjeta_slug_historial` quedando en exactamente 2 filas. Detalle completo en HISTORIAL.md.
+
+## Botones CTA + orden de secciones + color de texto secundario (2026-08-05)
+- **Botones CTA**: nueva sección "Botón" del editor — `DatosContacto.botones?: BotonCta[]`
+  (jsonb, sin migración). Ancho completo, uno por línea, varios por tarjeta (tope
+  `TOPE_BOTONES = 8` en `tarjeta-form.tsx`). Cada uno: título, subtítulo, ícono (curado,
+  `BOTON_ICONOS` en `lib/boton-cta.ts`, ~21 lucide genéricos) O imagen (Cloudinary,
+  `mitarjeta/botones`) a la izquierda, color de fondo/borde propios (default: `colorBotones`),
+  textura de fondo prediseñada (`BOTON_TEXTURAS` — patrones CSS puros, blanco translúcido a
+  bajo alfa sobre el color elegido, sin subir assets).
+  - **Link de WhatsApp**: helper sutil ("Crear link de WhatsApp", texto con subrayado, no un
+    botón grande) dentro de cada botón — número (con atajo "usar el mismo de Canales de
+    contacto" si hay uno) + mensaje → `construirUrlWhatsapp()` arma el `wa.me/...?text=...` y
+    lo vuelca al campo Enlace del botón.
+  - **3 puntos → modal**: `src/components/tarjeta/boton-cta-modal.tsx` (`<BotonCtaModal>`) —
+    trigger "⋮" a la izquierda del botón real (hermano del `<a>`, NO anidado — un `<button>`
+    dentro de un `<a>` es HTML inválido), abre un Dialog con vista previa idéntica al CTA real,
+    info (título/subtítulo/url) y compartir (copiar enlace, share nativo o WhatsApp, abrir
+    enlace) — todo apuntando a la URL de ESE botón, no a la tarjeta.
+  - Evento `click_enlace` con `tipo_enlace: "boton_cta"` (mismo tipo de evento que el resto de
+    enlaces, sin sumar un tipo nuevo al CHECK constraint de `eventos_metricas`).
+- **Orden de secciones**: `IdentidadVisual.ordenSecciones?: SeccionOrdenable[]`
+  (`"servicios"|"agenda"|"productos"|"botones"`) — nueva sub-sección "Orden de secciones" en
+  el editor con flechas ↑/↓ (mismo patrón que `guardarOrden` de testimonios, sin
+  drag-and-drop). `TarjetaCard` refactorizado: los 4 bloques pasaron de JSX embebido fijo a
+  funciones (`renderServicios/Agenda/Productos/Botones`) recorridas según
+  `ordenSeccionesNormalizado(ordenSecciones)` (`lib/boton-cta.ts`) — tolerante hacia adelante:
+  una tarjeta que ya tenía un orden guardado ANTES de que existiera "botones" lo agrega al
+  final en vez de perderlo. Default (`ORDEN_SECCIONES_DEFAULT`) reproduce el orden fijo de
+  siempre: servicios → agenda → productos → botones.
+- **Color de texto secundario**: `IdentidadVisual.colorTextoSecundario` — mismo criterio que
+  `colorTitulo` (vacío = auto-contraste, tier "basica"/Alcance+, sumado a
+  `CAMPOS_COLOR_BASICOS` en `lib/personalizacion.ts`), controla la línea "Rol o descripción"
+  (`empresa`) en vez del `<h1>`. Control ubicado junto a "Color del título" en "Datos
+  esenciales" (mismo bloque de tipografía reubicado, ver Bloque B de la sección anterior).
+- **Fix — imagen de fondo "saltaba" al llegar al footer (mobile)**: el layer `fixed` de fondo
+  a pantalla completa (`tarjeta-card.tsx`) usaba `inset-0` (alto dinámico, equivalente a
+  `100dvh`) — al llegar al final del scroll el navegador mobile suele reaparecer su barra de
+  herramientas, lo que recalculaba el alto al vuelo y hacía "saltar" la imagen. Cambiado a
+  altura explícita `h-[100svh]` (small viewport height, no cambia con ese reflow).
+- **Fix — logo del footer sin contraste cuando la imagen de fondo bleedea detrás**: `<Logo
+  oscuro?: boolean>` (prop nueva, default `false`, sin tocar ningún otro consumidor) fuerza
+  triángulo + wordmark a `text-white` con un ternario (no clases apiladas — dos utilities para
+  el mismo color no tienen un orden de "gana la última" confiable en Tailwind). `[slug]/
+  page.tsx` solo pasa `oscuro` cuando `fondoImagenUrl` está seteado — **bug real encontrado en
+  la verificación visual de esta sesión**: la primera versión también miraba el `temaModo`/
+  `fondoTarjetaColor` de la TARJETA (vía un helper `esTarjetaOscura()` que se llegó a agregar
+  a `lib/personalizacion.ts`), pero ese tema solo aplica al panel de la card (el toggle
+  `.dark` vive adentro de `TarjetaCard`) — el `<footer>` es del SITIO, con su propio fondo
+  claro que ya se auto-adapta al modo del sistema operativo vía CSS; forzarlo a blanco por el
+  tema de la tarjeta daba logo blanco sobre fondo claro, invisible. Se sacó ese criterio del
+  cálculo — el helper sigue existiendo en `lib/personalizacion.ts` por si hace falta a futuro,
+  pero HOY no tiene caller. El único caso real en que el footer deja de tener su fondo claro
+  de siempre es cuando la imagen de fondo de la tarjeta bleedea detrás — ahí sí, footer gana
+  un scrim (`bg-black/45 backdrop-blur-sm`) para legibilidad
+  garantizada sin importar el contenido de la foto.
+- Verificado desde esta sesión: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas, una vez
+  agregado `.env.local`) limpios. Verificado también EN VIVO (Claude Code + navegador,
+  `npm run dev` + 2 tarjetas de prueba sembradas y borradas al terminar, con permiso explícito
+  del usuario para escribir en producción sin ambiente de staging): botones CTA con las 3
+  texturas, modal de "⋮", orden de secciones custom, color de texto secundario, bleed de
+  imagen de fondo detrás del footer con logo blanco + scrim — todo confirmado visualmente. 🔴
+  Sin probar en un dispositivo mobile real todavía (el fix del salto del fondo al llegar al
+  footer depende del comportamiento de la barra de herramientas del navegador mobile, no
+  reproducible con un resize de ventana de escritorio).
+- **Bug real encontrado y corregido en esa verificación visual**: la primera versión del logo
+  del footer también miraba el tema de la TARJETA (ver nota de "Fix — logo del footer" arriba,
+  ya corregida) — quedaba blanco sobre blanco cuando la tarjeta era oscura pero no tenía
+  imagen de fondo. Confirmado el fix con captura real.
+
+## Fixes de contraste visual — Bio/dirección/horario y divisor del banner (2026-08-05, feedback del cliente tras la sesión anterior)
+- **Bio, dirección y horario se leían como un solo bloque de texto**: los 3 eran párrafos
+  grises centrados apilados con poco espacio entre sí, sin ningún límite visual — visualmente
+  indistinguibles como "3 cosas diferentes" (título del hallazgo del cliente). Fix en
+  `TarjetaCard`: dirección+horario ahora viven en su propia card con borde
+  (`rounded-xl border ... bg-[rgba(0,0,0,0.02)]`, mismo lenguaje visual que las cards de
+  agenda/servicios/productos del resto de la tarjeta), alineada a la izquierda en vez de
+  centrada, con más separación (`mt-4` en vez de `mt-3`) respecto a la Bio — la Bio queda como
+  párrafo suelto (sin caja), la dirección/horario quedan claramente agrupados y delimitados
+  como un dato estructurado aparte.
+- **Divisor del banner (onda/diagonal/zigzag) — jerarquía de capas aclarada por el cliente
+  tras dos idas y vueltas** (dejar registrado el resultado final, no las iteraciones
+  intermedias que se revirtieron): la jerarquía correcta, confirmada, es **banner atrás →
+  tarjeta de contenido adelante (se superpone al banner) → avatar más adelante todavía**. El
+  panel de contenido SIEMPRE overlapea el banner con `-mt-14` (56px, sin condicional — esto NO
+  cambió de cómo estaba antes de esta sesión), y el clip-path del divisor se aplica al panel
+  (nunca al banner en sí, que no lleva clip-path en ningún caso) — el resultado correcto es
+  que el banner se vea DE VERDAD (sin ninguna capa de color agregada encima, "sin colores,
+  solo la forma") a través de la muesca del borde superior del panel. Iteración intermedia
+  descartada en esta misma sesión: se probó sacar el overlap (`mt-0`) para que el clip-path
+  "no tocara" el banner, más una capa "eco" de color detrás para que la muesca no quedara
+  lavada blanco-sobre-blanco — el cliente aclaró que NO es lo que pidió: quiere el banner real
+  visible detrás a través de la forma (posible gracias al overlap + z-order correcto), no una
+  copia de color. Se revirtió por completo esa iteración (sin `ALTO_REFERENCIA_DIVISOR` extra
+  importado en `tarjeta-card.tsx`, sin capa `absolute` nueva).
+  - Verificado en navegador real (ambas iteraciones, la revertida y la final) con los 3
+    divisores + recta + banner de foto real + tema oscuro + banner de gradiente. `tsc
+    --noEmit`/`eslint` limpios en el estado final.
+- **Bug real de la jerarquía de capas, encontrado por el cliente probando el fix anterior en
+  vivo — el avatar quedaba "detrás" del banner**: `clip-path` en un contenedor recorta TAMBIÉN
+  a sus descendientes — el avatar vivía anidado adentro del panel de contenido (que lleva el
+  clip-path del divisor), así que quedaba recortado exactamente donde coincidía con la muesca
+  de la forma (onda/diagonal/zigzag), dejando ver el banner "por encima" del avatar ahí. Fix:
+  el avatar se sacó de adentro del panel — ahora es un `<div>` HERMANO, `position: absolute`,
+  `z-20` (por encima del banner y del panel, ambos `z-10`), `pointer-events-none` (decorativo,
+  nunca fue clickeable, evita que su caja invisible de ancho completo tape clicks en
+  badge/botones de abajo). Posición calculada a mano para no mover nada más:
+  `top: alturaBanner - 100` (mismo resultado visual que el `-mt-14` doble anidado que tenía
+  antes: -56px de superponerse al banner + 12px del padding-top del panel + -56px propios). El
+  panel de contenido ganó un spacer (`<div className="h-10" aria-hidden />`) donde antes vivía
+  el wrapper del avatar, para que el badge/nombre/etc. no se corran ni un píxel — verificado
+  en navegador que el layout de "recta" (sin clip-path, donde este bug no pasaba) es pixel-
+  idéntico a como estaba. Confirmado también con avatar real (foto) e iniciales (sin foto):
+  ambos casos quedan completos y al frente de todo, nunca recortados.
+
+## Multilínea en dirección/horario, jerarquía de la Bio, ícono opcional del badge y más íconos de profesiones (2026-08-05, mismo día)
+- **Dirección/horario admiten hasta 3 líneas**: en el editor pasaron de `<input>` a
+  `<textarea rows={2}>`, con `limitarLineas(valor, 3)` (helper nuevo en `tarjeta-form.tsx`,
+  corta por `\n` en el propio `onChange` — imposible escribir una 4ª línea, no es solo un
+  aviso posterior). `TarjetaCard` ya tenía `whitespace-pre-line` en el contenedor de la card
+  de ubicación; le faltaba en los `<span>` internos de cada valor (dirección/horario) — sin
+  eso el salto de línea se guardaba pero se renderizaba todo en una sola línea larga.
+- **Jerarquía visual de la Bio**: se veía como texto de relleno, con MENOS peso que la propia
+  dirección/horario (raro para el texto de presentación del dueño). Fix en `TarjetaCard`: una
+  regla corta (`h-0.5 w-8`) con el color de acento de la tarjeta (`colorBotonesFinal`, siempre
+  coherente con la identidad elegida) la antecede como elemento de diseño deliberado, y el
+  texto subió de `text-sm` gris claro a `text-[15px] font-medium leading-relaxed` con mucho
+  más contraste (`#3f3f46`/`#e4e4e7` en vez de `#52525b`/`#a1a1aa`). Sin agregar ningún campo
+  nuevo de personalización — reutiliza el color de botones que ya existía.
+- **Ícono del badge "@enlace" opcional + elegible**: `IdentidadVisual.badgeIconoActivo`
+  (default `true` — compatibilidad, toda tarjeta vieja se veía siempre con Sparkles puesto) +
+  `badgeIconoId` (reusa el mismo set curado que los botones CTA, `BOTON_ICONOS` en
+  `lib/boton-cta.ts` — un solo picker de íconos para todo el producto, no uno distinto por
+  feature). Control nuevo en "Colores y tipografía" del editor, junto al color de Badges:
+  `Switch` + grilla de íconos (mismo patrón visual que el picker de ícono de los botones CTA).
+  `TarjetaCard` calcula `IconoBadge` una sola vez (`badgeIconoActivo === false ? null :
+  obtenerBotonIcono(badgeIconoId)?.Icono ?? Sparkles`) y lo reusa en el único lugar donde se
+  renderiza el badge.
+- **Más íconos curados, con foco en profesiones/rubros** (pedido explícito): 18 nuevos en
+  `BOTON_ICONOS` — automotriz (Car), salud (Stethoscope), peluquería (Scissors), negocios
+  (Briefcase), construcción (Hammer/HardHat), gastronomía (ChefHat), arte (Paintbrush),
+  educación (GraduationCap), entrenamiento (Dumbbell), diseño (Palette), inmobiliaria (Home),
+  jardinería (Leaf), legal (Gavel), arquitectura (Building2), plomería (Wrench), veterinaria
+  (PawPrint), mudanzas (Truck). 🔴 **Nota real**: se pidió explícitamente un ícono de "diente"
+  (dentista) — `lucide-react` (versión instalada) NO tiene ningún ícono de diente bajo ningún
+  nombre (se comprobó programáticamente contra el export completo del paquete, el único match
+  para "tooth" es "Bluetooth"). Se usó Stethoscope como el más cercano disponible para salud/
+  consultorio en general — si hace falta un diente literal, la única vía es un ícono custom
+  (SVG propio o subir como imagen, ya soportado por el picker imagen/ícono de los botones).
+- Verificado en navegador real: tarjeta con dirección/horario de 3 líneas cada uno, Bio larga
+  con la nueva jerarquía, badge con ícono de salud custom, botones con íconos de salud/auto —
+  y confirmado que desactivar el ícono del badge lo saca por completo (queda solo `@slug`).
+  `tsc --noEmit`/`eslint` limpios.
 
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴 Migración `20260801000000_add_tarjeta_slug_historial.sql` sin aplicar — límite de slug

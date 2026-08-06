@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
+  ChevronUp,
   FileText,
   Loader2,
   Moon,
@@ -21,6 +22,7 @@ import * as React from "react"
 
 import { AccionesTarjeta } from "@/components/tarjeta/acciones-tarjeta"
 import { AgendaServicios } from "@/components/tarjeta/agenda-servicios"
+import { ContenidoBotonCta, estiloTexturaBoton } from "@/components/tarjeta/boton-cta-modal"
 import { EstadisticasTarjeta } from "@/components/tarjeta/estadisticas-tarjeta"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -34,6 +36,14 @@ import { SelectorTipografia } from "@/components/tarjeta/selector-tipografia"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
 import { BANNER_PRESETS } from "@/lib/banner-presets"
+import {
+  BOTON_ICONOS,
+  BOTON_TEXTURAS,
+  SECCIONES_ORDENABLES,
+  construirUrlWhatsapp,
+  ordenSeccionesNormalizado,
+} from "@/lib/boton-cta"
+import { obtenerColorContraste } from "@/lib/contraste"
 import { validarCupon } from "@/lib/cupones"
 import { estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import {
@@ -50,6 +60,7 @@ import { getLimiteCambioSlug, type LimiteCambioSlug } from "@/lib/tarjetas"
 import { cn } from "@/lib/utils"
 import type {
   AvatarForma,
+  BotonCta,
   Cupon,
   DatosContacto,
   DivisorBanner,
@@ -60,6 +71,7 @@ import type {
   PlataformaRed,
   Producto,
   RedSocial,
+  SeccionOrdenable,
   ServicioAgendable,
   SeccionServicios,
   Tarjeta,
@@ -85,6 +97,36 @@ interface SeccionServiciosFormState {
   items: ProductoFormState[]
 }
 
+/** Estado de un botón CTA en el editor — `colorFondoActivo`/`colorBordeActivo`
+ *  son toggles explícitos (mismo criterio que `fondoTarjetaActivo`): un
+ *  `<input type="color">` siempre tiene algún valor, así que no alcanza con
+ *  mirar si el campo "tiene algo" para saber si el dueño lo personalizó. El
+ *  mini-form de WhatsApp (`waAbierto`/`waNumero`/`waMensaje`) vive en el
+ *  mismo estado porque es exclusivo de cada botón (no hay "el" número de
+ *  WhatsApp de un botón fuera de esto).
+ */
+interface BotonCtaFormState {
+  id: string
+  titulo: string
+  subtitulo: string
+  url: string
+  iconoTipo: "imagen" | "icono"
+  iconoId: string
+  imagenFile: File | null
+  imagenPreview: string
+  imagenUrlExistente: string
+  colorFondoActivo: boolean
+  colorFondo: string
+  textura: string
+  colorBordeActivo: boolean
+  colorBorde: string
+  waAbierto: boolean
+  waNumero: string
+  waMensaje: string
+}
+
+const TOPE_BOTONES = 8
+
 const inputClase =
   "w-full rounded-xl border border-border bg-white/70 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none backdrop-blur transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-zinc-900/60"
 const labelClase = "text-sm font-medium text-foreground"
@@ -107,6 +149,13 @@ function redesValidas(redes: RedSocial[]) {
     if (red.plataforma === "personalizado") return red.url.trim().length > 0
     return red.url.trim().length > obtenerPlataforma(red.plataforma).prefijo.length
   })
+}
+
+/** Corta un valor a un máximo de líneas (dirección/horarios: hasta 3) —
+ *  se aplica en el propio onChange, así el límite es imposible de superar
+ *  tecleando en vez de solo avisar después. */
+function limitarLineas(valor: string, maxLineas: number) {
+  return valor.split("\n").slice(0, maxLineas).join("\n")
 }
 
 const TAMANO_MAXIMO_ARCHIVO_MB = 5
@@ -276,6 +325,30 @@ export function TarjetaForm({
       imagenUrlExistente: producto.imagenUrl ?? "",
     }))
   )
+
+  // Botones CTA — ver BotonCtaFormState arriba.
+  const [botones, setBotones] = React.useState<BotonCtaFormState[]>(
+    (datosIniciales?.botones ?? []).map((boton) => ({
+      id: boton.id,
+      titulo: boton.titulo,
+      subtitulo: boton.subtitulo ?? "",
+      url: boton.url,
+      iconoTipo: boton.iconoTipo ?? "icono",
+      iconoId: boton.iconoId ?? BOTON_ICONOS[0].id,
+      imagenFile: null,
+      imagenPreview: "",
+      imagenUrlExistente: boton.imagenUrl ?? "",
+      colorFondoActivo: Boolean(boton.colorFondo),
+      colorFondo: boton.colorFondo ?? "#6366f1",
+      textura: boton.textura ?? "ninguna",
+      colorBordeActivo: Boolean(boton.colorBorde),
+      colorBorde: boton.colorBorde ?? "#18181b",
+      waAbierto: false,
+      waNumero: "",
+      waMensaje: "",
+    }))
+  )
+
   const [colorPrimario, setColorPrimario] = React.useState(
     visualInicial?.colorPrimario ?? "#6366f1"
   )
@@ -297,6 +370,19 @@ export function TarjetaForm({
   const [colorTitulo, setColorTitulo] = React.useState(visualInicial?.colorTitulo ?? "")
   const [tituloTamano, setTituloTamano] = React.useState(visualInicial?.tituloTamano ?? 20)
   const [tituloPeso, setTituloPeso] = React.useState(visualInicial?.tituloPeso ?? 600)
+  // Color de la línea "Rol o descripción" (empresa) — mismo criterio que
+  // colorTitulo: vacío = auto-contraste.
+  const [colorTextoSecundario, setColorTextoSecundario] = React.useState(
+    visualInicial?.colorTextoSecundario ?? ""
+  )
+
+  // Ícono del badge "@enlace" — opcional, con el mismo set curado que los
+  // botones CTA (BOTON_ICONOS). Activo por defecto (compatibilidad: toda
+  // tarjeta vieja se veía siempre con Sparkles puesto).
+  const [badgeIconoActivo, setBadgeIconoActivo] = React.useState(
+    visualInicial?.badgeIconoActivo ?? true
+  )
+  const [badgeIconoId, setBadgeIconoId] = React.useState(visualInicial?.badgeIconoId ?? "sparkles")
 
   // --- Personalización avanzada (gating por plan, ver lib/personalizacion.ts) ---
   const [colorBotones, setColorBotones] = React.useState(
@@ -362,6 +448,24 @@ export function TarjetaForm({
   const [tituloProductos, setTituloProductos] = React.useState(
     visualInicial?.tituloProductos ?? ""
   )
+
+  // Orden de aparición de las secciones opcionales en la tarjeta pública —
+  // el dueño lo reordena con flechas ↑/↓ (ver contenidoOrdenSecciones más
+  // abajo). Normalizado siempre: una tarjeta vieja sin este campo arranca
+  // en el orden fijo de siempre (servicios → agenda → productos → botones).
+  const [ordenSecciones, setOrdenSecciones] = React.useState<SeccionOrdenable[]>(() =>
+    ordenSeccionesNormalizado(visualInicial?.ordenSecciones)
+  )
+
+  function moverSeccion(index: number, direccion: -1 | 1) {
+    setOrdenSecciones((prev) => {
+      const destino = index + direccion
+      if (destino < 0 || destino >= prev.length) return prev
+      const copia = [...prev]
+      ;[copia[index], copia[destino]] = [copia[destino], copia[index]]
+      return copia
+    })
+  }
 
   // Fail-closed: sin plan confirmado (ni el elegido al crear, ni uno activo
   // en edición), el gating queda en el nivel más restrictivo — mismo
@@ -915,6 +1019,95 @@ export function TarjetaForm({
     })
   }
 
+  // --- Botones CTA ---------------------------------------------------
+
+  function agregarBoton() {
+    setBotones((prev) =>
+      prev.length >= TOPE_BOTONES
+        ? prev
+        : [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              titulo: "",
+              subtitulo: "",
+              url: "",
+              iconoTipo: "icono",
+              iconoId: BOTON_ICONOS[0].id,
+              imagenFile: null,
+              imagenPreview: "",
+              imagenUrlExistente: "",
+              colorFondoActivo: false,
+              colorFondo: colorBotones,
+              textura: "ninguna",
+              colorBordeActivo: false,
+              colorBorde: "#18181b",
+              waAbierto: false,
+              waNumero: whatsapp || "",
+              waMensaje: "",
+            },
+          ]
+    )
+  }
+
+  function actualizarBoton<K extends keyof BotonCtaFormState>(
+    index: number,
+    campo: K,
+    valor: BotonCtaFormState[K]
+  ) {
+    setBotones((prev) => prev.map((boton, i) => (i === index ? { ...boton, [campo]: valor } : boton)))
+  }
+
+  function handleBotonImagenChange(index: number, event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const error = validarImagen(file)
+    if (error) {
+      mostrarErrorArchivo(error)
+      event.target.value = ""
+      return
+    }
+    setBotones((prev) =>
+      prev.map((boton, i) => {
+        if (i !== index) return boton
+        if (boton.imagenPreview) URL.revokeObjectURL(boton.imagenPreview)
+        return { ...boton, imagenFile: file, imagenPreview: URL.createObjectURL(file), imagenUrlExistente: "" }
+      })
+    )
+  }
+
+  function quitarBotonImagen(index: number) {
+    setBotones((prev) =>
+      prev.map((boton, i) => {
+        if (i !== index) return boton
+        if (boton.imagenPreview) URL.revokeObjectURL(boton.imagenPreview)
+        return { ...boton, imagenFile: null, imagenPreview: "", imagenUrlExistente: "" }
+      })
+    )
+  }
+
+  function quitarBoton(index: number) {
+    setBotones((prev) => {
+      const actual = prev[index]
+      if (actual?.imagenPreview) URL.revokeObjectURL(actual.imagenPreview)
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  /** Arma la URL de wa.me con el número/mensaje del mini-form y la vuelca
+   *  al campo "Enlace" del botón — el número es propio de ESE botón (puede
+   *  repetir el de "Canales de contacto" o ser otro), no se persiste
+   *  aparte, solo queda codificado en la URL final. */
+  function generarUrlWhatsappBoton(index: number) {
+    setBotones((prev) =>
+      prev.map((boton, i) =>
+        i === index
+          ? { ...boton, url: construirUrlWhatsapp(boton.waNumero, boton.waMensaje), waAbierto: false }
+          : boton
+      )
+    )
+  }
+
   function handleAvatarChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -1074,6 +1267,7 @@ export function TarjetaForm({
     let fondoImagenUrlFinal: string | undefined = fondoImagenUrlExistente || undefined
     const imagenesProductoPorIndice = new Map<number, string>()
     const imagenesServicioItemPorClave = new Map<string, string>()
+    const imagenesBotonPorIndice = new Map<number, string>()
 
     type TareaSubida =
       | { tipo: "avatar"; etiqueta: string; promesa: Promise<string | null> }
@@ -1088,6 +1282,7 @@ export function TarjetaForm({
           etiqueta: string
           promesa: Promise<string | null>
         }
+      | { tipo: "boton"; indice: number; etiqueta: string; promesa: Promise<string | null> }
 
     const tareas: TareaSubida[] = []
 
@@ -1173,6 +1368,17 @@ export function TarjetaForm({
       })
     })
 
+    botones.forEach((boton, indice) => {
+      if (boton.titulo.trim() && boton.iconoTipo === "imagen" && boton.imagenFile) {
+        tareas.push({
+          tipo: "boton",
+          indice,
+          etiqueta: `la imagen de "${boton.titulo.trim()}"`,
+          promesa: subirImagenCloudinary(boton.imagenFile, "mitarjeta/botones").catch(() => null),
+        })
+      }
+    })
+
     // Todas las subidas (avatar, banner, folleto y fotos de productos y
     // servicios) se disparan en paralelo en vez de esperarse una por una: en
     // una conexión móvil esto reduce el tiempo de guardado a una fracción
@@ -1197,6 +1403,7 @@ export function TarjetaForm({
       else if (tarea.tipo === "brochure") brochureUrl = url
       else if (tarea.tipo === "fondoImagen") fondoImagenUrlFinal = url
       else if (tarea.tipo === "producto") imagenesProductoPorIndice.set(tarea.indice, url)
+      else if (tarea.tipo === "boton") imagenesBotonPorIndice.set(tarea.indice, url)
       else imagenesServicioItemPorClave.set(`${tarea.indiceSeccion}-${tarea.indiceItem}`, url)
     })
 
@@ -1245,6 +1452,28 @@ export function TarjetaForm({
       // nunca se llenó.
       .filter((seccion, i) => i === 0 || seccion.titulo || seccion.items.length > 0)
 
+    const botonesFinales: BotonCta[] = botones
+      // El índice se toma ANTES de filtrar (mismo criterio que
+      // productosFinales arriba) — imagenesBotonPorIndice quedó indexado
+      // contra el array original de `botones`, no contra el filtrado.
+      .map((boton, indice) => ({ boton, indice }))
+      .filter(({ boton }) => boton.titulo.trim())
+      .map(({ boton, indice }) => ({
+        id: boton.id,
+        titulo: boton.titulo.trim(),
+        subtitulo: boton.subtitulo.trim() || undefined,
+        url: boton.url.trim(),
+        iconoTipo: boton.iconoTipo,
+        imagenUrl:
+          boton.iconoTipo === "imagen"
+            ? (imagenesBotonPorIndice.get(indice) ?? boton.imagenUrlExistente ?? undefined)
+            : undefined,
+        iconoId: boton.iconoTipo === "icono" ? boton.iconoId : undefined,
+        colorFondo: boton.colorFondoActivo ? boton.colorFondo : undefined,
+        textura: boton.textura !== "ninguna" ? boton.textura : undefined,
+        colorBorde: boton.colorBordeActivo ? boton.colorBorde : undefined,
+      }))
+
     const datos_contacto: DatosContacto = {
       direccion: direccion.trim() || undefined,
       direccionMapsUrl: direccionMapsUrl.trim() || undefined,
@@ -1252,6 +1481,7 @@ export function TarjetaForm({
       seccionesServicios: seccionesServiciosFinales,
       productos: productosFinales,
       redes: redesFinales,
+      botones: botonesFinales,
       nombre: nombre.trim(),
       empresa: empresa.trim() || undefined,
       puesto: puesto.trim() || undefined,
@@ -1301,6 +1531,10 @@ export function TarjetaForm({
           ? fondoTarjetaDireccionGrados
           : undefined,
       tituloProductos: tituloProductos.trim() || undefined,
+      colorTextoSecundario: colorTextoSecundario || undefined,
+      ordenSecciones,
+      badgeIconoActivo,
+      badgeIconoId: badgeIconoActivo ? badgeIconoId : undefined,
     }
 
     if (bloqueosGuardado.length > 0) {
@@ -1494,6 +1728,24 @@ export function TarjetaForm({
       })),
   }))
 
+  // La vista previa refleja el color/textura/borde tal cual el dueño los
+  // está probando, aunque todavía no haya guardado — mismo criterio que el
+  // resto de identidadVisualActual (colores/plantillas en vivo).
+  const botonesActuales: BotonCta[] = botones
+    .filter((boton) => boton.titulo.trim())
+    .map((boton) => ({
+      id: boton.id,
+      titulo: boton.titulo,
+      subtitulo: boton.subtitulo || undefined,
+      url: boton.url,
+      iconoTipo: boton.iconoTipo,
+      imagenUrl: boton.iconoTipo === "imagen" ? boton.imagenPreview || boton.imagenUrlExistente || undefined : undefined,
+      iconoId: boton.iconoTipo === "icono" ? boton.iconoId : undefined,
+      colorFondo: boton.colorFondoActivo ? boton.colorFondo : undefined,
+      textura: boton.textura !== "ninguna" ? boton.textura : undefined,
+      colorBorde: boton.colorBordeActivo ? boton.colorBorde : undefined,
+    }))
+
   const datosContactoActual: DatosContacto = {
     direccion,
     direccionMapsUrl,
@@ -1501,6 +1753,7 @@ export function TarjetaForm({
     seccionesServicios: seccionesServiciosActuales,
     productos: productosActuales,
     redes: redesValidas(redes),
+    botones: botonesActuales,
     nombre,
     empresa,
     puesto,
@@ -1550,6 +1803,10 @@ export function TarjetaForm({
         ? fondoTarjetaDireccionGrados
         : undefined,
     tituloProductos: tituloProductos.trim() || undefined,
+    colorTextoSecundario: colorTextoSecundario || undefined,
+    ordenSecciones,
+    badgeIconoActivo,
+    badgeIconoId: badgeIconoActivo ? badgeIconoId : undefined,
   }
 
   const bloqueosGuardado = calcularBloqueos(
@@ -1747,6 +2004,34 @@ export function TarjetaForm({
               className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
             />
           </label>
+        </div>
+
+        <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+          <label className="flex items-center justify-between gap-3">
+            <span className="text-xs text-muted-foreground">Ícono en el badge del enlace (@usuario)</span>
+            <Switch checked={badgeIconoActivo} onCheckedChange={setBadgeIconoActivo} />
+          </label>
+          {badgeIconoActivo && (
+            <div className="flex flex-wrap gap-1.5">
+              {BOTON_ICONOS.map(({ id, etiqueta, Icono }) => (
+                <button
+                  key={id}
+                  type="button"
+                  title={etiqueta}
+                  aria-label={etiqueta}
+                  onClick={() => setBadgeIconoId(id)}
+                  className={cn(
+                    "flex size-8 items-center justify-center rounded-lg border-2 transition-colors duration-200 ease-out",
+                    badgeIconoId === id
+                      ? "border-foreground bg-background"
+                      : "border-border bg-background/50 hover:bg-background"
+                  )}
+                >
+                  <Icono className="size-4" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
@@ -2032,6 +2317,28 @@ export function TarjetaForm({
               type="color"
               value={colorTitulo || "#18181b"}
               onChange={(e) => setColorTitulo(e.target.value)}
+              onFocus={() => scrollPreviewTo("nombre")}
+              className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+            />
+          </div>
+        </label>
+
+        <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+          <span className="text-xs text-muted-foreground">Color del texto secundario</span>
+          <div className="flex items-center gap-2">
+            {colorTextoSecundario && (
+              <button
+                type="button"
+                onClick={() => setColorTextoSecundario("")}
+                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                Automático
+              </button>
+            )}
+            <input
+              type="color"
+              value={colorTextoSecundario || "#3f3f46"}
+              onChange={(e) => setColorTextoSecundario(e.target.value)}
               onFocus={() => scrollPreviewTo("nombre")}
               className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
             />
@@ -2527,12 +2834,13 @@ export function TarjetaForm({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
           <span className={labelClase}>Dirección física</span>
-          <input
+          <textarea
             value={direccion}
-            onChange={(e) => setDireccion(e.target.value)}
+            onChange={(e) => setDireccion(limitarLineas(e.target.value, 3))}
             onFocus={() => scrollPreviewTo("ubicacion")}
-            placeholder="Av. Siempre Viva 742"
-            className={inputClase}
+            rows={2}
+            placeholder={"Av. Siempre Viva 742\nCol. Centro"}
+            className={cn(inputClase, "resize-none")}
           />
         </label>
         <label className="flex flex-col gap-1.5">
@@ -2548,12 +2856,13 @@ export function TarjetaForm({
       </div>
       <label className="flex flex-col gap-1.5">
         <span className={labelClase}>Horarios de atención</span>
-        <input
+        <textarea
           value={horarios}
-          onChange={(e) => setHorarios(e.target.value)}
+          onChange={(e) => setHorarios(limitarLineas(e.target.value, 3))}
           onFocus={() => scrollPreviewTo("ubicacion")}
-          placeholder="Lun a Vie 9 a 18hs"
-          className={inputClase}
+          rows={2}
+          placeholder={"Lun a Vie 9 a 18hs\nSáb 9 a 13hs"}
+          className={cn(inputClase, "resize-none")}
         />
       </label>
     </div>
@@ -2881,6 +3190,330 @@ export function TarjetaForm({
     </div>
   )
 
+  // Orden de aparición de Servicios/Agenda/Productos/Botones en la tarjeta
+  // pública — mismo patrón de flechas ↑/↓ que ya usa /admin/testimonios
+  // para reordenar (sin librería de drag-and-drop nueva).
+  const contenidoOrdenSecciones = (
+    <div className="flex flex-col gap-2 px-5 pb-5 pt-1">
+      <p className="text-xs text-muted-foreground">
+        Elegí en qué orden aparecen estas secciones en tu tarjeta pública.
+      </p>
+      {ordenSecciones.map((id, index) => {
+        const meta = SECCIONES_ORDENABLES.find((s) => s.id === id)
+        return (
+          <div
+            key={id}
+            className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/50 px-3 py-2"
+          >
+            <span className="text-sm font-medium text-foreground">{meta?.etiqueta ?? id}</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => moverSeccion(index, -1)}
+                disabled={index === 0}
+                aria-label={`Subir ${meta?.etiqueta ?? id}`}
+                className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronUp className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => moverSeccion(index, 1)}
+                disabled={index === ordenSecciones.length - 1}
+                aria-label={`Bajar ${meta?.etiqueta ?? id}`}
+                className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronDown className="size-4" />
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+
+  const contenidoBotones = (
+    <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+      <p className="text-xs text-muted-foreground">
+        Botones de ancho completo con título, subtítulo, ícono o imagen y un enlace — ideales
+        como llamado a la acción (agendar, comprar, WhatsApp, etc.).
+      </p>
+
+      {botones.map((boton, index) => {
+        const imagenMostrada = boton.imagenPreview || boton.imagenUrlExistente
+        const estiloPreview: React.CSSProperties = {
+          backgroundColor: boton.colorFondoActivo ? boton.colorFondo : colorBotones,
+          color: obtenerColorContraste(boton.colorFondoActivo ? boton.colorFondo : colorBotones),
+          borderColor: boton.colorBordeActivo ? boton.colorBorde : undefined,
+          ...estiloTexturaBoton(boton.textura),
+        }
+        return (
+          <div
+            key={boton.id}
+            className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/50 p-3"
+          >
+            {/* Vista previa en vivo — mismo markup que el CTA real. */}
+            <div
+              style={estiloPreview}
+              className="relative flex w-full items-center gap-3 overflow-hidden rounded-2xl border px-4 py-3"
+            >
+              <ContenidoBotonCta
+                boton={{
+                  id: boton.id,
+                  titulo: boton.titulo,
+                  subtitulo: boton.subtitulo,
+                  url: boton.url,
+                  iconoTipo: boton.iconoTipo,
+                  imagenUrl: imagenMostrada || undefined,
+                  iconoId: boton.iconoId,
+                }}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                value={boton.titulo}
+                onChange={(e) => actualizarBoton(index, "titulo", e.target.value)}
+                onFocus={() => scrollPreviewTo("botones")}
+                placeholder="Título del botón"
+                className={cn(inputClase, "flex-1")}
+              />
+              <button
+                type="button"
+                onClick={() => quitarBoton(index)}
+                aria-label="Quitar botón"
+                className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
+            <input
+              value={boton.subtitulo}
+              onChange={(e) => actualizarBoton(index, "subtitulo", e.target.value)}
+              onFocus={() => scrollPreviewTo("botones")}
+              placeholder="Subtítulo (opcional)"
+              className={inputClase}
+            />
+            <input
+              type="url"
+              value={boton.url}
+              onChange={(e) => actualizarBoton(index, "url", e.target.value)}
+              onFocus={() => scrollPreviewTo("botones")}
+              placeholder="Enlace (https://...)"
+              className={inputClase}
+            />
+
+            {/* Helper de WhatsApp — sutil a propósito (texto con enlace, no
+                un botón grande): la mayoría de los botones no lo necesita. */}
+            {boton.waAbierto ? (
+              <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-3">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">Número de WhatsApp</span>
+                  <input
+                    value={boton.waNumero}
+                    onChange={(e) => actualizarBoton(index, "waNumero", e.target.value)}
+                    placeholder="Ej. 5215512345678"
+                    className={inputClase}
+                  />
+                </label>
+                {whatsapp && whatsapp !== boton.waNumero && (
+                  <button
+                    type="button"
+                    onClick={() => actualizarBoton(index, "waNumero", whatsapp)}
+                    className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  >
+                    Usar el mismo de &ldquo;Canales de contacto&rdquo; ({whatsapp})
+                  </button>
+                )}
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">Mensaje (opcional)</span>
+                  <textarea
+                    value={boton.waMensaje}
+                    onChange={(e) => actualizarBoton(index, "waMensaje", e.target.value)}
+                    rows={2}
+                    placeholder="Hola, quiero más información..."
+                    className={cn(inputClase, "resize-none")}
+                  />
+                </label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!boton.waNumero.trim()}
+                    onClick={() => generarUrlWhatsappBoton(index)}
+                  >
+                    Generar enlace
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => actualizarBoton(index, "waAbierto", false)}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => actualizarBoton(index, "waAbierto", true)}
+                className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                Crear link de WhatsApp
+              </button>
+            )}
+
+            {/* Ícono a la izquierda del botón: imagen subida o uno curado. */}
+            <div className="flex flex-col gap-2">
+              <span className="text-xs text-muted-foreground">Ícono o imagen (a la izquierda)</span>
+              <div className="inline-flex w-fit rounded-full border border-border bg-white/70 p-0.5 dark:bg-zinc-900/60">
+                {(["icono", "imagen"] as const).map((tipo) => (
+                  <button
+                    key={tipo}
+                    type="button"
+                    onClick={() => actualizarBoton(index, "iconoTipo", tipo)}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-xs font-medium transition-colors duration-200 ease-out",
+                      boton.iconoTipo === tipo
+                        ? "bg-foreground text-background"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {tipo === "icono" ? "Ícono" : "Imagen"}
+                  </button>
+                ))}
+              </div>
+
+              {boton.iconoTipo === "icono" ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {BOTON_ICONOS.map(({ id, etiqueta, Icono }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      title={etiqueta}
+                      aria-label={etiqueta}
+                      onClick={() => actualizarBoton(index, "iconoId", id)}
+                      className={cn(
+                        "flex size-8 items-center justify-center rounded-lg border-2 transition-colors duration-200 ease-out",
+                        boton.iconoId === id
+                          ? "border-foreground bg-background"
+                          : "border-border bg-background/50 hover:bg-background"
+                      )}
+                    >
+                      <Icono className="size-4" />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  {imagenMostrada && (
+                    <div className="relative shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
+                      <img
+                        src={imagenMostrada}
+                        alt="Vista previa del botón"
+                        className="size-12 rounded-full border border-border object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => quitarBotonImagen(index)}
+                        aria-label="Quitar imagen del botón"
+                        className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleBotonImagenChange(index, e)}
+                    className={cn(
+                      inputClase,
+                      "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                    )}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Fondo, textura y borde. */}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+                <span className="text-xs text-muted-foreground">Color de fondo</span>
+                <div className="flex items-center gap-2">
+                  {boton.colorFondoActivo && (
+                    <button
+                      type="button"
+                      onClick={() => actualizarBoton(index, "colorFondoActivo", false)}
+                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    >
+                      Quitar
+                    </button>
+                  )}
+                  <input
+                    type="color"
+                    value={boton.colorFondo}
+                    onChange={(e) => {
+                      actualizarBoton(index, "colorFondo", e.target.value)
+                      actualizarBoton(index, "colorFondoActivo", true)
+                    }}
+                    className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                  />
+                </div>
+              </label>
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+                <span className="text-xs text-muted-foreground">Color del borde</span>
+                <div className="flex items-center gap-2">
+                  {boton.colorBordeActivo && (
+                    <button
+                      type="button"
+                      onClick={() => actualizarBoton(index, "colorBordeActivo", false)}
+                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    >
+                      Quitar
+                    </button>
+                  )}
+                  <input
+                    type="color"
+                    value={boton.colorBorde}
+                    onChange={(e) => {
+                      actualizarBoton(index, "colorBorde", e.target.value)
+                      actualizarBoton(index, "colorBordeActivo", true)
+                    }}
+                    className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                  />
+                </div>
+              </label>
+            </div>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted-foreground">Textura de fondo</span>
+              <select
+                value={boton.textura}
+                onChange={(e) => actualizarBoton(index, "textura", e.target.value)}
+                className={inputClase}
+              >
+                {BOTON_TEXTURAS.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.etiqueta}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )
+      })}
+
+      {botones.length < TOPE_BOTONES && (
+        <Button type="button" variant="outline" size="sm" onClick={agregarBoton} className="self-start">
+          <Plus className="size-3.5" /> Agregar botón
+        </Button>
+      )}
+    </div>
+  )
+
   const contenidoAgenda = esEdicion && tarjeta && (
     <div className="px-5 pb-5 pt-1">
       <AgendaServicios
@@ -3014,6 +3647,8 @@ export function TarjetaForm({
     })),
     { id: "productos", titulo: "Productos", contenido: contenidoProductos },
     ...(esEdicion && tarjeta ? [{ id: "agenda", titulo: "Agenda", contenido: contenidoAgenda }] : []),
+    { id: "botones", titulo: "Botón", contenido: contenidoBotones },
+    { id: "orden", titulo: "Orden de secciones", contenido: contenidoOrdenSecciones },
     ...(esEdicion && tarjeta
       ? [{ id: "metricas", titulo: "Estadísticas", contenido: contenidoMetricas }]
       : []),

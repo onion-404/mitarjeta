@@ -1,4 +1,18 @@
+import { obtenerColorContraste } from "@/lib/contraste"
 import type { AvatarForma, DivisorBanner, EstiloTipografia, IdentidadVisual } from "@/lib/types"
+
+// ============================================================================
+// esTarjetaOscura — mismo criterio de contraste que ya usa TarjetaCard para
+// togglear la clase `.dark` de todo el panel (fondoTarjetaColor manda si
+// está seteado, si no cae a temaModo). Extraído acá para que consumidores
+// FUERA de TarjetaCard (ej. el <footer> de [slug]/page.tsx, que necesita
+// saber si el logo debe ser blanco) no dupliquen la lógica.
+// ============================================================================
+export function esTarjetaOscura(identidadVisual: Pick<IdentidadVisual, "fondoTarjetaColor" | "temaModo">): boolean {
+  return identidadVisual.fondoTarjetaColor
+    ? obtenerColorContraste(identidadVisual.fondoTarjetaColor) === "#ffffff"
+    : identidadVisual.temaModo === "oscuro"
+}
 
 // ============================================================================
 // Formas de avatar
@@ -326,6 +340,7 @@ const CAMPOS_COLOR_BASICOS = [
   "colorBotones",
   "colorBadges",
   "colorTitulo",
+  "colorTextoSecundario",
 ] as const
 
 export function calcularBloqueos(

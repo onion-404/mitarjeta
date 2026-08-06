@@ -8,6 +8,14 @@ interface LogoProps {
   size?: "sm" | "md" | "lg"
   /** Ruta a la que enlaza el logo. `null` lo deja como texto sin link. */
   href?: string | null
+  /** true = fondo detrás del logo oscuro (ej. footer de una tarjeta con
+   *  tema oscuro o imagen de fondo) — fuerza triángulo y wordmark a blanco
+   *  en vez de los tokens de tema (`text-primary`/`text-foreground`, que
+   *  siguen el modo claro/oscuro del SITIO, no el de la tarjeta que se está
+   *  mostrando). Un ternario en vez de apilar clases: dos utilidades para
+   *  la misma propiedad de color no tienen un orden de "gana la última"
+   *  confiable en Tailwind. */
+  oscuro?: boolean
 }
 
 const TAMANOS = {
@@ -16,13 +24,18 @@ const TAMANOS = {
   lg: "text-3xl gap-2",
 }
 
-export function Logo({ className, size = "md", href = "/" }: LogoProps) {
+export function Logo({ className, size = "md", href = "/", oscuro = false }: LogoProps) {
   const contenido = (
     <span className={cn("inline-flex items-center", TAMANOS[size], className)}>
-      <span aria-hidden className="text-primary">
+      <span aria-hidden className={oscuro ? "text-white" : "text-primary"}>
         ▲
       </span>
-      <span className="font-[family-name:var(--font-logo)] font-bold text-foreground">
+      <span
+        className={cn(
+          "font-[family-name:var(--font-logo)] font-bold",
+          oscuro ? "text-white" : "text-foreground"
+        )}
+      >
         Linkard
       </span>
     </span>
