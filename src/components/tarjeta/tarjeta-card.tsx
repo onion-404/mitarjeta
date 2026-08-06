@@ -350,6 +350,17 @@ export function TarjetaCard({
     ? ({ "--alto-min-divisor": `calc(100dvh - ${alturaBanner}px)` } as React.CSSProperties)
     : undefined
 
+  // Contador de ítems junto al título de "Servicios"/"Productos" — antes
+  // "Título (N)" en texto plano, ahora un círculo (mismo gris que el
+  // título, sin depender de colorBadges) a pedido del cliente.
+  function ContadorCirculo({ cantidad }: { cantidad: number }): React.ReactNode {
+    return (
+      <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-[#71717a]/15 text-[10px] font-semibold normal-case tracking-normal text-[#71717a] dark:bg-[#a1a1aa]/15 dark:text-[#a1a1aa]">
+        {cantidad}
+      </span>
+    )
+  }
+
   // Servicios/Agenda/Productos/Botones: extraídas a funciones (en vez de
   // quedar embebidas directo en el JSX de más abajo) para poder recorrerlas
   // en el ORDEN que eligió el dueño (identidadVisual.ordenSecciones, ver
@@ -375,9 +386,10 @@ export function TarjetaCard({
               >
                 <h2
                   style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
-                  className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
+                  className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
                 >
-                  {tituloSeccion} ({seccion.items.length})
+                  {tituloSeccion}
+                  <ContadorCirculo cantidad={seccion.items.length} />
                 </h2>
                 <ChevronDown
                   className={cn(
@@ -598,9 +610,10 @@ export function TarjetaCard({
         >
           <h2
             style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
-            className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
+            className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
           >
-            {tituloProductos?.trim() || "Productos"} ({productos.length})
+            {tituloProductos?.trim() || "Productos"}
+            <ContadorCirculo cantidad={productos.length} />
           </h2>
           <ChevronDown
             className={cn(

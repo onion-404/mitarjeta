@@ -6,6 +6,7 @@ import { notFound } from "next/navigation"
 import { Logo } from "@/components/logo"
 import { TarjetaPublica } from "@/components/tarjeta/tarjeta-publica"
 import { buttonVariants } from "@/components/ui/button"
+import { esTarjetaOscura } from "@/lib/personalizacion"
 import { getServiciosAgendablesActivos, getTarjetaPublicada } from "@/lib/tarjetas"
 import { cn } from "@/lib/utils"
 
@@ -98,18 +99,16 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
   }
 
   const agendaServicios = await getServiciosAgendablesActivos(tarjeta.id)
-  // El footer NO hereda el tema (temaModo/fondoTarjetaColor) de la tarjeta —
-  // ese tema solo aplica al panel de la card (el toggle `.dark` vive
-  // adentro de TarjetaCard, ver esOscuro ahí), el footer sigue siendo del
-  // SITIO, con su propio fondo claro (`bg-zinc-50`) que ya se adapta solo
-  // al modo claro/oscuro del sistema operativo vía CSS — forzar el logo a
-  // blanco ahí sería logo blanco sobre fondo claro, invisible (bug real
-  // encontrado en verificación visual). El único caso real en que el
-  // footer deja de ser "su propio fondo claro" es cuando la imagen de
-  // fondo de la tarjeta (mobile, `fixed`) bleedea detrás de él — ahí sí
-  // hace falta forzar blanco + el scrim de abajo, sin importar el tema.
+  // El footer sigue el tema elegido en LA TARJETA (temaModo/fondoTarjetaColor,
+  // vía esTarjetaOscura — mismo criterio que ya usa TarjetaCard para
+  // togglear su propio `.dark`) — pedido explícito del cliente: blanco con
+  // tema claro, negro con tema oscuro. La imagen de fondo de la tarjeta
+  // (mobile, `fixed`) bleedeando detrás del footer sigue ganando por
+  // encima (scrim con blur en vez de negro plano, necesario para
+  // legibilidad sin importar qué tan clara/oscura sea la foto).
   const tieneFondoImagen = Boolean(tarjeta.identidad_visual.fondoImagenUrl)
-  const footerOscuro = tieneFondoImagen
+  const tarjetaOscura = esTarjetaOscura(tarjeta.identidad_visual)
+  const footerOscuro = tieneFondoImagen || tarjetaOscura
 
   return (
     <div className="relative flex w-full flex-1 flex-col overflow-hidden bg-zinc-50 dark:bg-black">
@@ -124,11 +123,13 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
           "relative flex flex-col items-center gap-2 border-t px-4 py-5 text-center text-xs",
           // Con imagen de fondo detrás (bleed), un scrim propio asegura
           // legibilidad sin importar qué tan clara/oscura sea la imagen —
-          // sin esto, `text-muted-foreground` sobre una foto cualquiera es
+          // sin esto, blanco/negro plano sobre una foto cualquiera es
           // ilegible la mitad de las veces.
           tieneFondoImagen
             ? "border-white/15 bg-black/45 text-white/90 backdrop-blur-sm"
-            : "border-border/60 text-muted-foreground"
+            : tarjetaOscura
+              ? "border-white/10 bg-black text-white/70"
+              : "border-border/60 bg-white text-muted-foreground"
         )}
       >
         <Logo size="sm" oscuro={footerOscuro} />
@@ -136,7 +137,15 @@ export default async function TarjetaPage({ params }: TarjetaPageProps) {
           <span>© {new Date().getFullYear()}</span>
           <Link
             href="/crear"
-            className="rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0"
+            className={cn(
+              "rounded-full px-4 py-2 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
+              // El pill usaba bg-foreground/text-background (tema del SITIO)
+              // sin importar el fondo real del footer — con footer negro
+              // (tarjeta oscura o imagen de fondo) eso podía quedar casi
+              // invisible. Contrasta contra el footerOscuro real en vez del
+              // tema del sitio.
+              footerOscuro ? "bg-white text-black" : "bg-foreground text-background"
+            )}
           >
             Crea tu propia tarjeta digital con Linkard
           </Link>
