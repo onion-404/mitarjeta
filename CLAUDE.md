@@ -810,6 +810,25 @@ real desde esta sesión salvo que se indique lo contrario):
   con la nueva jerarquía, badge con ícono de salud custom, botones con íconos de salud/auto —
   y confirmado que desactivar el ícono del badge lo saca por completo (queda solo `@slug`).
   `tsc --noEmit`/`eslint` limpios.
+- **Bug real reportado por el cliente probando el share en vivo — la Bio no salía siempre en
+  la miniatura (imagen OG) al compartir el link**: `[slug]/opengraph-image.tsx` calculaba
+  `subtitulo = empresa || puesto` — un OR excluyente. Con `empresa` Y `puesto` cargados (el
+  caso más común), la miniatura solo mostraba `empresa`, la Bio nunca aparecía; una tarjeta
+  con SOLO `puesto` (sin `empresa`) sí la mostraba vía el fallback — de ahí la inconsistencia
+  reportada ("en una sale, en otra no"). Fix: `empresa` y `puesto` ahora son dos líneas
+  independientes, ambas se muestran siempre que existan (ya no es un fallback exclusivo). La
+  Bio se trunca a 90 caracteres con `recortarTexto()` (nuevo helper local, corta en el último
+  espacio antes del límite cuando puede, agrega "…") — el lienzo de la imagen OG es de alto
+  fijo (630px) y Satori (el renderer de `next/og`) no soporta `text-overflow`/line-clamp de
+  forma confiable, así que el corte es manual. Nota: el texto SÍ hace wrap natural dentro del
+  ancho del contenedor cuando entra en 2 líneas sin necesidad de truncar — el límite de 90
+  caracteres es una red de seguridad para bios largas, no el mecanismo principal.
+  - Verificado generando la imagen real (`curl .../opengraph-image`) con bio corta (una línea,
+    sin cortar) y bio larga (trunca prolijo en un límite de palabra, sin desbordar el lienzo).
+  - `generateMetadata()` en `[slug]/page.tsx` (el `<meta name="description">`, NO la imagen)
+    tiene el mismo patrón `empresa || puesto` — se dejó como está a propósito: ahí sí es un
+    campo de resumen de una sola línea por naturaleza (no el bug reportado), no hace falta
+    combinarlos.
 
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴 Migración `20260801000000_add_tarjeta_slug_historial.sql` sin aplicar — límite de slug
