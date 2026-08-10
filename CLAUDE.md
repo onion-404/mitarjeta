@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-08-05. Fuente de verdad para que una sesión nueva entienda el
+> Última actualización: 2026-08-09. Fuente de verdad para que una sesión nueva entienda el
 > estado real del proyecto sin releer el historial de chat. Actualizar cuando cambie algo de
 > lo que describe. **Para el detalle histórico de verificaciones, bugs encontrados en el
 > camino, capturas de pantalla y logs de sesiones anteriores, ver [HISTORIAL.md](HISTORIAL.md)
@@ -545,7 +545,12 @@ real desde esta sesión salvo que se indique lo contrario):
   2.110.2, no expone filtro por email en `listUsers()`). `GET /api/admin/usuario-por-id`
   resuelve el email del dueño actual para mostrarlo antes de reasignar.
 
-## Secciones tipo catálogo — reemplazo del toggle "Servicios"
+## Secciones tipo catálogo — reemplazo del toggle "Servicios" (🔴 SUPERADO, ver "Unificación de Botones" más abajo)
+- **2026-08-09**: `seccionesServicios`/`productos` (y el folleto PDF suelto) descritos en esta
+  sección quedaron `@deprecated` — absorbidos por botones `tipo: "catalogo"`/`tipo: "archivo"`
+  del sistema unificado de Botones. Esta sección se deja tal cual para contexto histórico del
+  modelo intermedio, no describe el estado actual del código — ver "Unificación de Botones/
+  Servicios/Productos en un solo sistema de tipos" más abajo.
 - Reemplaza el modelo viejo (toggle Servicios: título+descripción general+lista simple+
   folleto) por N secciones tipo Productos (título+precio+descripción+imagen+enlace por ítem),
   tope 1/2/3 según plan Presencia/Alcance/Poder (`planes.features.secciones_servicios_max`).
@@ -659,7 +664,12 @@ real desde esta sesión salvo que se indique lo contrario):
   prueba reales; el trigger de DB confirmado rechazando el 3er cambio con
   `tarjeta_slug_historial` quedando en exactamente 2 filas. Detalle completo en HISTORIAL.md.
 
-## Botones CTA + orden de secciones + color de texto secundario (2026-08-05)
+## Botones CTA + orden de secciones + color de texto secundario (2026-08-05, 🔴 modelo de datos superado el 2026-08-09)
+- **2026-08-09**: `BotonCta` (plano, sin `tipo`, sin WhatsApp/opciones/catálogo/archivo) quedó
+  `@deprecated` — reemplazado por el discriminated union `Boton` de 5 tipos. El resto de esta
+  sección (íconos curados, texturas, `ordenSecciones`) sigue vigente conceptualmente, solo
+  cambió el modelo de datos y la UI del editor — ver "Unificación de Botones/Servicios/
+  Productos en un solo sistema de tipos" más abajo para el estado actual.
 - **Botones CTA**: nueva sección "Botón" del editor — `DatosContacto.botones?: BotonCta[]`
   (jsonb, sin migración). Ancho completo, uno por línea, varios por tarjeta (tope
   `TOPE_BOTONES = 8` en `tarjeta-form.tsx`). Cada uno: título, subtítulo, ícono (curado,
@@ -856,7 +866,140 @@ real desde esta sesión salvo que se indique lo contrario):
   (rol + bio combinados) y que el fallback sin rol/bio usa el nombre de la persona, nunca
   marketing. `tsc --noEmit`/`eslint` limpios.
 
+## Unificación de Botones/Servicios/Productos en un solo sistema de tipos (2026-08-09)
+- **Motivo**: pruebas con usuarios reales mostraron que "Servicios" y "Productos" (accordions
+  de catálogo, grid fijo de 3 columnas) no funcionaban bien para el usuario, mientras que
+  "Botones" (CTA de ancho completo) sí. Se eliminan esos dos toggles y todo el contenido pasa a
+  vivir en un solo sistema de "Botones" con **5 tipos** elegibles por ítem: `enlace`,
+  `whatsapp`, `opciones`, `catalogo`, `archivo`. Cero migraciones de schema — todo sigue en el
+  jsonb `datos_contacto`/`identidad_visual`.
+- **Modelo de datos** (`lib/types.ts`): `Boton = BotonEnlace | BotonWhatsapp | BotonOpciones |
+  BotonCatalogo | BotonArchivo` (discriminated union por `tipo`), reemplaza `BotonCta` (queda
+  `@deprecated`, sin `tipo` — se interpreta como `"enlace"` al leerlo).
+  - `BotonEnlace`: el CTA de siempre, SIN el mini-helper de armar link de WhatsApp (ver abajo).
+  - `BotonWhatsapp`: mismo look que enlace, pero `waNumero`/`waMensaje` en vez de `url` — la
+    URL final (`wa.me/...`) se resuelve recién al renderizar/guardar con `construirUrlWhatsapp()`
+    (`lib/boton-cta.ts`), nunca se persiste armada.
+  - `BotonArchivo`: reemplaza al folleto PDF suelto que colgaba de la sección `[0]` de
+    Servicios — `archivoUrl` (solo PDF, reusa `validarPdf`), carpeta Cloudinary
+    `mitarjeta/brochures` (ya whitelisteada, no se tocó el endpoint). **Exclusivo del plan
+    Poder** — reusa el feature flag `personalizacion_avanzada` que ya existía (Poder-exclusivo
+    desde antes), no se sumó un flag nuevo ni una migración.
+  - `BotonCatalogo`: reemplaza a "Servicios" Y "Productos" — `items: Producto[]` (mismo tipo de
+    siempre, sin cambios) + `vista: "grid2" | "lista1"` (elegida por el dueño; reemplaza el grid
+    fijo de 3 columnas de antes). Cuenta como "sección" contra
+    `planes.features.secciones_servicios_max` (1/2/3 según plan, mismo criterio que ya tenía
+    Servicios) — sea top-level o anidado dentro de un "opciones".
+  - `BotonOpciones`: botón padre que despliega/colapsa (toggle inline, NO modal) una lista de
+    `hijos: BotonHijo[]` — **un solo nivel de anidamiento** (`BotonHijo` excluye "opciones" a
+    propósito, decisión de negocio explícita: evita menús infinitos). Sin restricción de plan
+    propia (es organización visual, no contenido extra) — los hijos sí heredan la de su tipo
+    (ej. un hijo catálogo sigue contando contra el tope de secciones).
+  - `SeccionOrdenable` se angostó a `"agenda" | "botones"` — "servicios"/"productos" dejaron de
+    ser bloques propios, su posición ahora la da el orden INTERNO de la lista de botones
+    (reorden individual ↑/↓, ver abajo). `ordenSeccionesNormalizado()` ya era tolerante hacia
+    valores desconocidos, así que un `ordenSecciones` viejo con esos ids simplemente los ignora.
+- **Migración en memoria, función única** — `normalizarBotones(datosContacto, identidadVisual)`
+  (`lib/boton-cta.ts`): reusada TAL CUAL por el editor (`tarjeta-form.tsx`) y por el render
+  público (`tarjeta-card.tsx`), así ambos nunca pueden divergir en qué significa el contenido
+  legacy de una tarjeta. Resuelve: `botones` plano sin `tipo` → `"enlace"`; `seccionesServicios`
+  (con su propio fallback legacy de `servicios`/`tituloServicios`) → un `BotonCatalogo` por
+  sección; `productos` → un `BotonCatalogo` más; `brochureUrl` suelto → un `BotonArchivo`. IDs
+  determinísticos (`"migrado-servicios-0"`, etc., NUNCA `crypto.randomUUID()` para no romper
+  memoización entre renders). Nunca escribe — recién el próximo "Guardar" persiste en la forma
+  nueva. Orden relativo: si la tarjeta ya tenía un `ordenSecciones` guardado que ponía "botones"
+  antes de "servicios"/"productos", los botones planos van primero; si no, los catálogos/
+  archivo migrados van primero (mismo orden fijo de siempre).
+- **Editor** (`tarjeta-form.tsx`): un solo estado `botones: BotonFormState[]` (reemplaza los 3
+  states separados que había antes — `seccionesServicios`, `productos`, `botones` — y sus ~20
+  funciones CRUD). `BotonFormState` es plano (no discriminado), mismo criterio que ya usaba
+  `SeccionServiciosFormState` reusando `ProductoFormState` tal cual — evita narrowing/casteos en
+  cada `setState`; los campos no aplicables al `tipo` actual simplemente no se leen.
+  - **Fila-cabecera SIEMPRE visible, colapsada por defecto** si viene de datos ya guardados (un
+    botón agregado en la sesión arranca expandido): ícono/imagen chica + título + badge de tipo
+    + mover ↑/↓ + eliminar + chevron expandir/colapsar — pedido explícito del cliente, no
+    existía antes (todo el formulario de cada botón se veía siempre, sin colapsar ni reordenar
+    individualmente). `moverBotonEn`/`quitarBotonEn`/`actualizarBotonEn` direccionan por
+    `UbicacionBoton = { indice; indiceHijo? }` — mismo mecanismo sirve para el nivel superior y
+    para los hijos de un "opciones", sin duplicar funciones.
+  - Selector de tipo al agregar (`SelectorTipoBoton`, pills con candado si corresponde) — 5
+    opciones a nivel superior, 4 dentro de un "opciones" (sin "opciones").
+  - Panel expandido específico por tipo — enlace/whatsapp/archivo/opciones comparten el bloque
+    de ícono-imagen+color+textura (`contenidoIconoYColorBoton`, extraído para no repetirlo 4
+    veces); catálogo NO lo muestra (su tile público no usa esos campos). Copys de resolución de
+    imagen agregados a pedido: "Imagen cuadrada (1:1), mínimo 200×200px" (ícono/imagen de
+    botón), "...mínimo 600×600px" (imagen de ítem de catálogo).
+  - **Tope de hijos dentro de "opciones": `TOPE_HIJOS_OPCIONES = 6`** (valor propuesto por
+    Claude Code, no una cifra pedida explícitamente por el cliente — ajustar si hace falta).
+  - Ya NO existe `waAbierto`/"Crear link de WhatsApp" como mini-helper dentro de "enlace" — es
+    exactamente el pedido: WhatsApp pasa a ser su propio tipo, con número/mensaje siempre
+    visibles en su panel.
+  - **Regla eliminada a propósito**: la sección `[0]` de Servicios ya NO se persiste siempre
+    (antes se guardaba aunque estuviera vacía) — en una lista plana de botones todo sigue la
+    única regla `titulo.trim()`. Impacto esperado nulo (una sección vacía no tenía contenido
+    visible).
+- **Payload de guardado**: `TareaSubida` generalizado con `UbicacionBoton`/`claveBoton()`/
+  `claveItemCatalogo()` (extiende el patrón de clave compuesta que ya usaba
+  `imagenesServicioItemPorClave` a hasta 2 niveles: botón → \[hijo\] → \[ítem de catálogo\]).
+  `construirBotonFinal()` (recursivo, closure sobre los 3 Maps de URLs subidas) arma el `Boton`
+  final; `construirBotonPreview()` (función pura, sin Maps/índices) arma la vista previa en vivo
+  reusando el mismo criterio.
+- **Render público** (`tarjeta-card.tsx`): `renderServicios`/`renderProductos`/`renderBotones`
+  (3 funciones) colapsan en un único `renderBotones()` tipo-aware sobre
+  `normalizarBotones(datosContacto, identidadVisual)`. Un solo `Set<string>` de ids abiertos
+  (reemplaza 3 estados de toggle separados) + `itemCatalogoAbierto` para el modal de detalle.
+  - Ítem de catálogo → **modal de detalle nuevo** (`catalogo-item-modal.tsx`, clona el patrón
+    `Dialog.Root > Dialog.Portal > Dialog.Backdrop + Dialog.Popup` de `boton-cta-modal.tsx` en
+    vez de reusarlo — ese está acoplado a `BotonCta`/`BotonVistaPrevia`, no a `Producto`):
+    imagen grande, título, descripción completa, precio, botón "Ver más" (dispara
+    `click_producto`). El tile del grid/lista ya NO muestra descripción/precio/enlace inline
+    (antes iban los 4 datos apretados en un tile de ~110px) — solo imagen + título, el resto
+    vive en el modal.
+  - `ContenidoBotonCta`/`BotonCtaModal` (`boton-cta-modal.tsx`) generalizados a un tipo
+    `BotonVistaPrevia` (título/subtítulo/ícono/imagen/`url` ya resuelto) en vez de `BotonCta`
+    crudo — mismo patrón ad-hoc que el editor ya armaba en su preview, formalizado.
+  - `esUrlOptimizable` extraída de `tarjeta-card.tsx` a `lib/imagen-posicion.ts` (el modal de
+    catálogo también la necesita).
+- **Métrica de clicks** (decisión de negocio confirmada): TODO ítem de catálogo (venga
+  conceptualmente de "servicios" o "productos") trackea `click_producto`, igual que ya hacía
+  Productos — se pierde la distinción histórica de no medir Servicios, pero esa distinción deja
+  de existir en el modelo. `whatsapp`/`archivo`/hijos de "opciones" usan `click_enlace` con
+  `metadata.tipo_enlace` (`"boton_whatsapp"`, `"boton_archivo"`, `"boton_opciones_hijo"` +
+  `boton_padre`) — mismo patrón de discriminar por `metadata` que ya usaba `"boton_cta"`, sin
+  agregar ningún valor nuevo al CHECK constraint de `eventos_metricas.tipo_evento`.
+- **Gating de plan** (decisiones de negocio confirmadas): Catálogo hereda el tope 1/2/3 de
+  `secciones_servicios_max`; Opciones sin restricción; Archivo exclusivo de Poder (reusa
+  `personalizacion_avanzada`). Mismo criterio fail-open que `calcularBloqueos` en los 3 casos:
+  bajar de plan NUNCA oculta/rompe contenido ya guardado, solo bloquea agregar uno nuevo.
+- **Supuestos tomados por Claude Code** (bajo impacto, reversibles, no pedidos explícitamente
+  palabra por palabra — ajustar si el cliente los prueba y no le calzan): vista por defecto al
+  migrar un catálogo legacy = `"grid2"`; tope de hijos de "opciones" = 6.
+- Verificado desde esta sesión: `tsc --noEmit`, `eslint` (proyecto completo) y
+  `npm run build` (41 rutas) limpios — incluyó instalar `recharts`/`stripe` en `node_modules`
+  (estaban en `package.json` pero no instalados en este entorno, gap preexistente sin relación
+  con este cambio).
+- **Verificado en navegador real** (Claude Code + Chrome del usuario, `npm run dev`, con permiso
+  explícito, login real con Google sobre una tarjeta real en plan Poder — sin guardar ningún
+  cambio de prueba, todo probado en la vista previa en vivo del editor, que corre el mismo
+  render que la tarjeta pública; confirmado después que la tarjeta real no cambió): los 5 tipos
+  de botón se crean y editan correctamente (WhatsApp autocompleta el número de "Canales de
+  contacto"; Archivo aparece disponible sin candado en plan Poder con ícono "descarga" por
+  defecto); "Opciones" restringe el selector de hijos a los 4 tipos permitidos (sin "Opciones",
+  confirmando el límite de un solo nivel) y el toggle expandir/colapsar revela el hijo anidado
+  tanto en el editor como en el modo "Ver tarjeta" a pantalla completa; "Catálogo" arma el ítem,
+  el tile del grid muestra solo imagen+título, y el click abre el modal de detalle nuevo con el
+  título correcto; colapsar/expandir y mover ↑/↓ una fila actualizan el editor y la vista previa
+  al instante. Cero errores de consola en todo el proceso. 🔴 Pendiente todavía: no se probaron
+  los 4 casos de migración legacy (tarjeta con solo `servicios` plano, con los 4 campos legacy a
+  la vez, sin tocar nunca) porque ninguna tarjeta real de esta cuenta tenía ese contenido viejo
+  guardado — si aparece una, vale la pena confirmarlo.
+
 ## Pendiente técnico sin resolver (consolidado)
+- 🔴 Unificación de Botones (2026-08-09): los 5 tipos + opciones anidado + catálogo + archivo en
+  Poder ya se verificaron en navegador real sobre una tarjeta real, sin guardar (ver esa
+  sección) — falta todavía probar los 4 casos de migración legacy (tarjeta vieja con solo
+  `servicios` plano, o con los 4 campos legacy a la vez) porque ninguna tarjeta de la cuenta
+  usada tenía ese contenido guardado.
 - 🔴 Migración `20260801000000_add_tarjeta_slug_historial.sql` sin aplicar — límite de slug
   no enforced en DB todavía.
 - 🔴 `invoice.paid` y `customer.subscription.created` faltan en el webhook LIVE de Stripe

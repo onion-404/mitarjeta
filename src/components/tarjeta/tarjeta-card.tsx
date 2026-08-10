@@ -3,8 +3,6 @@
 import {
   ChevronDown,
   Clock,
-  ExternalLink,
-  FileText,
   Globe,
   Mail,
   MapPin,
@@ -15,17 +13,30 @@ import Image from "next/image"
 import * as React from "react"
 
 import { obtenerBannerPreset } from "@/lib/banner-presets"
-import { obtenerBotonIcono, ordenSeccionesNormalizado } from "@/lib/boton-cta"
+import { construirUrlWhatsapp, normalizarBotones, obtenerBotonIcono, ordenSeccionesNormalizado } from "@/lib/boton-cta"
 import { obtenerColorContraste } from "@/lib/contraste"
-import { estiloImagenPosicionada } from "@/lib/imagen-posicion"
+import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import { DIVISORES_BANNER, ESTILOS_TIPOGRAFIA } from "@/lib/personalizacion"
 import { obtenerPlataforma } from "@/lib/redes"
 import { registrarEvento, type TipoEventoCliente } from "@/lib/track-evento"
 import { cn } from "@/lib/utils"
 import { obtenerYoutubeEmbedUrl } from "@/lib/youtube"
-import type { DatosContacto, IdentidadVisual, ServicioAgendable, TarjetaTipo } from "@/lib/types"
+import type {
+  Boton,
+  BotonArchivo,
+  BotonCatalogo,
+  BotonEnlace,
+  BotonHijo,
+  BotonOpciones,
+  BotonWhatsapp,
+  DatosContacto,
+  IdentidadVisual,
+  ServicioAgendable,
+  TarjetaTipo,
+} from "@/lib/types"
 import { AvatarForma } from "@/components/tarjeta/avatar-forma"
-import { BotonCtaModal, ContenidoBotonCta, estiloTexturaBoton } from "@/components/tarjeta/boton-cta-modal"
+import { BotonCtaModal, ContenidoBotonCta, estiloTexturaBoton, type BotonVistaPrevia } from "@/components/tarjeta/boton-cta-modal"
+import { CatalogoItemModal } from "@/components/tarjeta/catalogo-item-modal"
 import { ReservarServicio } from "@/components/tarjeta/reservar-servicio"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 
@@ -87,13 +98,6 @@ function soloDigitos(valor: string) {
   return valor.replace(/[^\d]/g, "")
 }
 
-// Las URL de Cloudinary son http(s) y pueden optimizarse con next/image; las
-// vistas previas locales sin guardar todavía (blob:) no, porque no existen
-// en un servidor al que next/image pueda pedirlas.
-function esUrlOptimizable(url: string) {
-  return url.startsWith("http://") || url.startsWith("https://")
-}
-
 // Compartir/QR/contacto viven en un FAB separado (AccionesTarjeta), no
 // adentro de este componente — así el mismo botón sirve tanto para la
 // tarjeta pública real como para el preview "Ver tarjeta" del editor, sin
@@ -137,12 +141,7 @@ export function TarjetaCard({
     direccionMapsUrl,
     horarios,
     videoUrl,
-    descripcionServicios,
-    servicios,
-    seccionesServicios,
-    productos,
     redes,
-    botones,
   } = datosContacto
   const {
     colorPrimario,
@@ -151,7 +150,6 @@ export function TarjetaCard({
     avatarPosicion,
     bannerUrl,
     bannerPreset,
-    brochureUrl,
     temaModo,
     avatarForma,
     estiloTipografia,
@@ -177,8 +175,6 @@ export function TarjetaCard({
     fondoTarjetaColorSecundario,
     fondoTarjetaTipoDegradado,
     fondoTarjetaDireccionGrados,
-    tituloServicios,
-    tituloProductos,
     colorTextoSecundario,
     ordenSecciones,
     badgeIconoActivo,
@@ -189,35 +185,32 @@ export function TarjetaCard({
   // vea exactamente igual que siempre).
   const IconoBadge =
     badgeIconoActivo === false ? null : (obtenerBotonIcono(badgeIconoId)?.Icono ?? Sparkles)
-  const [productosAbiertos, setProductosAbiertos] = React.useState(false)
-  // Legacy: expandir/colapsar la descripción de un ítem en el modelo VIEJO de
-  // Servicios (una sola lista título+descripción, sin precio/imagen/enlace).
-  // Se mantiene sin cambios para tarjetas no regrabadas todavía — ver
-  // seccionesServiciosAbiertas de abajo para el modelo nuevo.
-  const [serviciosAbiertos, setServiciosAbiertos] = React.useState<Set<number>>(
-    () => new Set()
+
+  // Unificación de Botones/Servicios/Productos (2026-08-09) — normalizarBotones
+  // es la única fuente de verdad de "qué botones tiene esta tarjeta" (incluida
+  // la migración en memoria de tarjetas viejas), reusada tal cual del editor.
+  const botonesNormalizados = React.useMemo(
+    () => normalizarBotones(datosContacto, identidadVisual),
+    [datosContacto, identidadVisual]
   )
-  // Modelo nuevo: cada sección de Servicios es su propia grilla
-  // colapsable, igual que "Productos" — un Set de índices de SECCIÓN
-  // abiertas (no de ítem individual, a diferencia del legacy de arriba).
-  const [seccionesServiciosAbiertas, setSeccionesServiciosAbiertas] = React.useState<
-    Set<number>
-  >(() => new Set())
+  // Un solo Set de ids "abiertos" para cualquier botón colapsable (catálogo u
+  // opciones) — reemplaza los 3 estados separados que tenía cada sección
+  // antes de la unificación (productosAbiertos/serviciosAbiertos/
+  // seccionesServiciosAbiertas).
+  const [abiertos, setAbiertos] = React.useState<Set<string>>(() => new Set())
+  // Ítem de catálogo con su modal de detalle abierto — null cuando está
+  // cerrado. Se busca por id de botón + índice en vez de guardar el ítem
+  // completo, así el modal siempre refleja el dato más reciente.
+  const [itemCatalogoAbierto, setItemCatalogoAbierto] = React.useState<{
+    botonId: string
+    indice: number
+  } | null>(null)
 
-  function toggleServicio(index: number) {
-    setServiciosAbiertos((prev) => {
+  function toggleAbierto(id: string) {
+    setAbiertos((prev) => {
       const siguiente = new Set(prev)
-      if (siguiente.has(index)) siguiente.delete(index)
-      else siguiente.add(index)
-      return siguiente
-    })
-  }
-
-  function toggleSeccionServicios(index: number) {
-    setSeccionesServiciosAbiertas((prev) => {
-      const siguiente = new Set(prev)
-      if (siguiente.has(index)) siguiente.delete(index)
-      else siguiente.add(index)
+      if (siguiente.has(id)) siguiente.delete(id)
+      else siguiente.add(id)
       return siguiente
     })
   }
@@ -361,198 +354,12 @@ export function TarjetaCard({
     )
   }
 
-  // Servicios/Agenda/Productos/Botones: extraídas a funciones (en vez de
-  // quedar embebidas directo en el JSX de más abajo) para poder recorrerlas
-  // en el ORDEN que eligió el dueño (identidadVisual.ordenSecciones, ver
-  // lib/boton-cta.ts) en lugar de un orden fijo por código.
-  function renderServicios(): React.ReactNode {
-    if (seccionesServicios?.length) {
-      // Modelo nuevo: N secciones tipo catálogo (mismo patrón visual que
-      // la grilla de "Productos" — título, precio, descripción, imagen,
-      // enlace por ítem). El folleto PDF sigue colgado de la sección [0].
-      return seccionesServicios.map((seccion, indiceSeccion) => {
-        const tituloSeccion =
-          seccion.titulo?.trim() || (indiceSeccion === 0 ? "Servicios" : `Sección ${indiceSeccion + 1}`)
-        const mostrarBrochure = indiceSeccion === 0 && Boolean(brochureUrl)
-        if (!seccion.items.length && !mostrarBrochure) return null
-        const abierta = seccionesServiciosAbiertas.has(indiceSeccion)
-        return (
-          <div key={indiceSeccion} data-campo={`servicios-${indiceSeccion}`} className="mt-5 w-full text-left">
-            {seccion.items.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => toggleSeccionServicios(indiceSeccion)}
-                className="flex w-full items-center justify-between gap-2"
-              >
-                <h2
-                  style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
-                  className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
-                >
-                  {tituloSeccion}
-                  <ContadorCirculo cantidad={seccion.items.length} />
-                </h2>
-                <ChevronDown
-                  className={cn(
-                    "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
-                    abierta && "rotate-180"
-                  )}
-                />
-              </button>
-            ) : (
-              <h2
-                style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
-                className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
-              >
-                {tituloSeccion}
-              </h2>
-            )}
-            {abierta && seccion.items.length > 0 && (
-              <div className="mt-3 grid grid-cols-3 gap-2.5">
-                {seccion.items.map((item, index) => (
-                  <div
-                    key={index}
-                    className="flex flex-col overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
-                  >
-                    {item.imagenUrl ? (
-                      <div className="relative aspect-square w-full">
-                        <Image
-                          src={item.imagenUrl}
-                          alt={item.titulo}
-                          fill
-                          sizes="(max-width: 640px) 30vw, 128px"
-                          unoptimized={!esUrlOptimizable(item.imagenUrl)}
-                          className="object-cover"
-                        />
-                      </div>
-                    ) : (
-                      <div className="aspect-square w-full bg-[#f4f4f5] dark:bg-[#27272a]" />
-                    )}
-                    <div style={estiloTextoGeneral} className="px-1.5 py-1.5 text-center">
-                      <p className="truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]">
-                        {item.titulo}
-                      </p>
-                      {item.descripcion?.trim() && (
-                        <p className="mt-0.5 line-clamp-2 text-[10px] text-[#71717a] dark:text-[#a1a1aa]">
-                          {item.descripcion}
-                        </p>
-                      )}
-                      {item.precio?.trim() && (
-                        <p className="mt-0.5 text-[10px] font-semibold text-[#18181b] dark:text-[#fafafa]">
-                          ${item.precio}
-                        </p>
-                      )}
-                      {item.enlaceUrl?.trim() && (
-                        <a
-                          href={item.enlaceUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-[#3f3f46] underline underline-offset-2 dark:text-[#d4d4d8]"
-                        >
-                          Ver más <ExternalLink className="size-2.5" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {mostrarBrochure && (
-              <a
-                href={brochureUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={estiloCta}
-                className={cn(
-                  "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
-                  !estiloCta && "bg-foreground text-background"
-                )}
-              >
-                <FileText className="size-3.5" /> Descargar folleto (PDF)
-              </a>
-            )}
-          </div>
-        )
-      })
-    }
-
-    // Legacy: tarjeta todavía no regrabada con el modelo nuevo — se
-    // mantiene el render viejo exacto (una sola lista título+descripción,
-    // con la descripción general y el folleto) para no perder contenido
-    // real ya publicado. En cuanto el dueño guarda una vez desde el
-    // editor, pasa a `seccionesServicios` y esta rama deja de usarse.
-    if (!(descripcionServicios?.trim() || servicios?.length || brochureUrl)) return null
-    return (
-      <div data-campo="servicios-0" className="mt-5 w-full text-left">
-        <h2
-          style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
-          className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
-        >
-          {tituloServicios?.trim() || "Servicios"}
-        </h2>
-        {descripcionServicios?.trim() && (
-          <p
-            style={{ fontFamily: fuenteCuerpo, ...estiloTextoGeneral }}
-            className="mt-1.5 text-sm text-[#3f3f46] dark:text-[#d4d4d8]"
-          >
-            {descripcionServicios}
-          </p>
-        )}
-        {Boolean(servicios?.length) && (
-          <div className="mt-3 flex flex-col gap-2">
-            {servicios?.map((servicio, index) => {
-              const abierto = serviciosAbiertos.has(index)
-              const tieneDescripcion = Boolean(servicio.descripcion?.trim())
-              return (
-                <div
-                  key={index}
-                  style={estiloTextoGeneral}
-                  className="overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
-                >
-                  <button
-                    type="button"
-                    onClick={() => tieneDescripcion && toggleServicio(index)}
-                    className="flex w-full items-center justify-between gap-2 bg-[rgba(24,24,27,0.03)] p-3 text-left dark:bg-[rgba(255,255,255,0.05)]"
-                  >
-                    <span className="flex items-center gap-1.5 text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
-                      {servicio.titulo}
-                    </span>
-                    {tieneDescripcion && (
-                      <ChevronDown
-                        className={cn(
-                          "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
-                          abierto && "rotate-180"
-                        )}
-                      />
-                    )}
-                  </button>
-                  {abierto && tieneDescripcion && (
-                    <p className="border-t border-[rgba(0,0,0,0.05)] p-3 text-xs text-[#71717a] dark:border-[rgba(255,255,255,0.08)] dark:text-[#a1a1aa]">
-                      {servicio.descripcion}
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-        {brochureUrl && (
-          <a
-            href={brochureUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={estiloCta}
-            className={cn(
-              "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold shadow-md transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0",
-              !estiloCta && "bg-foreground text-background"
-            )}
-          >
-            <FileText className="size-3.5" /> Descargar folleto (PDF)
-          </a>
-        )}
-      </div>
-    )
-  }
-
+  // Agenda/Botones: extraídas a funciones (en vez de quedar embebidas
+  // directo en el JSX de más abajo) para poder recorrerlas en el ORDEN que
+  // eligió el dueño (identidadVisual.ordenSecciones, ver lib/boton-cta.ts)
+  // en lugar de un orden fijo por código. "Servicios"/"Productos" dejaron
+  // de ser bloques propios (2026-08-09) — ahora son botones `tipo:
+  // "catalogo"` dentro de "Botones" (ver renderBotones más abajo).
   function renderAgenda(): React.ReactNode {
     if (!agendaServicios?.length) return null
     return (
@@ -599,77 +406,206 @@ export function TarjetaCard({
     )
   }
 
-  function renderProductos(): React.ReactNode {
-    if (!productos?.length) return null
+  // Resuelve el estilo (fondo/texto/borde/textura/vidrio) de CUALQUIER
+  // botón de ancho completo (enlace/whatsapp/archivo/opciones) — un solo
+  // lugar en vez de repetir el cálculo por tipo.
+  function estiloDeBoton(boton: Boton | BotonHijo): React.CSSProperties {
+    const colorFondoBoton = boton.colorFondo || colorBotonesFinal
+    const colorTextoBoton = boton.colorFondo ? obtenerColorContraste(boton.colorFondo) : colorTextoCta
+    return {
+      backgroundColor: colorFondoBoton ? `${colorFondoBoton}${alfaVidrio}` : undefined,
+      color: colorTextoBoton,
+      borderColor: boton.colorBorde,
+      ...estiloVidrio,
+      ...estiloTexturaBoton(boton.textura),
+    }
+  }
+
+  const claseBotonBase =
+    "flex w-full items-center gap-3 overflow-hidden rounded-2xl border py-3 text-left shadow-sm transition-all duration-200 ease-out"
+
+  // Botón de ancho completo tipo enlace/whatsapp/archivo — mismo CTA de
+  // siempre, resolviendo la url final según el tipo (whatsapp arma
+  // wa.me/... recién acá, nunca se persiste armada). El "⋮" (BotonCtaModal)
+  // es un elemento hermano del <a>, no un hijo — un <button> anidado
+  // dentro de un <a> es HTML inválido y además complica evitar que el
+  // click del menú dispare la navegación. `opts` cubre el caso de un hijo
+  // de "opciones" (metadata de tracking distinta, mismo render).
+  function renderBotonSimple(
+    boton: BotonEnlace | BotonWhatsapp | BotonArchivo,
+    opts?: { tipoEnlace?: string; botonPadre?: string }
+  ): React.ReactNode {
+    const url =
+      boton.tipo === "enlace" ? boton.url : boton.tipo === "whatsapp" ? construirUrlWhatsapp(boton.waNumero, boton.waMensaje ?? "") : boton.archivoUrl
+    const vistaPrevia: BotonVistaPrevia = {
+      titulo: boton.titulo,
+      subtitulo: boton.subtitulo,
+      iconoTipo: boton.iconoTipo,
+      imagenUrl: boton.imagenUrl,
+      iconoId: boton.iconoId,
+      url,
+    }
+    const estiloBotonCta = estiloDeBoton(boton)
+    const tieneUrl = Boolean(url.trim())
+    const tipoEnlace = opts?.tipoEnlace ?? `boton_${boton.tipo}`
     return (
-      <div data-campo="productos" className="mt-5 w-full text-left">
+      <div key={boton.id} className="relative">
+        <BotonCtaModal boton={vistaPrevia} estiloCta={estiloBotonCta} />
+        <a
+          {...(tieneUrl ? { href: url, target: "_blank", rel: "noopener noreferrer" } : {})}
+          onClick={() =>
+            track("click_enlace", {
+              tipo_enlace: tipoEnlace,
+              boton_titulo: boton.titulo,
+              ...(opts?.botonPadre ? { boton_padre: opts.botonPadre } : {}),
+            })
+          }
+          style={estiloBotonCta}
+          className={cn(
+            claseBotonBase,
+            "pl-9 pr-4",
+            tieneUrl && "hover:-translate-y-0.5 hover:shadow-md active:translate-y-0",
+            !boton.colorBorde && "border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.12)]",
+            !(boton.colorFondo || colorBotonesFinal) &&
+              "bg-[rgba(255,255,255,0.85)] text-[#18181b] dark:bg-[rgba(255,255,255,0.06)] dark:text-[#fafafa]"
+          )}
+        >
+          <ContenidoBotonCta boton={vistaPrevia} />
+        </a>
+      </div>
+    )
+  }
+
+  // Botón "opciones" — despliega/colapsa (toggle inline, no modal) sus
+  // hijos, cada uno renderizado con el mismo switch que un botón top-level
+  // (un hijo "catalogo" reusa renderBotonCatalogo, el resto renderBotonSimple
+  // con tracking marcado como "hijo de opciones"). Sin "⋮"/modal propio: no
+  // es un link, no hay nada que compartir.
+  function renderBotonOpciones(boton: BotonOpciones): React.ReactNode {
+    const abierta = abiertos.has(boton.id)
+    const vistaPrevia: BotonVistaPrevia = {
+      titulo: boton.titulo,
+      subtitulo: boton.subtitulo,
+      iconoTipo: boton.iconoTipo,
+      imagenUrl: boton.imagenUrl,
+      iconoId: boton.iconoId,
+      url: "",
+    }
+    const estiloBotonCta = estiloDeBoton(boton)
+    return (
+      <div key={boton.id} className="flex flex-col gap-2.5">
         <button
           type="button"
-          onClick={() => setProductosAbiertos((valor) => !valor)}
+          onClick={() => toggleAbierto(boton.id)}
+          style={estiloBotonCta}
+          className={cn(
+            claseBotonBase,
+            "px-4",
+            !boton.colorBorde && "border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.12)]",
+            !(boton.colorFondo || colorBotonesFinal) &&
+              "bg-[rgba(255,255,255,0.85)] text-[#18181b] dark:bg-[rgba(255,255,255,0.06)] dark:text-[#fafafa]"
+          )}
+        >
+          <ContenidoBotonCta boton={vistaPrevia} />
+          <ChevronDown
+            className={cn(
+              "ml-auto size-4 shrink-0 transition-transform duration-200 ease-out",
+              abierta && "rotate-180"
+            )}
+          />
+        </button>
+        {abierta && (
+          <div className="flex flex-col gap-2.5 pl-4">
+            {boton.hijos.map((hijo) =>
+              hijo.tipo === "catalogo"
+                ? renderBotonCatalogo(hijo)
+                : renderBotonSimple(hijo, { tipoEnlace: "boton_opciones_hijo", botonPadre: boton.titulo })
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Botón "catalogo" — reemplaza a "Servicios"/"Productos": header
+  // colapsable (mismo patrón visual que tenían antes) + grid de 2 columnas
+  // o lista de 1 por línea (elegido por el dueño) — cada ítem abre el modal
+  // de detalle en vez de mostrar descripción/precio/enlace apretado en el
+  // tile.
+  function renderBotonCatalogo(boton: BotonCatalogo): React.ReactNode {
+    const abierta = abiertos.has(boton.id)
+    return (
+      <div key={boton.id} className="w-full text-left">
+        <button
+          type="button"
+          onClick={() => toggleAbierto(boton.id)}
           className="flex w-full items-center justify-between gap-2"
         >
           <h2
             style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
             className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
           >
-            {tituloProductos?.trim() || "Productos"}
-            <ContadorCirculo cantidad={productos.length} />
+            {boton.titulo?.trim() || "Catálogo"}
+            <ContadorCirculo cantidad={boton.items.length} />
           </h2>
           <ChevronDown
             className={cn(
               "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
-              productosAbiertos && "rotate-180"
+              abierta && "rotate-180"
             )}
           />
         </button>
-        {productosAbiertos && (
-          <div className="mt-3 grid grid-cols-3 gap-2.5">
-            {productos.map((producto, index) => (
-              <div
-                key={index}
-                className="flex flex-col overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.08)]"
+        {abierta && boton.items.length > 0 && (
+          <div
+            className={cn(
+              "mt-3 gap-2.5",
+              boton.vista === "lista1" ? "flex flex-col" : "grid grid-cols-2"
+            )}
+          >
+            {boton.items.map((item, indice) => (
+              <button
+                type="button"
+                key={indice}
+                onClick={() => setItemCatalogoAbierto({ botonId: boton.id, indice })}
+                className={cn(
+                  "overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] text-left dark:border-[rgba(255,255,255,0.08)]",
+                  boton.vista === "lista1" ? "flex items-center gap-3" : "flex flex-col"
+                )}
               >
-                {producto.imagenUrl ? (
-                  <div className="relative aspect-square w-full">
+                {item.imagenUrl ? (
+                  <div
+                    className={cn(
+                      "relative shrink-0",
+                      boton.vista === "lista1" ? "size-16" : "aspect-square w-full"
+                    )}
+                  >
                     <Image
-                      src={producto.imagenUrl}
-                      alt={producto.titulo}
+                      src={item.imagenUrl}
+                      alt={item.titulo}
                       fill
-                      sizes="(max-width: 640px) 30vw, 128px"
-                      unoptimized={!esUrlOptimizable(producto.imagenUrl)}
+                      sizes="(max-width: 640px) 45vw, 160px"
+                      unoptimized={!esUrlOptimizable(item.imagenUrl)}
                       className="object-cover"
                     />
                   </div>
                 ) : (
-                  <div className="aspect-square w-full bg-[#f4f4f5] dark:bg-[#27272a]" />
+                  <div
+                    className={cn(
+                      "shrink-0 bg-[#f4f4f5] dark:bg-[#27272a]",
+                      boton.vista === "lista1" ? "size-16" : "aspect-square w-full"
+                    )}
+                  />
                 )}
-                <div style={estiloTextoGeneral} className="px-1.5 py-1.5 text-center">
-                  <p className="truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]">
-                    {producto.titulo}
-                  </p>
-                  {producto.descripcion?.trim() && (
-                    <p className="mt-0.5 line-clamp-2 text-[10px] text-[#71717a] dark:text-[#a1a1aa]">
-                      {producto.descripcion}
-                    </p>
+                <p
+                  style={estiloTextoGeneral}
+                  className={cn(
+                    "truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]",
+                    boton.vista === "lista1" ? "px-3" : "px-1.5 py-1.5 text-center"
                   )}
-                  {producto.precio?.trim() && (
-                    <p className="mt-0.5 text-[10px] font-semibold text-[#18181b] dark:text-[#fafafa]">
-                      ${producto.precio}
-                    </p>
-                  )}
-                  {producto.enlaceUrl?.trim() && (
-                    <a
-                      href={producto.enlaceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => track("click_producto", { producto_titulo: producto.titulo })}
-                      className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-[#3f3f46] underline underline-offset-2 dark:text-[#d4d4d8]"
-                    >
-                      Ver producto <ExternalLink className="size-2.5" />
-                    </a>
-                  )}
-                </div>
-              </div>
+                >
+                  {item.titulo}
+                </p>
+              </button>
             ))}
           </div>
         )}
@@ -677,58 +613,44 @@ export function TarjetaCard({
     )
   }
 
-  // Botones CTA de ancho completo, uno por línea — cada uno reusa
-  // colorBotonesFinal como default de fondo (mismo criterio que el resto
-  // de los CTA de la tarjeta) y puede overridearlo con su propio color/
-  // borde/textura. El "⋮" (BotonCtaModal) es un elemento hermano del <a>,
-  // no un hijo — un <button> anidado dentro de un <a> es HTML inválido y
-  // además complica evitar que el click del menú dispare la navegación.
+  // Ítem de catálogo con el modal de detalle abierto — se busca por id en
+  // vez de guardar el ítem completo en el estado, así el modal siempre
+  // muestra el dato más reciente (top-level o anidado dentro de "opciones").
+  function buscarBotonCatalogo(id: string): BotonCatalogo | null {
+    for (const boton of botonesNormalizados) {
+      if (boton.tipo === "catalogo" && boton.id === id) return boton
+      if (boton.tipo === "opciones") {
+        const hijo = boton.hijos.find((h): h is BotonCatalogo => h.tipo === "catalogo" && h.id === id)
+        if (hijo) return hijo
+      }
+    }
+    return null
+  }
+  const catalogoDelItemAbierto = itemCatalogoAbierto ? buscarBotonCatalogo(itemCatalogoAbierto.botonId) : null
+  const itemCatalogoActivo =
+    catalogoDelItemAbierto && itemCatalogoAbierto
+      ? (catalogoDelItemAbierto.items[itemCatalogoAbierto.indice] ?? null)
+      : null
+
   function renderBotones(): React.ReactNode {
-    const items = botones?.filter((boton) => boton.titulo?.trim() || boton.url?.trim()) ?? []
-    if (!items.length) return null
+    if (!botonesNormalizados.length) return null
     return (
       <div data-campo="botones" className="mt-5 flex w-full flex-col gap-2.5">
-        {items.map((boton) => {
-          const colorFondoBoton = boton.colorFondo || colorBotonesFinal
-          const colorTextoBoton = boton.colorFondo ? obtenerColorContraste(boton.colorFondo) : colorTextoCta
-          const estiloBotonCta: React.CSSProperties = {
-            backgroundColor: colorFondoBoton ? `${colorFondoBoton}${alfaVidrio}` : undefined,
-            color: colorTextoBoton,
-            borderColor: boton.colorBorde,
-            ...estiloVidrio,
-            ...estiloTexturaBoton(boton.textura),
-          }
-          const tieneUrl = Boolean(boton.url?.trim())
-          return (
-            <div key={boton.id} className="relative">
-              <BotonCtaModal boton={boton} estiloCta={estiloBotonCta} />
-              <a
-                {...(tieneUrl
-                  ? { href: boton.url, target: "_blank", rel: "noopener noreferrer" }
-                  : {})}
-                onClick={() => track("click_enlace", { tipo_enlace: "boton_cta", boton_titulo: boton.titulo })}
-                style={estiloBotonCta}
-                className={cn(
-                  "flex w-full items-center gap-3 overflow-hidden rounded-2xl border py-3 pl-9 pr-4 text-left shadow-sm transition-all duration-200 ease-out",
-                  tieneUrl && "hover:-translate-y-0.5 hover:shadow-md active:translate-y-0",
-                  !boton.colorBorde && "border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.12)]",
-                  !colorFondoBoton &&
-                    "bg-[rgba(255,255,255,0.85)] text-[#18181b] dark:bg-[rgba(255,255,255,0.06)] dark:text-[#fafafa]"
-                )}
-              >
-                <ContenidoBotonCta boton={boton} />
-              </a>
-            </div>
-          )
-        })}
+        {botonesNormalizados.map((boton) => (
+          <React.Fragment key={boton.id}>
+            {boton.tipo === "catalogo"
+              ? renderBotonCatalogo(boton)
+              : boton.tipo === "opciones"
+                ? renderBotonOpciones(boton)
+                : renderBotonSimple(boton)}
+          </React.Fragment>
+        ))}
       </div>
     )
   }
 
   const RENDER_SECCION: Record<string, () => React.ReactNode> = {
-    servicios: renderServicios,
     agenda: renderAgenda,
-    productos: renderProductos,
     botones: renderBotones,
   }
   const ordenFinal = ordenSeccionesNormalizado(ordenSecciones)
@@ -1090,6 +1012,16 @@ export function TarjetaCard({
           ))}
         </div>
       </article>
+
+      <CatalogoItemModal
+        item={itemCatalogoActivo}
+        open={Boolean(itemCatalogoAbierto)}
+        onOpenChange={(open) => {
+          if (!open) setItemCatalogoAbierto(null)
+        }}
+        estiloCta={estiloCta}
+        onAbrirEnlace={() => itemCatalogoActivo && track("click_producto", { producto_titulo: itemCatalogoActivo.titulo })}
+      />
     </div>
   )
 }

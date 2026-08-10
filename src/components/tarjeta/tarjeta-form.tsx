@@ -22,7 +22,6 @@ import * as React from "react"
 
 import { AccionesTarjeta } from "@/components/tarjeta/acciones-tarjeta"
 import { AgendaServicios } from "@/components/tarjeta/agenda-servicios"
-import { ContenidoBotonCta, estiloTexturaBoton } from "@/components/tarjeta/boton-cta-modal"
 import { EstadisticasTarjeta } from "@/components/tarjeta/estadisticas-tarjeta"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -40,10 +39,9 @@ import {
   BOTON_ICONOS,
   BOTON_TEXTURAS,
   SECCIONES_ORDENABLES,
-  construirUrlWhatsapp,
+  normalizarBotones,
   ordenSeccionesNormalizado,
 } from "@/lib/boton-cta"
-import { obtenerColorContraste } from "@/lib/contraste"
 import { validarCupon } from "@/lib/cupones"
 import { estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import {
@@ -60,7 +58,10 @@ import { getLimiteCambioSlug, type LimiteCambioSlug } from "@/lib/tarjetas"
 import { cn } from "@/lib/utils"
 import type {
   AvatarForma,
-  BotonCta,
+  Boton,
+  BotonHijo,
+  BotonTipo,
+  CatalogoVista,
   Cupon,
   DatosContacto,
   DivisorBanner,
@@ -69,11 +70,9 @@ import type {
   PeriodicidadSuscripcion,
   Plan,
   PlataformaRed,
-  Producto,
   RedSocial,
   SeccionOrdenable,
   ServicioAgendable,
-  SeccionServicios,
   Tarjeta,
   TarjetaTipo,
   TemaModo,
@@ -89,27 +88,29 @@ interface ProductoFormState {
   imagenUrlExistente: string
 }
 
-/** Un ítem de sección de Servicios usa exactamente la misma forma que un
- *  ítem de Producto (mismos 5 campos) — se reusa el tipo en vez de
- *  duplicarlo. */
-interface SeccionServiciosFormState {
-  titulo: string
-  items: ProductoFormState[]
-}
-
-/** Estado de un botón CTA en el editor — `colorFondoActivo`/`colorBordeActivo`
- *  son toggles explícitos (mismo criterio que `fondoTarjetaActivo`): un
- *  `<input type="color">` siempre tiene algún valor, así que no alcanza con
- *  mirar si el campo "tiene algo" para saber si el dueño lo personalizó. El
- *  mini-form de WhatsApp (`waAbierto`/`waNumero`/`waMensaje`) vive en el
- *  mismo estado porque es exclusivo de cada botón (no hay "el" número de
- *  WhatsApp de un botón fuera de esto).
- */
-interface BotonCtaFormState {
+/** Estado de un botón en el editor — unifica Botones/Servicios/Productos/
+ *  folleto suelto (2026-08-09, ver lib/types.ts) en un solo shape plano,
+ *  reemplaza `BotonCtaFormState`/`SeccionServiciosFormState`. Plano (no
+ *  discriminado por `tipo`), mismo criterio que ya usaba
+ *  `SeccionServiciosFormState` reusando `ProductoFormState` tal cual: evita
+ *  narrowing/casteos en cada `setState`. Los campos no aplicables al `tipo`
+ *  actual del botón simplemente no se leen (ver `construirBotonFinal`/
+ *  `construirBotonPreview` más abajo). `hijos` NUNCA contiene un elemento
+ *  con `tipo === "opciones"` (un solo nivel de anidamiento, reforzado por
+ *  la UI — el selector de tipo al agregar un hijo no ofrece "Opciones") —
+ *  no se modela en el tipo por la misma razón de simplicidad que el resto
+ *  del shape plano. */
+interface BotonFormState {
   id: string
+  tipo: BotonTipo
   titulo: string
   subtitulo: string
-  url: string
+  url: string // "enlace"
+  waNumero: string // "whatsapp"
+  waMensaje: string // "whatsapp"
+  archivoFile: File | null // "archivo"
+  archivoPreview: string // "archivo" — nombre local, no hay preview visual de un PDF
+  archivoUrlExistente: string // "archivo"
   iconoTipo: "imagen" | "icono"
   iconoId: string
   imagenFile: File | null
@@ -120,12 +121,186 @@ interface BotonCtaFormState {
   textura: string
   colorBordeActivo: boolean
   colorBorde: string
-  waAbierto: boolean
-  waNumero: string
-  waMensaje: string
+  hijos: BotonFormState[] // "opciones"
+  vista: CatalogoVista // "catalogo"
+  items: ProductoFormState[] // "catalogo" — reusa ProductoFormState tal cual
+  /** Colapsado por defecto si viene de datos ya guardados; un botón
+   *  agregado en la sesión actual arranca expandido (ver crearBotonNuevo
+   *  más abajo, dentro del componente). */
+  expandido: boolean
+}
+
+/** Direcciona un botón dentro del array top-level o, si `indiceHijo` está
+ *  presente, un hijo de un botón "opciones" — un solo nivel de anidamiento,
+ *  igual que el modelo de datos. Reusada tanto por el CRUD del editor como
+ *  por el payload de guardado (misma generalización del patrón de clave
+ *  compuesta que ya usaba `imagenesServicioItemPorClave`). */
+interface UbicacionBoton {
+  indice: number
+  indiceHijo?: number
+}
+
+function claveBoton(ubicacion: UbicacionBoton): string {
+  return ubicacion.indiceHijo === undefined ? `${ubicacion.indice}` : `${ubicacion.indice}.${ubicacion.indiceHijo}`
+}
+
+function claveItemCatalogo(ubicacion: UbicacionBoton, indiceItem: number): string {
+  return `${claveBoton(ubicacion)}.${indiceItem}`
+}
+
+const ETIQUETA_TIPO_BOTON: Record<BotonTipo, string> = {
+  enlace: "Enlace",
+  whatsapp: "WhatsApp",
+  opciones: "Opciones",
+  catalogo: "Catálogo",
+  archivo: "Archivo",
+}
+
+/** Convierte un `Boton` ya normalizado (`normalizarBotones()`, ver
+ *  lib/boton-cta.ts, que resuelve TODA la compatibilidad legacy) al estado
+ *  de edición — inversa de `construirBotonFinal`/`construirBotonPreview`
+ *  más abajo. Recursivo para los hijos de "opciones", adapta los ítems de
+ *  "catalogo" reusando `ProductoFormState`. Función pura (sin closures
+ *  sobre el componente) — no necesita `colorBotones`/`whatsapp` porque solo
+ *  adapta contenido YA guardado, nunca crea uno nuevo (ver crearBotonNuevo,
+ *  adentro del componente, para eso). */
+function adaptarBotonFormState(boton: Boton | BotonHijo, expandido: boolean): BotonFormState {
+  return {
+    id: boton.id,
+    tipo: boton.tipo,
+    titulo: boton.titulo,
+    subtitulo: boton.subtitulo ?? "",
+    url: boton.tipo === "enlace" ? boton.url : "",
+    waNumero: boton.tipo === "whatsapp" ? boton.waNumero : "",
+    waMensaje: boton.tipo === "whatsapp" ? (boton.waMensaje ?? "") : "",
+    archivoFile: null,
+    archivoPreview: "",
+    archivoUrlExistente: boton.tipo === "archivo" ? boton.archivoUrl : "",
+    iconoTipo: boton.iconoTipo ?? "icono",
+    iconoId: boton.iconoId ?? BOTON_ICONOS[0].id,
+    imagenFile: null,
+    imagenPreview: "",
+    imagenUrlExistente: boton.imagenUrl ?? "",
+    colorFondoActivo: Boolean(boton.colorFondo),
+    colorFondo: boton.colorFondo ?? "#6366f1",
+    textura: boton.textura ?? "ninguna",
+    colorBordeActivo: Boolean(boton.colorBorde),
+    colorBorde: boton.colorBorde ?? "#18181b",
+    hijos: boton.tipo === "opciones" ? boton.hijos.map((hijo) => adaptarBotonFormState(hijo, false)) : [],
+    vista: boton.tipo === "catalogo" ? boton.vista : "grid2",
+    items:
+      boton.tipo === "catalogo"
+        ? boton.items.map((item) => ({
+            titulo: item.titulo,
+            descripcion: item.descripcion ?? "",
+            precio: item.precio ?? "",
+            enlaceUrl: item.enlaceUrl ?? "",
+            imagenFile: null,
+            imagenPreview: "",
+            imagenUrlExistente: item.imagenUrl ?? "",
+          }))
+        : [],
+    expandido,
+  }
+}
+
+/** Vista previa en vivo (sin subir nada todavía) de UN botón — recursiva,
+ *  usa `imagenPreview`/`archivoFile` locales en vez de URLs de Cloudinary.
+ *  Análoga a `construirBotonFinal` (ver el payload de guardado más abajo)
+ *  pero sin Maps/índices: no necesita direccionar nada porque no hay
+ *  subida real que resolver, solo lee cada botón/ítem tal cual está en el
+ *  momento. */
+function construirBotonPreview(boton: BotonFormState): Boton {
+  const base = {
+    id: boton.id,
+    titulo: boton.titulo,
+    subtitulo: boton.subtitulo || undefined,
+    iconoTipo: boton.iconoTipo,
+    imagenUrl: boton.iconoTipo === "imagen" ? boton.imagenPreview || boton.imagenUrlExistente || undefined : undefined,
+    iconoId: boton.iconoTipo === "icono" ? boton.iconoId : undefined,
+    colorFondo: boton.colorFondoActivo ? boton.colorFondo : undefined,
+    textura: boton.textura !== "ninguna" ? boton.textura : undefined,
+    colorBorde: boton.colorBordeActivo ? boton.colorBorde : undefined,
+  }
+  if (boton.tipo === "enlace") return { ...base, tipo: "enlace", url: boton.url }
+  if (boton.tipo === "whatsapp")
+    return { ...base, tipo: "whatsapp", waNumero: boton.waNumero, waMensaje: boton.waMensaje || undefined }
+  if (boton.tipo === "archivo")
+    return { ...base, tipo: "archivo", archivoUrl: boton.archivoUrlExistente || (boton.archivoFile ? "#" : "") }
+  if (boton.tipo === "catalogo")
+    return {
+      ...base,
+      tipo: "catalogo",
+      vista: boton.vista,
+      items: boton.items
+        .filter((item) => item.titulo.trim())
+        .map((item) => ({
+          titulo: item.titulo,
+          descripcion: item.descripcion || undefined,
+          precio: item.precio || undefined,
+          enlaceUrl: item.enlaceUrl || undefined,
+          imagenUrl: item.imagenPreview || item.imagenUrlExistente || undefined,
+        })),
+    }
+  return {
+    ...base,
+    tipo: "opciones",
+    hijos: boton.hijos.filter((hijo) => hijo.titulo.trim()).map((hijo) => construirBotonPreview(hijo) as BotonHijo),
+  }
+}
+
+function moverEnArray<T>(lista: T[], index: number, direccion: -1 | 1): T[] {
+  const destino = index + direccion
+  if (destino < 0 || destino >= lista.length) return lista
+  const copia = [...lista]
+  ;[copia[index], copia[destino]] = [copia[destino], copia[index]]
+  return copia
 }
 
 const TOPE_BOTONES = 8
+const TOPE_HIJOS_OPCIONES = 6
+const TOPE_ITEMS_CATALOGO = 12
+
+interface OpcionTipoBoton {
+  tipo: BotonTipo
+  etiqueta: string
+  disponible: boolean
+  /** Plan que desbloquea esta opción — solo se muestra el candado si
+   *  `!disponible`. Ausente = sin restricción de plan (enlace/whatsapp/
+   *  opciones). */
+  plan?: "alcance" | "poder"
+}
+
+/** Fila de pills para elegir el tipo al agregar un botón — reusada tanto
+ *  para el nivel superior (5 tipos) como para hijos de un botón "opciones"
+ *  (4 tipos, sin "opciones" — un solo nivel de anidamiento). Componente sin
+ *  estado propio, no necesita closures del formulario. */
+function SelectorTipoBoton({
+  opciones,
+  onElegir,
+}: {
+  opciones: OpcionTipoBoton[]
+  onElegir: (tipo: BotonTipo) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {opciones.map((opcion) => (
+        <button
+          key={opcion.tipo}
+          type="button"
+          disabled={!opcion.disponible}
+          onClick={() => onElegir(opcion.tipo)}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+          )}
+        >
+          <Plus className="size-3.5" /> {opcion.etiqueta}
+          {!opcion.disponible && opcion.plan && <CandadoPlan plan={opcion.plan} />}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 const inputClase =
   "w-full rounded-xl border border-border bg-white/70 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none backdrop-blur transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-zinc-900/60"
@@ -261,92 +436,20 @@ export function TarjetaForm({
   const [videoUrl, setVideoUrl] = React.useState(datosIniciales?.videoUrl ?? "")
   const [redes, setRedes] = React.useState<RedSocial[]>(datosIniciales?.redes ?? [])
 
-  // Servicios — N secciones independientes (tope 1/2/3 según plan, ver
-  // secciones_servicios_max más abajo), cada ítem con los mismos 5 campos
-  // que un Producto (título, precio, descripción, imagen, enlace). El
-  // folleto PDF de abajo solo se ofrece en la sección [0].
-  // Compatibilidad: si la tarjeta ya tiene `seccionesServicios` guardado, se
-  // usa directo. Si no (tarjeta vieja con el modelo previo de una sola lista
-  // título+descripción, o tarjeta nueva sin nada todavía), se arma UNA
-  // sección en memoria a partir de `servicios`/`tituloServicios` — no se
-  // escribe nada hasta el próximo guardado, así ninguna tarjeta real pierde
-  // datos por no haber sido regrabada.
-  const [seccionesServicios, setSeccionesServicios] = React.useState<SeccionServiciosFormState[]>(
-    () => {
-      if (datosIniciales?.seccionesServicios?.length) {
-        return datosIniciales.seccionesServicios.map((seccion) => ({
-          titulo: seccion.titulo,
-          items: seccion.items.map((item) => ({
-            titulo: item.titulo,
-            descripcion: item.descripcion ?? "",
-            precio: item.precio ?? "",
-            enlaceUrl: item.enlaceUrl ?? "",
-            imagenFile: null,
-            imagenPreview: "",
-            imagenUrlExistente: item.imagenUrl ?? "",
-          })),
-        }))
-      }
-      const legacyServicios = datosIniciales?.servicios ?? []
-      return [
-        {
-          titulo: visualInicial?.tituloServicios ?? "",
-          items: legacyServicios.map((servicio) => ({
-            titulo: servicio.titulo,
-            descripcion: servicio.descripcion ?? "",
-            precio: "",
-            enlaceUrl: "",
-            imagenFile: null,
-            imagenPreview: "",
-            imagenUrlExistente: "",
-          })),
-        },
-      ]
-    }
-  )
-
-  // Brochure (PDF)
-  const [brochureFile, setBrochureFile] = React.useState<File | null>(null)
-  const [brochureUrlExistente, setBrochureUrlExistente] = React.useState(
-    visualInicial?.brochureUrl ?? ""
-  )
-  const [brochureInputKey, setBrochureInputKey] = React.useState(0)
-  const brochureAbortRef = React.useRef<AbortController | null>(null)
-
-  // Productos
-  const [productos, setProductos] = React.useState<ProductoFormState[]>(
-    (datosIniciales?.productos ?? []).map((producto) => ({
-      titulo: producto.titulo,
-      descripcion: producto.descripcion ?? "",
-      precio: producto.precio ?? "",
-      enlaceUrl: producto.enlaceUrl ?? "",
-      imagenFile: null,
-      imagenPreview: "",
-      imagenUrlExistente: producto.imagenUrl ?? "",
-    }))
-  )
-
-  // Botones CTA — ver BotonCtaFormState arriba.
-  const [botones, setBotones] = React.useState<BotonCtaFormState[]>(
-    (datosIniciales?.botones ?? []).map((boton) => ({
-      id: boton.id,
-      titulo: boton.titulo,
-      subtitulo: boton.subtitulo ?? "",
-      url: boton.url,
-      iconoTipo: boton.iconoTipo ?? "icono",
-      iconoId: boton.iconoId ?? BOTON_ICONOS[0].id,
-      imagenFile: null,
-      imagenPreview: "",
-      imagenUrlExistente: boton.imagenUrl ?? "",
-      colorFondoActivo: Boolean(boton.colorFondo),
-      colorFondo: boton.colorFondo ?? "#6366f1",
-      textura: boton.textura ?? "ninguna",
-      colorBordeActivo: Boolean(boton.colorBorde),
-      colorBorde: boton.colorBorde ?? "#18181b",
-      waAbierto: false,
-      waNumero: "",
-      waMensaje: "",
-    }))
+  // Botones — unifica Botones/Servicios/Productos/folleto suelto en un solo
+  // sistema de 5 tipos (2026-08-09, ver lib/types.ts). `normalizarBotones()`
+  // (lib/boton-cta.ts) resuelve TODA la compatibilidad legacy (botones
+  // planos sin `tipo`, secciones de Servicios, Productos, folleto PDF
+  // suelto) en memoria — nunca escribe hasta el próximo guardado, así
+  // ninguna tarjeta pierde contenido por no haber sido regrabada. Cada
+  // botón normalizado se adapta acá sumando los campos propios del editor
+  // (File/preview/expandido) — colapsado por defecto porque viene de datos
+  // YA guardados (uno agregado en esta sesión arranca expandido, ver
+  // crearBotonNuevo más abajo).
+  const [botones, setBotones] = React.useState<BotonFormState[]>(() =>
+    normalizarBotones(datosIniciales ?? {}, visualInicial ?? {}).map((boton) =>
+      adaptarBotonFormState(boton, false)
+    )
   )
 
   const [colorPrimario, setColorPrimario] = React.useState(
@@ -440,19 +543,11 @@ export function TarjetaForm({
     visualInicial?.fondoTarjetaDireccionGrados ?? 135
   )
 
-  // Título personalizable de la sección "Productos" — vive en identidad_visual
-  // (jsonb, sin migración) igual que el resto del sistema de
-  // personalización. Vacío = usa el default ("Productos") tanto acá como en
-  // TarjetaCard. El título de "Servicios" ahora vive POR SECCIÓN dentro de
-  // `seccionesServicios[].titulo` (ver más arriba) — ya no acá.
-  const [tituloProductos, setTituloProductos] = React.useState(
-    visualInicial?.tituloProductos ?? ""
-  )
-
-  // Orden de aparición de las secciones opcionales en la tarjeta pública —
-  // el dueño lo reordena con flechas ↑/↓ (ver contenidoOrdenSecciones más
-  // abajo). Normalizado siempre: una tarjeta vieja sin este campo arranca
-  // en el orden fijo de siempre (servicios → agenda → productos → botones).
+  // Orden de aparición de Agenda/Botones en la tarjeta pública — el dueño
+  // lo reordena con flechas ↑/↓ (ver contenidoOrdenSecciones más abajo).
+  // Normalizado siempre: una tarjeta vieja sin este campo (o con un valor
+  // legacy que mencione "servicios"/"productos", de antes de la
+  // unificación de Botones) arranca en el orden fijo de siempre.
   const [ordenSecciones, setOrdenSecciones] = React.useState<SeccionOrdenable[]>(() =>
     ordenSeccionesNormalizado(visualInicial?.ordenSecciones)
   )
@@ -777,45 +872,219 @@ export function TarjetaForm({
     })
   }, [esEdicion, cuponInicial])
 
-  // Tope de secciones de Servicios según el plan REAL de la tarjeta (mismo
+  // Tope de botones tipo "catalogo" según el plan REAL de la tarjeta (mismo
   // criterio fail-closed que featuresGating de arriba) — nunca por debajo de
-  // lo que ya está guardado (mismo principio que calcularBloqueos: bajar de
-  // plan no rompe/oculta secciones ya creadas, solo bloquea agregar una más).
-  const seccionesServiciosMaxPlan = Math.max(
-    Number(featuresGating?.secciones_servicios_max) || 1,
-    seccionesServicios.length
-  )
+  // lo ya guardado (mismo principio que calcularBloqueos: bajar de plan no
+  // rompe/oculta contenido ya creado, solo bloquea agregar uno más). Cuenta
+  // tanto los de nivel superior como los anidados dentro de un botón
+  // "opciones" — la regla de negocio no distingue nivel.
+  function contarCatalogos(lista: BotonFormState[]): number {
+    return lista.reduce(
+      (total, boton) =>
+        total +
+        (boton.tipo === "catalogo" ? 1 : 0) +
+        (boton.tipo === "opciones" ? contarCatalogos(boton.hijos) : 0),
+      0
+    )
+  }
+  const catalogosActuales = contarCatalogos(botones)
+  const catalogoMaxPlan = Math.max(Number(featuresGating?.secciones_servicios_max) || 1, catalogosActuales)
+  const catalogoBloqueado = catalogosActuales >= catalogoMaxPlan
+  // Mismo criterio que usaba el "Agregar otra sección de servicios" de
+  // antes: bloqueado con 1 ya guardado pide Alcance, con 2 pide Poder.
+  const catalogoPlanNecesario: "alcance" | "poder" = catalogosActuales <= 1 ? "alcance" : "poder"
 
-  function agregarSeccionServicios() {
-    setSeccionesServicios((prev) =>
-      prev.length >= seccionesServiciosMaxPlan ? prev : [...prev, { titulo: "", items: [] }]
+  // "Archivo" es exclusivo del plan Poder (reusa el flag ya existente de
+  // personalización avanzada en vez de sumar uno nuevo) — mismo criterio
+  // fail-open sobre lo ya guardado: bajar de plan nunca oculta/rompe un
+  // botón archivo ya guardado, solo bloquea AGREGAR uno nuevo.
+  function hayArchivo(lista: BotonFormState[]): boolean {
+    return lista.some(
+      (boton) => boton.tipo === "archivo" || (boton.tipo === "opciones" && hayArchivo(boton.hijos))
+    )
+  }
+  const archivoDisponible = featuresPersonalizacion.personalizacion_avanzada || hayArchivo(botones)
+
+  // --- Botones — CRUD unificado (enlace/whatsapp/opciones/catalogo/archivo) --
+
+  /** Botón nuevo con valores por defecto — a diferencia de
+   *  `adaptarBotonFormState` (que adapta contenido YA guardado), esta SÍ
+   *  necesita closures sobre el componente (`colorBotones`/`whatsapp`).
+   *  Arranca `expandido: true`: se acaba de agregar en esta sesión, tiene
+   *  sentido verlo abierto para completarlo sin un click extra. */
+  function crearBotonNuevo(tipo: BotonTipo): BotonFormState {
+    return {
+      id: crypto.randomUUID(),
+      tipo,
+      titulo: "",
+      subtitulo: "",
+      url: "",
+      waNumero: whatsapp || "",
+      waMensaje: "",
+      archivoFile: null,
+      archivoPreview: "",
+      archivoUrlExistente: "",
+      iconoTipo: "icono",
+      iconoId: tipo === "archivo" ? "descarga" : BOTON_ICONOS[0].id,
+      imagenFile: null,
+      imagenPreview: "",
+      imagenUrlExistente: "",
+      colorFondoActivo: false,
+      colorFondo: colorBotones,
+      textura: "ninguna",
+      colorBordeActivo: false,
+      colorBorde: "#18181b",
+      hijos: [],
+      vista: "grid2",
+      items: [],
+      expandido: true,
+    }
+  }
+
+  function agregarBoton(tipo: BotonTipo) {
+    if (botones.length >= TOPE_BOTONES) return
+    if (tipo === "catalogo" && catalogoBloqueado) return
+    if (tipo === "archivo" && !archivoDisponible) return
+    setBotones((prev) => [...prev, crearBotonNuevo(tipo)])
+  }
+
+  function agregarBotonHijo(indicePadre: number, tipo: Exclude<BotonTipo, "opciones">) {
+    if (tipo === "catalogo" && catalogoBloqueado) return
+    if (tipo === "archivo" && !archivoDisponible) return
+    setBotones((prev) =>
+      prev.map((boton, i) => {
+        if (i !== indicePadre || boton.tipo !== "opciones") return boton
+        if (boton.hijos.length >= TOPE_HIJOS_OPCIONES) return boton
+        return { ...boton, hijos: [...boton.hijos, crearBotonNuevo(tipo)] }
+      })
     )
   }
 
-  function quitarSeccionServicios(indiceSeccion: number) {
-    setSeccionesServicios((prev) => {
-      if (prev.length <= 1) return prev // siempre queda al menos una sección
-      prev[indiceSeccion]?.items.forEach((item) => {
-        if (item.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
-      })
-      return prev.filter((_, i) => i !== indiceSeccion)
+  /** Aplica `fn` al botón en `ubicacion` (top-level o hijo de "opciones") —
+   *  base de todas las actualizaciones/subidas de imagen/archivo, evita
+   *  repetir el branching top-level/hijo en cada función. */
+  function actualizarEnUbicacion(
+    lista: BotonFormState[],
+    ubicacion: UbicacionBoton,
+    fn: (boton: BotonFormState) => BotonFormState
+  ): BotonFormState[] {
+    return lista.map((boton, i) => {
+      if (i !== ubicacion.indice) return boton
+      if (ubicacion.indiceHijo === undefined) return fn(boton)
+      return { ...boton, hijos: boton.hijos.map((hijo, j) => (j === ubicacion.indiceHijo ? fn(hijo) : hijo)) }
     })
   }
 
-  function actualizarTituloSeccionServicios(indiceSeccion: number, titulo: string) {
-    setSeccionesServicios((prev) =>
-      prev.map((seccion, i) => (i === indiceSeccion ? { ...seccion, titulo } : seccion))
+  function actualizarBotonEn<K extends keyof BotonFormState>(
+    ubicacion: UbicacionBoton,
+    campo: K,
+    valor: BotonFormState[K]
+  ) {
+    setBotones((prev) => actualizarEnUbicacion(prev, ubicacion, (boton) => ({ ...boton, [campo]: valor })))
+  }
+
+  function moverBotonEn(ubicacion: UbicacionBoton, direccion: -1 | 1) {
+    setBotones((prev) => {
+      if (ubicacion.indiceHijo === undefined) return moverEnArray(prev, ubicacion.indice, direccion)
+      return prev.map((boton, i) =>
+        i !== ubicacion.indice || boton.tipo !== "opciones"
+          ? boton
+          : { ...boton, hijos: moverEnArray(boton.hijos, ubicacion.indiceHijo!, direccion) }
+      )
+    })
+  }
+
+  /** Revoca cualquier preview local (imagen propia, ítems de catálogo,
+   *  hijos de "opciones") antes de descartar un botón — recursivo porque
+   *  un "opciones" puede tener hijos con sus propias imágenes/ítems. */
+  function revocarPreviewsBoton(boton: BotonFormState) {
+    if (boton.imagenPreview) URL.revokeObjectURL(boton.imagenPreview)
+    boton.items.forEach((item) => {
+      if (item.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
+    })
+    boton.hijos.forEach(revocarPreviewsBoton)
+  }
+
+  function quitarBotonEn(ubicacion: UbicacionBoton) {
+    setBotones((prev) => {
+      if (ubicacion.indiceHijo === undefined) {
+        const actual = prev[ubicacion.indice]
+        if (actual) revocarPreviewsBoton(actual)
+        return prev.filter((_, i) => i !== ubicacion.indice)
+      }
+      return prev.map((boton, i) => {
+        if (i !== ubicacion.indice || boton.tipo !== "opciones") return boton
+        const hijo = boton.hijos[ubicacion.indiceHijo!]
+        if (hijo) revocarPreviewsBoton(hijo)
+        return { ...boton, hijos: boton.hijos.filter((_, j) => j !== ubicacion.indiceHijo) }
+      })
+    })
+  }
+
+  function handleBotonImagenChange(ubicacion: UbicacionBoton, event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const error = validarImagen(file)
+    if (error) {
+      mostrarErrorArchivo(error)
+      event.target.value = ""
+      return
+    }
+    setBotones((prev) =>
+      actualizarEnUbicacion(prev, ubicacion, (boton) => {
+        if (boton.imagenPreview) URL.revokeObjectURL(boton.imagenPreview)
+        return { ...boton, imagenFile: file, imagenPreview: URL.createObjectURL(file), imagenUrlExistente: "" }
+      })
     )
   }
 
-  function agregarItemServicio(indiceSeccion: number) {
-    setSeccionesServicios((prev) =>
-      prev.map((seccion, i) => {
-        if (i !== indiceSeccion || seccion.items.length >= 12) return seccion
+  function quitarBotonImagen(ubicacion: UbicacionBoton) {
+    setBotones((prev) =>
+      actualizarEnUbicacion(prev, ubicacion, (boton) => {
+        if (boton.imagenPreview) URL.revokeObjectURL(boton.imagenPreview)
+        return { ...boton, imagenFile: null, imagenPreview: "", imagenUrlExistente: "" }
+      })
+    )
+  }
+
+  function handleBotonArchivoChange(ubicacion: UbicacionBoton, event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const error = validarPdf(file)
+    if (error) {
+      mostrarErrorArchivo(error)
+      event.target.value = ""
+      return
+    }
+    setBotones((prev) =>
+      actualizarEnUbicacion(prev, ubicacion, (boton) => ({
+        ...boton,
+        archivoFile: file,
+        archivoPreview: file.name,
+        archivoUrlExistente: "",
+      }))
+    )
+  }
+
+  function quitarBotonArchivo(ubicacion: UbicacionBoton) {
+    setBotones((prev) =>
+      actualizarEnUbicacion(prev, ubicacion, (boton) => ({
+        ...boton,
+        archivoFile: null,
+        archivoPreview: "",
+        archivoUrlExistente: "",
+      }))
+    )
+  }
+
+  function agregarItemCatalogo(ubicacion: UbicacionBoton) {
+    setBotones((prev) =>
+      actualizarEnUbicacion(prev, ubicacion, (boton) => {
+        if (boton.items.length >= TOPE_ITEMS_CATALOGO) return boton
         return {
-          ...seccion,
+          ...boton,
           items: [
-            ...seccion.items,
+            ...boton.items,
             {
               titulo: "",
               descripcion: "",
@@ -831,28 +1100,22 @@ export function TarjetaForm({
     )
   }
 
-  function actualizarItemServicio<K extends keyof ProductoFormState>(
-    indiceSeccion: number,
+  function actualizarItemCatalogo<K extends keyof ProductoFormState>(
+    ubicacion: UbicacionBoton,
     indiceItem: number,
     campo: K,
     valor: ProductoFormState[K]
   ) {
-    setSeccionesServicios((prev) =>
-      prev.map((seccion, i) =>
-        i !== indiceSeccion
-          ? seccion
-          : {
-              ...seccion,
-              items: seccion.items.map((item, j) =>
-                j === indiceItem ? { ...item, [campo]: valor } : item
-              ),
-            }
-      )
+    setBotones((prev) =>
+      actualizarEnUbicacion(prev, ubicacion, (boton) => ({
+        ...boton,
+        items: boton.items.map((item, j) => (j === indiceItem ? { ...item, [campo]: valor } : item)),
+      }))
     )
   }
 
-  function handleItemServicioImagenChange(
-    indiceSeccion: number,
+  function handleItemCatalogoImagenChange(
+    ubicacion: UbicacionBoton,
     indiceItem: number,
     event: React.ChangeEvent<HTMLInputElement>
   ) {
@@ -864,247 +1127,38 @@ export function TarjetaForm({
       event.target.value = ""
       return
     }
-    setSeccionesServicios((prev) =>
-      prev.map((seccion, i) => {
-        if (i !== indiceSeccion) return seccion
-        return {
-          ...seccion,
-          items: seccion.items.map((item, j) => {
-            if (j !== indiceItem) return item
-            if (item.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
-            return {
-              ...item,
-              imagenFile: file,
-              imagenPreview: URL.createObjectURL(file),
-              imagenUrlExistente: "",
-            }
-          }),
-        }
-      })
+    setBotones((prev) =>
+      actualizarEnUbicacion(prev, ubicacion, (boton) => ({
+        ...boton,
+        items: boton.items.map((item, j) => {
+          if (j !== indiceItem) return item
+          if (item.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
+          return { ...item, imagenFile: file, imagenPreview: URL.createObjectURL(file), imagenUrlExistente: "" }
+        }),
+      }))
     )
   }
 
-  function quitarItemServicioImagen(indiceSeccion: number, indiceItem: number) {
-    setSeccionesServicios((prev) =>
-      prev.map((seccion, i) => {
-        if (i !== indiceSeccion) return seccion
-        return {
-          ...seccion,
-          items: seccion.items.map((item, j) => {
-            if (j !== indiceItem) return item
-            if (item.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
-            return { ...item, imagenFile: null, imagenPreview: "", imagenUrlExistente: "" }
-          }),
-        }
-      })
+  function quitarItemCatalogoImagen(ubicacion: UbicacionBoton, indiceItem: number) {
+    setBotones((prev) =>
+      actualizarEnUbicacion(prev, ubicacion, (boton) => ({
+        ...boton,
+        items: boton.items.map((item, j) => {
+          if (j !== indiceItem) return item
+          if (item.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
+          return { ...item, imagenFile: null, imagenPreview: "", imagenUrlExistente: "" }
+        }),
+      }))
     )
   }
 
-  function quitarItemServicio(indiceSeccion: number, indiceItem: number) {
-    setSeccionesServicios((prev) =>
-      prev.map((seccion, i) => {
-        if (i !== indiceSeccion) return seccion
-        const item = seccion.items[indiceItem]
+  function quitarItemCatalogo(ubicacion: UbicacionBoton, indiceItem: number) {
+    setBotones((prev) =>
+      actualizarEnUbicacion(prev, ubicacion, (boton) => {
+        const item = boton.items[indiceItem]
         if (item?.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
-        return { ...seccion, items: seccion.items.filter((_, j) => j !== indiceItem) }
+        return { ...boton, items: boton.items.filter((_, j) => j !== indiceItem) }
       })
-    )
-  }
-
-  function handleBrochureChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    const error = validarPdf(file)
-    if (error) {
-      mostrarErrorArchivo(error)
-      event.target.value = ""
-      return
-    }
-    setBrochureFile(file)
-    setBrochureUrlExistente("")
-  }
-
-  function quitarBrochure() {
-    brochureAbortRef.current?.abort()
-    brochureAbortRef.current = null
-    setBrochureFile(null)
-    setBrochureUrlExistente("")
-    setBrochureInputKey((k) => k + 1)
-  }
-
-  function agregarProducto() {
-    setProductos((prev) =>
-      prev.length >= 12
-        ? prev
-        : [
-            ...prev,
-            {
-              titulo: "",
-              descripcion: "",
-              precio: "",
-              enlaceUrl: "",
-              imagenFile: null,
-              imagenPreview: "",
-              imagenUrlExistente: "",
-            },
-          ]
-    )
-  }
-
-  function actualizarProductoTitulo(index: number, titulo: string) {
-    setProductos((prev) =>
-      prev.map((producto, i) => (i === index ? { ...producto, titulo } : producto))
-    )
-  }
-
-  function actualizarProductoDescripcion(index: number, descripcion: string) {
-    setProductos((prev) =>
-      prev.map((producto, i) => (i === index ? { ...producto, descripcion } : producto))
-    )
-  }
-
-  function actualizarProductoPrecio(index: number, precio: string) {
-    setProductos((prev) =>
-      prev.map((producto, i) => (i === index ? { ...producto, precio } : producto))
-    )
-  }
-
-  function actualizarProductoEnlace(index: number, enlaceUrl: string) {
-    setProductos((prev) =>
-      prev.map((producto, i) => (i === index ? { ...producto, enlaceUrl } : producto))
-    )
-  }
-
-  function handleProductoImagenChange(
-    index: number,
-    event: React.ChangeEvent<HTMLInputElement>
-  ) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    const error = validarImagen(file)
-    if (error) {
-      mostrarErrorArchivo(error)
-      event.target.value = ""
-      return
-    }
-    setProductos((prev) =>
-      prev.map((producto, i) => {
-        if (i !== index) return producto
-        if (producto.imagenPreview) URL.revokeObjectURL(producto.imagenPreview)
-        return {
-          ...producto,
-          imagenFile: file,
-          imagenPreview: URL.createObjectURL(file),
-          imagenUrlExistente: "",
-        }
-      })
-    )
-  }
-
-  function quitarProductoImagen(index: number) {
-    setProductos((prev) =>
-      prev.map((producto, i) => {
-        if (i !== index) return producto
-        if (producto.imagenPreview) URL.revokeObjectURL(producto.imagenPreview)
-        return { ...producto, imagenFile: null, imagenPreview: "", imagenUrlExistente: "" }
-      })
-    )
-  }
-
-  function quitarProducto(index: number) {
-    setProductos((prev) => {
-      const actual = prev[index]
-      if (actual?.imagenPreview) URL.revokeObjectURL(actual.imagenPreview)
-      return prev.filter((_, i) => i !== index)
-    })
-  }
-
-  // --- Botones CTA ---------------------------------------------------
-
-  function agregarBoton() {
-    setBotones((prev) =>
-      prev.length >= TOPE_BOTONES
-        ? prev
-        : [
-            ...prev,
-            {
-              id: crypto.randomUUID(),
-              titulo: "",
-              subtitulo: "",
-              url: "",
-              iconoTipo: "icono",
-              iconoId: BOTON_ICONOS[0].id,
-              imagenFile: null,
-              imagenPreview: "",
-              imagenUrlExistente: "",
-              colorFondoActivo: false,
-              colorFondo: colorBotones,
-              textura: "ninguna",
-              colorBordeActivo: false,
-              colorBorde: "#18181b",
-              waAbierto: false,
-              waNumero: whatsapp || "",
-              waMensaje: "",
-            },
-          ]
-    )
-  }
-
-  function actualizarBoton<K extends keyof BotonCtaFormState>(
-    index: number,
-    campo: K,
-    valor: BotonCtaFormState[K]
-  ) {
-    setBotones((prev) => prev.map((boton, i) => (i === index ? { ...boton, [campo]: valor } : boton)))
-  }
-
-  function handleBotonImagenChange(index: number, event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    const error = validarImagen(file)
-    if (error) {
-      mostrarErrorArchivo(error)
-      event.target.value = ""
-      return
-    }
-    setBotones((prev) =>
-      prev.map((boton, i) => {
-        if (i !== index) return boton
-        if (boton.imagenPreview) URL.revokeObjectURL(boton.imagenPreview)
-        return { ...boton, imagenFile: file, imagenPreview: URL.createObjectURL(file), imagenUrlExistente: "" }
-      })
-    )
-  }
-
-  function quitarBotonImagen(index: number) {
-    setBotones((prev) =>
-      prev.map((boton, i) => {
-        if (i !== index) return boton
-        if (boton.imagenPreview) URL.revokeObjectURL(boton.imagenPreview)
-        return { ...boton, imagenFile: null, imagenPreview: "", imagenUrlExistente: "" }
-      })
-    )
-  }
-
-  function quitarBoton(index: number) {
-    setBotones((prev) => {
-      const actual = prev[index]
-      if (actual?.imagenPreview) URL.revokeObjectURL(actual.imagenPreview)
-      return prev.filter((_, i) => i !== index)
-    })
-  }
-
-  /** Arma la URL de wa.me con el número/mensaje del mini-form y la vuelca
-   *  al campo "Enlace" del botón — el número es propio de ESE botón (puede
-   *  repetir el de "Canales de contacto" o ser otro), no se persiste
-   *  aparte, solo queda codificado en la URL final. */
-  function generarUrlWhatsappBoton(index: number) {
-    setBotones((prev) =>
-      prev.map((boton, i) =>
-        i === index
-          ? { ...boton, url: construirUrlWhatsapp(boton.waNumero, boton.waMensaje), waAbierto: false }
-          : boton
-      )
     )
   }
 
@@ -1263,26 +1317,24 @@ export function TarjetaForm({
 
     let avatarUrl: string | undefined = avatarUrlExistente || undefined
     let bannerUrl: string | undefined = bannerUrlExistente || undefined
-    let brochureUrl: string | undefined = brochureUrlExistente || undefined
     let fondoImagenUrlFinal: string | undefined = fondoImagenUrlExistente || undefined
-    const imagenesProductoPorIndice = new Map<number, string>()
-    const imagenesServicioItemPorClave = new Map<string, string>()
-    const imagenesBotonPorIndice = new Map<number, string>()
+    const imagenesBotonPorRuta = new Map<string, string>()
+    const archivosBotonPorRuta = new Map<string, string>()
+    const imagenesCatalogoItemPorClave = new Map<string, string>()
 
     type TareaSubida =
       | { tipo: "avatar"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "banner"; etiqueta: string; promesa: Promise<string | null> }
-      | { tipo: "brochure"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "fondoImagen"; etiqueta: string; promesa: Promise<string | null> }
-      | { tipo: "producto"; indice: number; etiqueta: string; promesa: Promise<string | null> }
+      | { tipo: "botonImagen"; ruta: UbicacionBoton; etiqueta: string; promesa: Promise<string | null> }
+      | { tipo: "botonArchivo"; ruta: UbicacionBoton; etiqueta: string; promesa: Promise<string | null> }
       | {
-          tipo: "servicioItem"
-          indiceSeccion: number
+          tipo: "catalogoItem"
+          ruta: UbicacionBoton
           indiceItem: number
           etiqueta: string
           promesa: Promise<string | null>
         }
-      | { tipo: "boton"; indice: number; etiqueta: string; promesa: Promise<string | null> }
 
     const tareas: TareaSubida[] = []
 
@@ -1312,20 +1364,6 @@ export function TarjetaForm({
       })
     }
 
-    if (brochureFile) {
-      brochureAbortRef.current = new AbortController()
-      tareas.push({
-        tipo: "brochure",
-        etiqueta: "el folleto PDF",
-        promesa: subirImagenCloudinary(
-          brochureFile,
-          "mitarjeta/brochures",
-          brochureAbortRef.current.signal,
-          "raw"
-        ).catch(() => null),
-      })
-    }
-
     if (fondoImagenFile) {
       fondoImagenAbortRef.current = new AbortController()
       tareas.push({
@@ -1339,56 +1377,63 @@ export function TarjetaForm({
       })
     }
 
-    productos.forEach((producto, indice) => {
-      if (producto.titulo.trim() && producto.imagenFile) {
+    // Recorre TODOS los botones (top-level + hijos de "opciones") empujando
+    // tareas de imagen/archivo/ítems de catálogo, direccionadas por su
+    // UbicacionBoton — mismo patrón de clave compuesta que ya usaba
+    // `imagenesServicioItemPorClave`, generalizado a hasta 2 niveles. Si el
+    // botón no tiene título se descarta entero en `construirBotonFinal` más
+    // abajo (junto con sus hijos/ítems), así que ni vale la pena subir nada
+    // para él.
+    function recolectarTareasBoton(boton: BotonFormState, ubicacion: UbicacionBoton) {
+      if (!boton.titulo.trim()) return
+      if (boton.iconoTipo === "imagen" && boton.imagenFile) {
         tareas.push({
-          tipo: "producto",
-          indice,
-          etiqueta: `la imagen de "${producto.titulo.trim()}"`,
-          promesa: subirImagenCloudinary(producto.imagenFile, "mitarjeta/productos").catch(
-            () => null
-          ),
-        })
-      }
-    })
-
-    seccionesServicios.forEach((seccion, indiceSeccion) => {
-      seccion.items.forEach((item, indiceItem) => {
-        if (item.titulo.trim() && item.imagenFile) {
-          tareas.push({
-            tipo: "servicioItem",
-            indiceSeccion,
-            indiceItem,
-            etiqueta: `la imagen de "${item.titulo.trim()}"`,
-            promesa: subirImagenCloudinary(item.imagenFile, "mitarjeta/servicios").catch(
-              () => null
-            ),
-          })
-        }
-      })
-    })
-
-    botones.forEach((boton, indice) => {
-      if (boton.titulo.trim() && boton.iconoTipo === "imagen" && boton.imagenFile) {
-        tareas.push({
-          tipo: "boton",
-          indice,
+          tipo: "botonImagen",
+          ruta: ubicacion,
           etiqueta: `la imagen de "${boton.titulo.trim()}"`,
           promesa: subirImagenCloudinary(boton.imagenFile, "mitarjeta/botones").catch(() => null),
         })
       }
-    })
+      if (boton.tipo === "archivo" && boton.archivoFile) {
+        tareas.push({
+          tipo: "botonArchivo",
+          ruta: ubicacion,
+          etiqueta: `el archivo de "${boton.titulo.trim()}"`,
+          promesa: subirImagenCloudinary(boton.archivoFile, "mitarjeta/brochures", undefined, "raw").catch(
+            () => null
+          ),
+        })
+      }
+      if (boton.tipo === "catalogo") {
+        boton.items.forEach((item, indiceItem) => {
+          if (item.titulo.trim() && item.imagenFile) {
+            tareas.push({
+              tipo: "catalogoItem",
+              ruta: ubicacion,
+              indiceItem,
+              etiqueta: `la imagen de "${item.titulo.trim()}"`,
+              promesa: subirImagenCloudinary(item.imagenFile, "mitarjeta/productos").catch(() => null),
+            })
+          }
+        })
+      }
+      if (boton.tipo === "opciones") {
+        boton.hijos.forEach((hijo, indiceHijo) =>
+          recolectarTareasBoton(hijo, { indice: ubicacion.indice, indiceHijo })
+        )
+      }
+    }
+    botones.forEach((boton, indice) => recolectarTareasBoton(boton, { indice }))
 
-    // Todas las subidas (avatar, banner, folleto y fotos de productos y
-    // servicios) se disparan en paralelo en vez de esperarse una por una: en
-    // una conexión móvil esto reduce el tiempo de guardado a una fracción
-    // del secuencial.
+    // Todas las subidas (avatar, banner, imagen de fondo y las de cada
+    // botón/ítem de catálogo/archivo) se disparan en paralelo en vez de
+    // esperarse una por una: en una conexión móvil esto reduce el tiempo de
+    // guardado a una fracción del secuencial.
     const resultados =
       tareas.length > 0 ? await Promise.all(tareas.map((tarea) => tarea.promesa)) : []
 
     avatarAbortRef.current = null
     bannerAbortRef.current = null
-    brochureAbortRef.current = null
     fondoImagenAbortRef.current = null
 
     const fallidas: string[] = []
@@ -1400,11 +1445,10 @@ export function TarjetaForm({
       }
       if (tarea.tipo === "avatar") avatarUrl = url
       else if (tarea.tipo === "banner") bannerUrl = url
-      else if (tarea.tipo === "brochure") brochureUrl = url
       else if (tarea.tipo === "fondoImagen") fondoImagenUrlFinal = url
-      else if (tarea.tipo === "producto") imagenesProductoPorIndice.set(tarea.indice, url)
-      else if (tarea.tipo === "boton") imagenesBotonPorIndice.set(tarea.indice, url)
-      else imagenesServicioItemPorClave.set(`${tarea.indiceSeccion}-${tarea.indiceItem}`, url)
+      else if (tarea.tipo === "botonImagen") imagenesBotonPorRuta.set(claveBoton(tarea.ruta), url)
+      else if (tarea.tipo === "botonArchivo") archivosBotonPorRuta.set(claveBoton(tarea.ruta), url)
+      else imagenesCatalogoItemPorClave.set(claveItemCatalogo(tarea.ruta, tarea.indiceItem), url)
     })
 
     if (fallidas.length > 0) {
@@ -1417,69 +1461,84 @@ export function TarjetaForm({
       return
     }
 
-    const productosFinales: Producto[] = productos
-      .map((producto, indice) => ({ producto, indice }))
-      .filter(({ producto }) => producto.titulo.trim())
-      .map(({ producto, indice }) => ({
-        titulo: producto.titulo.trim(),
-        descripcion: producto.descripcion.trim() || undefined,
-        precio: producto.precio.trim() || undefined,
-        enlaceUrl: producto.enlaceUrl.trim() || undefined,
-        imagenUrl: imagenesProductoPorIndice.get(indice) ?? producto.imagenUrlExistente ?? undefined,
-      }))
-
     const redesFinales = redesValidas(redes)
-    const seccionesServiciosFinales: SeccionServicios[] = seccionesServicios
-      .map((seccion, indiceSeccion) => ({
-        titulo: seccion.titulo.trim(),
-        items: seccion.items
-          .map((item, indiceItem) => ({ item, indiceItem }))
-          .filter(({ item }) => item.titulo.trim())
-          .map(({ item, indiceItem }) => ({
-            titulo: item.titulo.trim(),
-            descripcion: item.descripcion.trim() || undefined,
-            precio: item.precio.trim() || undefined,
-            enlaceUrl: item.enlaceUrl.trim() || undefined,
-            imagenUrl:
-              imagenesServicioItemPorClave.get(`${indiceSeccion}-${indiceItem}`) ??
-              item.imagenUrlExistente ??
-              undefined,
-          })),
-      }))
-      // La sección [0] siempre se guarda (aunque esté vacía, es la
-      // "Servicios" por defecto) — las siguientes solo si tienen título o
-      // algún ítem, para no persistir una sección vacía que se abrió pero
-      // nunca se llenó.
-      .filter((seccion, i) => i === 0 || seccion.titulo || seccion.items.length > 0)
 
-    const botonesFinales: BotonCta[] = botones
-      // El índice se toma ANTES de filtrar (mismo criterio que
-      // productosFinales arriba) — imagenesBotonPorIndice quedó indexado
-      // contra el array original de `botones`, no contra el filtrado.
-      .map((boton, indice) => ({ boton, indice }))
-      .filter(({ boton }) => boton.titulo.trim())
-      .map(({ boton, indice }) => ({
+    /** Arma el `Boton` final de UNO — recursivo para los hijos de
+     *  "opciones" (mismo criterio de filtro `titulo.trim()` e índice
+     *  ORIGINAL antes de filtrar que ya usaba `productosFinales`/
+     *  `botonesFinales` antes de la unificación). Closure sobre los 3 Maps
+     *  de arriba (recién poblados con las URLs subidas). */
+    function construirBotonFinal(boton: BotonFormState, ubicacion: UbicacionBoton): Boton {
+      const base = {
         id: boton.id,
         titulo: boton.titulo.trim(),
         subtitulo: boton.subtitulo.trim() || undefined,
-        url: boton.url.trim(),
         iconoTipo: boton.iconoTipo,
         imagenUrl:
           boton.iconoTipo === "imagen"
-            ? (imagenesBotonPorIndice.get(indice) ?? boton.imagenUrlExistente ?? undefined)
+            ? (imagenesBotonPorRuta.get(claveBoton(ubicacion)) ?? (boton.imagenUrlExistente || undefined))
             : undefined,
         iconoId: boton.iconoTipo === "icono" ? boton.iconoId : undefined,
         colorFondo: boton.colorFondoActivo ? boton.colorFondo : undefined,
         textura: boton.textura !== "ninguna" ? boton.textura : undefined,
         colorBorde: boton.colorBordeActivo ? boton.colorBorde : undefined,
-      }))
+      }
+      if (boton.tipo === "enlace") return { ...base, tipo: "enlace", url: boton.url.trim() }
+      if (boton.tipo === "whatsapp")
+        return {
+          ...base,
+          tipo: "whatsapp",
+          waNumero: boton.waNumero.trim(),
+          waMensaje: boton.waMensaje.trim() || undefined,
+        }
+      if (boton.tipo === "archivo")
+        return {
+          ...base,
+          tipo: "archivo",
+          archivoUrl: archivosBotonPorRuta.get(claveBoton(ubicacion)) ?? boton.archivoUrlExistente ?? "",
+        }
+      if (boton.tipo === "catalogo")
+        return {
+          ...base,
+          tipo: "catalogo",
+          vista: boton.vista,
+          items: boton.items
+            .map((item, indiceItem) => ({ item, indiceItem }))
+            .filter(({ item }) => item.titulo.trim())
+            .map(({ item, indiceItem }) => ({
+              titulo: item.titulo.trim(),
+              descripcion: item.descripcion.trim() || undefined,
+              precio: item.precio.trim() || undefined,
+              enlaceUrl: item.enlaceUrl.trim() || undefined,
+              imagenUrl:
+                imagenesCatalogoItemPorClave.get(claveItemCatalogo(ubicacion, indiceItem)) ??
+                item.imagenUrlExistente ??
+                undefined,
+            })),
+        }
+      // "opciones"
+      return {
+        ...base,
+        tipo: "opciones",
+        hijos: boton.hijos
+          .map((hijo, indiceHijo) => ({ hijo, indiceHijo }))
+          .filter(({ hijo }) => hijo.titulo.trim())
+          .map(
+            ({ hijo, indiceHijo }) =>
+              construirBotonFinal(hijo, { indice: ubicacion.indice, indiceHijo }) as BotonHijo
+          ),
+      }
+    }
+
+    const botonesFinales: Boton[] = botones
+      .map((boton, indice) => ({ boton, indice }))
+      .filter(({ boton }) => boton.titulo.trim())
+      .map(({ boton, indice }) => construirBotonFinal(boton, { indice }))
 
     const datos_contacto: DatosContacto = {
       direccion: direccion.trim() || undefined,
       direccionMapsUrl: direccionMapsUrl.trim() || undefined,
       videoUrl: videoUrl.trim() || undefined,
-      seccionesServicios: seccionesServiciosFinales,
-      productos: productosFinales,
       redes: redesFinales,
       botones: botonesFinales,
       nombre: nombre.trim(),
@@ -1498,7 +1557,6 @@ export function TarjetaForm({
       avatarPosicion,
       bannerUrl,
       bannerPreset: bannerUrl ? undefined : bannerPresetId,
-      brochureUrl,
       temaModo,
       avatarForma,
       estiloTipografia,
@@ -1530,7 +1588,6 @@ export function TarjetaForm({
         fondoTarjetaActivo && fondoTarjetaModo === "avanzado" && fondoTarjetaTipoDegradado === "lineal"
           ? fondoTarjetaDireccionGrados
           : undefined,
-      tituloProductos: tituloProductos.trim() || undefined,
       colorTextoSecundario: colorTextoSecundario || undefined,
       ordenSecciones,
       badgeIconoActivo,
@@ -1704,54 +1761,20 @@ export function TarjetaForm({
   const avatarMostrado = avatarPreview || avatarUrlExistente
   const bannerMostrado = bannerPreview || bannerUrlExistente
   const fondoImagenMostrado = fondoImagenPreview || fondoImagenUrlExistente
-  const brochureMostrado = brochureUrlExistente || (brochureFile ? "#" : undefined)
-  const productosActuales: Producto[] = productos
-    .filter((producto) => producto.titulo.trim())
-    .map((producto) => ({
-      titulo: producto.titulo,
-      descripcion: producto.descripcion || undefined,
-      precio: producto.precio || undefined,
-      enlaceUrl: producto.enlaceUrl || undefined,
-      imagenUrl: producto.imagenPreview || producto.imagenUrlExistente || undefined,
-    }))
 
-  const seccionesServiciosActuales: SeccionServicios[] = seccionesServicios.map((seccion) => ({
-    titulo: seccion.titulo,
-    items: seccion.items
-      .filter((item) => item.titulo.trim())
-      .map((item) => ({
-        titulo: item.titulo,
-        descripcion: item.descripcion || undefined,
-        precio: item.precio || undefined,
-        enlaceUrl: item.enlaceUrl || undefined,
-        imagenUrl: item.imagenPreview || item.imagenUrlExistente || undefined,
-      })),
-  }))
-
-  // La vista previa refleja el color/textura/borde tal cual el dueño los
-  // está probando, aunque todavía no haya guardado — mismo criterio que el
-  // resto de identidadVisualActual (colores/plantillas en vivo).
-  const botonesActuales: BotonCta[] = botones
+  // La vista previa refleja el contenido tal cual el dueño lo está
+  // probando, aunque todavía no haya guardado (mismo criterio que el resto
+  // de identidadVisualActual/colores/plantillas en vivo) — reusa
+  // `construirBotonPreview` (función pura, ver arriba) en vez de repetir
+  // esta transformación acá.
+  const botonesActuales: Boton[] = botones
     .filter((boton) => boton.titulo.trim())
-    .map((boton) => ({
-      id: boton.id,
-      titulo: boton.titulo,
-      subtitulo: boton.subtitulo || undefined,
-      url: boton.url,
-      iconoTipo: boton.iconoTipo,
-      imagenUrl: boton.iconoTipo === "imagen" ? boton.imagenPreview || boton.imagenUrlExistente || undefined : undefined,
-      iconoId: boton.iconoTipo === "icono" ? boton.iconoId : undefined,
-      colorFondo: boton.colorFondoActivo ? boton.colorFondo : undefined,
-      textura: boton.textura !== "ninguna" ? boton.textura : undefined,
-      colorBorde: boton.colorBordeActivo ? boton.colorBorde : undefined,
-    }))
+    .map((boton) => construirBotonPreview(boton))
 
   const datosContactoActual: DatosContacto = {
     direccion,
     direccionMapsUrl,
     videoUrl,
-    seccionesServicios: seccionesServiciosActuales,
-    productos: productosActuales,
     redes: redesValidas(redes),
     botones: botonesActuales,
     nombre,
@@ -1770,7 +1793,6 @@ export function TarjetaForm({
     avatarPosicion,
     bannerUrl: bannerMostrado,
     bannerPreset: bannerMostrado ? undefined : bannerPresetId,
-    brochureUrl: brochureMostrado,
     temaModo,
     avatarForma,
     estiloTipografia,
@@ -1802,7 +1824,6 @@ export function TarjetaForm({
       fondoTarjetaActivo && fondoTarjetaModo === "avanzado" && fondoTarjetaTipoDegradado === "lineal"
         ? fondoTarjetaDireccionGrados
         : undefined,
-    tituloProductos: tituloProductos.trim() || undefined,
     colorTextoSecundario: colorTextoSecundario || undefined,
     ordenSecciones,
     badgeIconoActivo,
@@ -2883,316 +2904,11 @@ export function TarjetaForm({
     </div>
   )
 
-  // Mismo patrón visual/UX que "Productos" (título, precio, descripción,
-  // enlace, imagen por ítem) — reemplaza al viejo "Servicios" de una sola
-  // lista título+descripción. Una función en vez de una constante porque
-  // ahora puede haber 1/2/3 secciones (según plan), cada una con su propio
-  // campo de título editable en tiempo real (ver SECCIONES más abajo).
-  function contenidoSeccionServicios(indiceSeccion: number) {
-    const seccion = seccionesServicios[indiceSeccion]
-    if (!seccion) return null
-    const esUltima = indiceSeccion === seccionesServicios.length - 1
-    const campoScroll = `servicios-${indiceSeccion}`
-
-    return (
-      <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
-        <div className="flex items-center gap-2">
-          <label className="flex flex-1 flex-col gap-1.5">
-            <span className={labelClase}>Título de la sección</span>
-            <input
-              value={seccion.titulo}
-              onChange={(e) => actualizarTituloSeccionServicios(indiceSeccion, e.target.value)}
-              onFocus={() => scrollPreviewTo(campoScroll)}
-              placeholder={indiceSeccion === 0 ? "Servicios" : `Sección ${indiceSeccion + 1}`}
-              className={inputClase}
-            />
-          </label>
-          {indiceSeccion > 0 && (
-            <button
-              type="button"
-              onClick={() => quitarSeccionServicios(indiceSeccion)}
-              aria-label="Quitar esta sección"
-              className="mt-6 shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          )}
-        </div>
-
-        {seccion.items.map((item, index) => {
-          const imagenMostrada = item.imagenPreview || item.imagenUrlExistente
-          return (
-            <div
-              key={index}
-              className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
-            >
-              <div className="flex items-center gap-2">
-                <input
-                  value={item.titulo}
-                  onChange={(e) =>
-                    actualizarItemServicio(indiceSeccion, index, "titulo", e.target.value)
-                  }
-                  onFocus={() => scrollPreviewTo(campoScroll)}
-                  placeholder="Título del servicio"
-                  className={cn(inputClase, "flex-1")}
-                />
-                <div className="flex w-32 shrink-0 items-center overflow-hidden rounded-xl border border-border bg-muted/60">
-                  <span className="shrink-0 pl-3 text-xs text-muted-foreground">$</span>
-                  <input
-                    value={item.precio}
-                    onChange={(e) =>
-                      actualizarItemServicio(indiceSeccion, index, "precio", e.target.value)
-                    }
-                    onFocus={() => scrollPreviewTo(campoScroll)}
-                    placeholder="Precio"
-                    className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => quitarItemServicio(indiceSeccion, index)}
-                  aria-label="Quitar servicio"
-                  className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
-                >
-                  <Trash2 className="size-4" />
-                </button>
-              </div>
-              <input
-                value={item.descripcion}
-                onChange={(e) =>
-                  actualizarItemServicio(indiceSeccion, index, "descripcion", e.target.value)
-                }
-                onFocus={() => scrollPreviewTo(campoScroll)}
-                placeholder="Descripción corta (opcional)"
-                className={inputClase}
-              />
-              <input
-                type="url"
-                value={item.enlaceUrl}
-                onChange={(e) =>
-                  actualizarItemServicio(indiceSeccion, index, "enlaceUrl", e.target.value)
-                }
-                onFocus={() => scrollPreviewTo(campoScroll)}
-                placeholder="Enlace para agendar o ver más (opcional)"
-                className={inputClase}
-              />
-              <div className="flex items-center gap-3">
-                {imagenMostrada && (
-                  <div className="relative shrink-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
-                    <img
-                      src={imagenMostrada}
-                      alt="Vista previa del servicio"
-                      className="size-12 rounded-lg border border-border object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => quitarItemServicioImagen(indiceSeccion, index)}
-                      aria-label="Quitar imagen del servicio"
-                      className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </div>
-                )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => handleItemServicioImagenChange(indiceSeccion, index, e)}
-                  onFocus={() => scrollPreviewTo(campoScroll)}
-                  className={cn(
-                    inputClase,
-                    "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-                  )}
-                />
-              </div>
-            </div>
-          )
-        })}
-
-        {seccion.items.length < 12 && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => agregarItemServicio(indiceSeccion)}
-            className="self-start"
-          >
-            <Plus className="size-3.5" /> Agregar servicio
-          </Button>
-        )}
-
-        {indiceSeccion === 0 && (
-          <label className="flex flex-col gap-1.5">
-            <span className={labelClase}>Folleto o presentación (PDF)</span>
-            <div className="flex items-center gap-3">
-              {(brochureUrlExistente || brochureFile) && (
-                <div className="flex shrink-0 items-center gap-2 rounded-xl border border-border bg-background/50 px-3 py-2">
-                  <FileText className="size-4 text-muted-foreground" />
-                  <span className="max-w-32 truncate text-xs text-foreground">
-                    {brochureFile?.name || "Folleto actual"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={quitarBrochure}
-                    aria-label="Quitar folleto"
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                </div>
-              )}
-              <input
-                key={brochureInputKey}
-                type="file"
-                accept="application/pdf"
-                onChange={handleBrochureChange}
-                onFocus={() => scrollPreviewTo(campoScroll)}
-                className={cn(
-                  inputClase,
-                  "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-                )}
-              />
-            </div>
-          </label>
-        )}
-
-        {esUltima &&
-          (seccionesServicios.length < seccionesServiciosMaxPlan ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={agregarSeccionServicios}
-              className="self-start"
-            >
-              <Plus className="size-3.5" /> Agregar otra sección de servicios
-            </Button>
-          ) : (
-            seccionesServicios.length < 3 && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <CandadoPlan plan={seccionesServicios.length === 1 ? "alcance" : "poder"} />
-                Actualizá tu plan para agregar otra sección de servicios.
-              </div>
-            )
-          ))}
-      </div>
-    )
-  }
-
-  const contenidoProductos = (
-    <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
-      <label className="flex flex-col gap-1.5">
-        <span className={labelClase}>Título de la sección</span>
-        <input
-          value={tituloProductos}
-          onChange={(e) => setTituloProductos(e.target.value)}
-          onFocus={() => scrollPreviewTo("productos")}
-          placeholder="Productos"
-          className={inputClase}
-        />
-      </label>
-
-      {productos.map((producto, index) => {
-        const imagenMostrada = producto.imagenPreview || producto.imagenUrlExistente
-        return (
-          <div
-            key={index}
-            className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
-          >
-            <div className="flex items-center gap-2">
-              <input
-                value={producto.titulo}
-                onChange={(e) => actualizarProductoTitulo(index, e.target.value)}
-                onFocus={() => scrollPreviewTo("productos")}
-                placeholder="Título del producto"
-                className={cn(inputClase, "flex-1")}
-              />
-              <div className="flex w-32 shrink-0 items-center overflow-hidden rounded-xl border border-border bg-muted/60">
-                <span className="shrink-0 pl-3 text-xs text-muted-foreground">$</span>
-                <input
-                  value={producto.precio}
-                  onChange={(e) => actualizarProductoPrecio(index, e.target.value)}
-                  onFocus={() => scrollPreviewTo("productos")}
-                  placeholder="Precio"
-                  className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => quitarProducto(index)}
-                aria-label="Quitar producto"
-                className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
-              >
-                <Trash2 className="size-4" />
-              </button>
-            </div>
-            <input
-              value={producto.descripcion}
-              onChange={(e) => actualizarProductoDescripcion(index, e.target.value)}
-              onFocus={() => scrollPreviewTo("productos")}
-              placeholder="Descripción corta (opcional)"
-              className={inputClase}
-            />
-            <input
-              type="url"
-              value={producto.enlaceUrl}
-              onChange={(e) => actualizarProductoEnlace(index, e.target.value)}
-              onFocus={() => scrollPreviewTo("productos")}
-              placeholder="Enlace para comprar o ver más (opcional)"
-              className={inputClase}
-            />
-            <div className="flex items-center gap-3">
-              {imagenMostrada && (
-                <div className="relative shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
-                  <img
-                    src={imagenMostrada}
-                    alt="Vista previa del producto"
-                    className="size-12 rounded-lg border border-border object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => quitarProductoImagen(index)}
-                    aria-label="Quitar imagen del producto"
-                    className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
-                  >
-                    <X className="size-3" />
-                  </button>
-                </div>
-              )}
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => handleProductoImagenChange(index, e)}
-                onFocus={() => scrollPreviewTo("productos")}
-                className={cn(
-                  inputClase,
-                  "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-                )}
-              />
-            </div>
-          </div>
-        )
-      })}
-
-      {productos.length < 12 && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={agregarProducto}
-          className="self-start"
-        >
-          <Plus className="size-3.5" /> Agregar producto
-        </Button>
-      )}
-    </div>
-  )
-
-  // Orden de aparición de Servicios/Agenda/Productos/Botones en la tarjeta
-  // pública — mismo patrón de flechas ↑/↓ que ya usa /admin/testimonios
-  // para reordenar (sin librería de drag-and-drop nueva).
+  // Orden de aparición de Agenda/Botones en la tarjeta pública — mismo
+  // patrón de flechas ↑/↓ que ya usa /admin/testimonios para reordenar (sin
+  // librería de drag-and-drop nueva). "Servicios"/"Productos" ya no son
+  // bloques propios (2026-08-09) — ahora son botones tipo "catalogo" dentro
+  // de "Botones", reordenables individualmente (ver renderBotonFila).
   const contenidoOrdenSecciones = (
     <div className="flex flex-col gap-2 px-5 pb-5 pt-1">
       <p className="text-xs text-muted-foreground">
@@ -3232,86 +2948,280 @@ export function TarjetaForm({
     </div>
   )
 
-  const contenidoBotones = (
-    <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
-      <p className="text-xs text-muted-foreground">
-        Botones de ancho completo con título, subtítulo, ícono o imagen y un enlace — ideales
-        como llamado a la acción (agendar, comprar, WhatsApp, etc.).
-      </p>
-
-      {botones.map((boton, index) => {
-        const imagenMostrada = boton.imagenPreview || boton.imagenUrlExistente
-        const estiloPreview: React.CSSProperties = {
-          backgroundColor: boton.colorFondoActivo ? boton.colorFondo : colorBotones,
-          color: obtenerColorContraste(boton.colorFondoActivo ? boton.colorFondo : colorBotones),
-          borderColor: boton.colorBordeActivo ? boton.colorBorde : undefined,
-          ...estiloTexturaBoton(boton.textura),
-        }
-        return (
-          <div
-            key={boton.id}
-            className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/50 p-3"
-          >
-            {/* Vista previa en vivo — mismo markup que el CTA real. */}
-            <div
-              style={estiloPreview}
-              className="relative flex w-full items-center gap-3 overflow-hidden rounded-2xl border px-4 py-3"
-            >
-              <ContenidoBotonCta
-                boton={{
-                  id: boton.id,
-                  titulo: boton.titulo,
-                  subtitulo: boton.subtitulo,
-                  url: boton.url,
-                  iconoTipo: boton.iconoTipo,
-                  imagenUrl: imagenMostrada || undefined,
-                  iconoId: boton.iconoId,
-                }}
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                value={boton.titulo}
-                onChange={(e) => actualizarBoton(index, "titulo", e.target.value)}
-                onFocus={() => scrollPreviewTo("botones")}
-                placeholder="Título del botón"
-                className={cn(inputClase, "flex-1")}
-              />
+  /** Ícono/imagen a la izquierda + color de fondo/borde/textura — común a
+   *  enlace/whatsapp/archivo/opciones (NO a catálogo: su tile público no
+   *  usa ninguno de estos campos, ver renderBotonCatalogo en
+   *  tarjeta-card.tsx, así que no tiene sentido ofrecerlos acá). Extraído
+   *  para no repetir este bloque 4 veces dentro de renderBotonFila. */
+  function contenidoIconoYColorBoton(boton: BotonFormState, ubicacion: UbicacionBoton) {
+    const imagenMostrada = boton.imagenPreview || boton.imagenUrlExistente
+    return (
+      <>
+        <div className="flex flex-col gap-2">
+          <span className="text-xs text-muted-foreground">Ícono o imagen (a la izquierda)</span>
+          <div className="inline-flex w-fit rounded-full border border-border bg-white/70 p-0.5 dark:bg-zinc-900/60">
+            {(["icono", "imagen"] as const).map((tipoIcono) => (
               <button
+                key={tipoIcono}
                 type="button"
-                onClick={() => quitarBoton(index)}
-                aria-label="Quitar botón"
-                className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+                onClick={() => actualizarBotonEn(ubicacion, "iconoTipo", tipoIcono)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium transition-colors duration-200 ease-out",
+                  boton.iconoTipo === tipoIcono
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
               >
-                <Trash2 className="size-4" />
+                {tipoIcono === "icono" ? "Ícono" : "Imagen"}
               </button>
+            ))}
+          </div>
+
+          {boton.iconoTipo === "icono" ? (
+            <div className="flex flex-wrap gap-1.5">
+              {BOTON_ICONOS.map(({ id, etiqueta, Icono }) => (
+                <button
+                  key={id}
+                  type="button"
+                  title={etiqueta}
+                  aria-label={etiqueta}
+                  onClick={() => actualizarBotonEn(ubicacion, "iconoId", id)}
+                  className={cn(
+                    "flex size-8 items-center justify-center rounded-lg border-2 transition-colors duration-200 ease-out",
+                    boton.iconoId === id
+                      ? "border-foreground bg-background"
+                      : "border-border bg-background/50 hover:bg-background"
+                  )}
+                >
+                  <Icono className="size-4" />
+                </button>
+              ))}
             </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              {imagenMostrada && (
+                <div className="relative shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
+                  <img
+                    src={imagenMostrada}
+                    alt="Vista previa del botón"
+                    className="size-12 rounded-full border border-border object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => quitarBotonImagen(ubicacion)}
+                    aria-label="Quitar imagen del botón"
+                    className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleBotonImagenChange(ubicacion, e)}
+                className={cn(
+                  inputClase,
+                  "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                )}
+              />
+            </div>
+          )}
+          <span className="text-[11px] text-muted-foreground">
+            Imagen cuadrada (1:1), mínimo 200×200px para que se vea nítida.
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+            <span className="text-xs text-muted-foreground">Color de fondo</span>
+            <div className="flex items-center gap-2">
+              {boton.colorFondoActivo && (
+                <button
+                  type="button"
+                  onClick={() => actualizarBotonEn(ubicacion, "colorFondoActivo", false)}
+                  className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                >
+                  Quitar
+                </button>
+              )}
+              <input
+                type="color"
+                value={boton.colorFondo}
+                onChange={(e) => {
+                  actualizarBotonEn(ubicacion, "colorFondo", e.target.value)
+                  actualizarBotonEn(ubicacion, "colorFondoActivo", true)
+                }}
+                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+              />
+            </div>
+          </label>
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+            <span className="text-xs text-muted-foreground">Color del borde</span>
+            <div className="flex items-center gap-2">
+              {boton.colorBordeActivo && (
+                <button
+                  type="button"
+                  onClick={() => actualizarBotonEn(ubicacion, "colorBordeActivo", false)}
+                  className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                >
+                  Quitar
+                </button>
+              )}
+              <input
+                type="color"
+                value={boton.colorBorde}
+                onChange={(e) => {
+                  actualizarBotonEn(ubicacion, "colorBorde", e.target.value)
+                  actualizarBotonEn(ubicacion, "colorBordeActivo", true)
+                }}
+                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+              />
+            </div>
+          </label>
+        </div>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground">Textura de fondo</span>
+          <select
+            value={boton.textura}
+            onChange={(e) => actualizarBotonEn(ubicacion, "textura", e.target.value)}
+            className={inputClase}
+          >
+            {BOTON_TEXTURAS.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.etiqueta}
+              </option>
+            ))}
+          </select>
+        </label>
+      </>
+    )
+  }
+
+  /** Fila-cabecera SIEMPRE visible (ícono/imagen chica + título + badge de
+   *  tipo + mover ↑/↓ + eliminar + chevron expandir/colapsar) + panel
+   *  específico por tipo cuando está expandido. Recursiva: un botón
+   *  "opciones" renderiza a cada uno de sus hijos con esta misma función
+   *  (un solo nivel — los hijos nunca son "opciones", ver BotonHijo). */
+  function renderBotonFila(
+    boton: BotonFormState,
+    ubicacion: UbicacionBoton,
+    index: number,
+    total: number
+  ): React.ReactNode {
+    const imagenMostrada = boton.imagenPreview || boton.imagenUrlExistente
+    const IconoCabecera = BOTON_ICONOS.find((i) => i.id === boton.iconoId)?.Icono ?? BOTON_ICONOS[0].Icono
+
+    return (
+      <div
+        key={boton.id}
+        className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/50 p-3"
+      >
+        <div className="flex items-center gap-2">
+          <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted">
+            {boton.iconoTipo === "imagen" && imagenMostrada ? (
+              // eslint-disable-next-line @next/next/no-img-element -- ícono chico, puede ser vista previa local
+              <img src={imagenMostrada} alt="" className="size-full object-cover" />
+            ) : (
+              <IconoCabecera className="size-4 text-muted-foreground" />
+            )}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+            {boton.titulo.trim() || "Sin título"}
+          </span>
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            {ETIQUETA_TIPO_BOTON[boton.tipo]}
+          </span>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => moverBotonEn(ubicacion, -1)}
+              disabled={index === 0}
+              aria-label="Subir"
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+            >
+              <ChevronUp className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => moverBotonEn(ubicacion, 1)}
+              disabled={index === total - 1}
+              aria-label="Bajar"
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+            >
+              <ChevronDown className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => quitarBotonEn(ubicacion)}
+              aria-label="Quitar botón"
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => actualizarBotonEn(ubicacion, "expandido", !boton.expandido)}
+              aria-label={boton.expandido ? "Colapsar" : "Expandir"}
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted"
+            >
+              <ChevronDown
+                className={cn(
+                  "size-3.5 transition-transform duration-200 ease-out",
+                  boton.expandido && "rotate-180"
+                )}
+              />
+            </button>
+          </div>
+        </div>
+
+        {boton.expandido && (
+          <div className="flex flex-col gap-3 border-t border-border/60 pt-3">
             <input
-              value={boton.subtitulo}
-              onChange={(e) => actualizarBoton(index, "subtitulo", e.target.value)}
+              value={boton.titulo}
+              onChange={(e) => actualizarBotonEn(ubicacion, "titulo", e.target.value)}
               onFocus={() => scrollPreviewTo("botones")}
-              placeholder="Subtítulo (opcional)"
-              className={inputClase}
-            />
-            <input
-              type="url"
-              value={boton.url}
-              onChange={(e) => actualizarBoton(index, "url", e.target.value)}
-              onFocus={() => scrollPreviewTo("botones")}
-              placeholder="Enlace (https://...)"
+              placeholder="Título del botón"
               className={inputClase}
             />
 
-            {/* Helper de WhatsApp — sutil a propósito (texto con enlace, no
-                un botón grande): la mayoría de los botones no lo necesita. */}
-            {boton.waAbierto ? (
-              <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-3">
+            {boton.tipo === "enlace" && (
+              <>
+                <input
+                  value={boton.subtitulo}
+                  onChange={(e) => actualizarBotonEn(ubicacion, "subtitulo", e.target.value)}
+                  onFocus={() => scrollPreviewTo("botones")}
+                  placeholder="Subtítulo (opcional)"
+                  className={inputClase}
+                />
+                <input
+                  type="url"
+                  value={boton.url}
+                  onChange={(e) => actualizarBotonEn(ubicacion, "url", e.target.value)}
+                  onFocus={() => scrollPreviewTo("botones")}
+                  placeholder="Enlace (https://...)"
+                  className={inputClase}
+                />
+                {contenidoIconoYColorBoton(boton, ubicacion)}
+              </>
+            )}
+
+            {boton.tipo === "whatsapp" && (
+              <>
+                <input
+                  value={boton.subtitulo}
+                  onChange={(e) => actualizarBotonEn(ubicacion, "subtitulo", e.target.value)}
+                  onFocus={() => scrollPreviewTo("botones")}
+                  placeholder="Subtítulo (opcional)"
+                  className={inputClase}
+                />
                 <label className="flex flex-col gap-1.5">
                   <span className="text-xs text-muted-foreground">Número de WhatsApp</span>
                   <input
                     value={boton.waNumero}
-                    onChange={(e) => actualizarBoton(index, "waNumero", e.target.value)}
+                    onChange={(e) => actualizarBotonEn(ubicacion, "waNumero", e.target.value)}
                     placeholder="Ej. 5215512345678"
                     className={inputClase}
                   />
@@ -3319,7 +3229,7 @@ export function TarjetaForm({
                 {whatsapp && whatsapp !== boton.waNumero && (
                   <button
                     type="button"
-                    onClick={() => actualizarBoton(index, "waNumero", whatsapp)}
+                    onClick={() => actualizarBotonEn(ubicacion, "waNumero", whatsapp)}
                     className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
                   >
                     Usar el mismo de &ldquo;Canales de contacto&rdquo; ({whatsapp})
@@ -3329,187 +3239,269 @@ export function TarjetaForm({
                   <span className="text-xs text-muted-foreground">Mensaje (opcional)</span>
                   <textarea
                     value={boton.waMensaje}
-                    onChange={(e) => actualizarBoton(index, "waMensaje", e.target.value)}
+                    onChange={(e) => actualizarBotonEn(ubicacion, "waMensaje", e.target.value)}
                     rows={2}
                     placeholder="Hola, quiero más información..."
                     className={cn(inputClase, "resize-none")}
                   />
                 </label>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={!boton.waNumero.trim()}
-                    onClick={() => generarUrlWhatsappBoton(index)}
-                  >
-                    Generar enlace
-                  </Button>
+                {contenidoIconoYColorBoton(boton, ubicacion)}
+              </>
+            )}
+
+            {boton.tipo === "archivo" && (
+              <>
+                <input
+                  value={boton.subtitulo}
+                  onChange={(e) => actualizarBotonEn(ubicacion, "subtitulo", e.target.value)}
+                  onFocus={() => scrollPreviewTo("botones")}
+                  placeholder="Subtítulo (opcional)"
+                  className={inputClase}
+                />
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelClase}>Archivo (PDF)</span>
+                  <div className="flex items-center gap-3">
+                    {(boton.archivoUrlExistente || boton.archivoFile) && (
+                      <div className="flex shrink-0 items-center gap-2 rounded-xl border border-border bg-background/50 px-3 py-2">
+                        <FileText className="size-4 text-muted-foreground" />
+                        <span className="max-w-32 truncate text-xs text-foreground">
+                          {boton.archivoFile?.name || "Archivo actual"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => quitarBotonArchivo(ubicacion)}
+                          aria-label="Quitar archivo"
+                          className="shrink-0 text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={(e) => handleBotonArchivoChange(ubicacion, e)}
+                      className={cn(
+                        inputClase,
+                        "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                      )}
+                    />
+                  </div>
+                </label>
+                {contenidoIconoYColorBoton(boton, ubicacion)}
+              </>
+            )}
+
+            {boton.tipo === "opciones" && (
+              <>
+                <input
+                  value={boton.subtitulo}
+                  onChange={(e) => actualizarBotonEn(ubicacion, "subtitulo", e.target.value)}
+                  onFocus={() => scrollPreviewTo("botones")}
+                  placeholder="Subtítulo (opcional)"
+                  className={inputClase}
+                />
+                {contenidoIconoYColorBoton(boton, ubicacion)}
+
+                <div className="flex flex-col gap-2 border-t border-border/60 pt-3">
+                  <span className="text-xs font-medium text-foreground">
+                    Botones dentro de este menú
+                  </span>
+                  {boton.hijos.map((hijo, indiceHijo) =>
+                    renderBotonFila(
+                      hijo,
+                      { indice: ubicacion.indice, indiceHijo },
+                      indiceHijo,
+                      boton.hijos.length
+                    )
+                  )}
+                  {boton.hijos.length < TOPE_HIJOS_OPCIONES && (
+                    <SelectorTipoBoton
+                      opciones={[
+                        { tipo: "enlace", etiqueta: "Enlace", disponible: true },
+                        { tipo: "whatsapp", etiqueta: "WhatsApp", disponible: true },
+                        {
+                          tipo: "catalogo",
+                          etiqueta: "Catálogo",
+                          disponible: !catalogoBloqueado,
+                          plan: catalogoPlanNecesario,
+                        },
+                        { tipo: "archivo", etiqueta: "Archivo", disponible: archivoDisponible, plan: "poder" },
+                      ]}
+                      onElegir={(tipoHijo) =>
+                        agregarBotonHijo(ubicacion.indice, tipoHijo as Exclude<BotonTipo, "opciones">)
+                      }
+                    />
+                  )}
+                </div>
+              </>
+            )}
+
+            {boton.tipo === "catalogo" && (
+              <>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelClase}>Vista</span>
+                  <div className="inline-flex w-fit rounded-full border border-border bg-white/70 p-0.5 dark:bg-zinc-900/60">
+                    {(
+                      [
+                        { id: "grid2" as const, etiqueta: "Grid 2 columnas" },
+                        { id: "lista1" as const, etiqueta: "Lista 1 por línea" },
+                      ]
+                    ).map(({ id, etiqueta }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => actualizarBotonEn(ubicacion, "vista", id)}
+                        className={cn(
+                          "rounded-full px-3 py-1 text-xs font-medium transition-colors duration-200 ease-out",
+                          boton.vista === id
+                            ? "bg-foreground text-background"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {etiqueta}
+                      </button>
+                    ))}
+                  </div>
+                </label>
+
+                {boton.items.map((item, indiceItem) => {
+                  const imagenItemMostrada = item.imagenPreview || item.imagenUrlExistente
+                  return (
+                    <div
+                      key={indiceItem}
+                      className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={item.titulo}
+                          onChange={(e) =>
+                            actualizarItemCatalogo(ubicacion, indiceItem, "titulo", e.target.value)
+                          }
+                          onFocus={() => scrollPreviewTo("botones")}
+                          placeholder="Título"
+                          className={cn(inputClase, "flex-1")}
+                        />
+                        <div className="flex w-32 shrink-0 items-center overflow-hidden rounded-xl border border-border bg-muted/60">
+                          <span className="shrink-0 pl-3 text-xs text-muted-foreground">$</span>
+                          <input
+                            value={item.precio}
+                            onChange={(e) =>
+                              actualizarItemCatalogo(ubicacion, indiceItem, "precio", e.target.value)
+                            }
+                            onFocus={() => scrollPreviewTo("botones")}
+                            placeholder="Precio"
+                            className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => quitarItemCatalogo(ubicacion, indiceItem)}
+                          aria-label="Quitar ítem"
+                          className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
+                      <input
+                        value={item.descripcion}
+                        onChange={(e) =>
+                          actualizarItemCatalogo(ubicacion, indiceItem, "descripcion", e.target.value)
+                        }
+                        onFocus={() => scrollPreviewTo("botones")}
+                        placeholder="Descripción corta (opcional)"
+                        className={inputClase}
+                      />
+                      <input
+                        type="url"
+                        value={item.enlaceUrl}
+                        onChange={(e) =>
+                          actualizarItemCatalogo(ubicacion, indiceItem, "enlaceUrl", e.target.value)
+                        }
+                        onFocus={() => scrollPreviewTo("botones")}
+                        placeholder="Enlace para agendar, comprar o ver más (opcional)"
+                        className={inputClase}
+                      />
+                      <div className="flex items-center gap-3">
+                        {imagenItemMostrada && (
+                          <div className="relative shrink-0">
+                            {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
+                            <img
+                              src={imagenItemMostrada}
+                              alt="Vista previa"
+                              className="size-12 rounded-lg border border-border object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => quitarItemCatalogoImagen(ubicacion, indiceItem)}
+                              aria-label="Quitar imagen"
+                              className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleItemCatalogoImagenChange(ubicacion, indiceItem, e)}
+                          className={cn(
+                            inputClase,
+                            "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                          )}
+                        />
+                      </div>
+                      <span className="text-[11px] text-muted-foreground">
+                        Imagen cuadrada (1:1), mínimo 600×600px para que se vea nítida al ampliarse.
+                      </span>
+                    </div>
+                  )
+                })}
+
+                {boton.items.length < TOPE_ITEMS_CATALOGO && (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => actualizarBoton(index, "waAbierto", false)}
+                    onClick={() => agregarItemCatalogo(ubicacion)}
+                    className="self-start"
                   >
-                    Cancelar
+                    <Plus className="size-3.5" /> Agregar ítem
                   </Button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => actualizarBoton(index, "waAbierto", true)}
-                className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-              >
-                Crear link de WhatsApp
-              </button>
+                )}
+              </>
             )}
-
-            {/* Ícono a la izquierda del botón: imagen subida o uno curado. */}
-            <div className="flex flex-col gap-2">
-              <span className="text-xs text-muted-foreground">Ícono o imagen (a la izquierda)</span>
-              <div className="inline-flex w-fit rounded-full border border-border bg-white/70 p-0.5 dark:bg-zinc-900/60">
-                {(["icono", "imagen"] as const).map((tipo) => (
-                  <button
-                    key={tipo}
-                    type="button"
-                    onClick={() => actualizarBoton(index, "iconoTipo", tipo)}
-                    className={cn(
-                      "rounded-full px-3 py-1 text-xs font-medium transition-colors duration-200 ease-out",
-                      boton.iconoTipo === tipo
-                        ? "bg-foreground text-background"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {tipo === "icono" ? "Ícono" : "Imagen"}
-                  </button>
-                ))}
-              </div>
-
-              {boton.iconoTipo === "icono" ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {BOTON_ICONOS.map(({ id, etiqueta, Icono }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      title={etiqueta}
-                      aria-label={etiqueta}
-                      onClick={() => actualizarBoton(index, "iconoId", id)}
-                      className={cn(
-                        "flex size-8 items-center justify-center rounded-lg border-2 transition-colors duration-200 ease-out",
-                        boton.iconoId === id
-                          ? "border-foreground bg-background"
-                          : "border-border bg-background/50 hover:bg-background"
-                      )}
-                    >
-                      <Icono className="size-4" />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex items-center gap-3">
-                  {imagenMostrada && (
-                    <div className="relative shrink-0">
-                      {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
-                      <img
-                        src={imagenMostrada}
-                        alt="Vista previa del botón"
-                        className="size-12 rounded-full border border-border object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => quitarBotonImagen(index)}
-                        aria-label="Quitar imagen del botón"
-                        className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
-                      >
-                        <X className="size-3" />
-                      </button>
-                    </div>
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => handleBotonImagenChange(index, e)}
-                    className={cn(
-                      inputClase,
-                      "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-                    )}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Fondo, textura y borde. */}
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
-                <span className="text-xs text-muted-foreground">Color de fondo</span>
-                <div className="flex items-center gap-2">
-                  {boton.colorFondoActivo && (
-                    <button
-                      type="button"
-                      onClick={() => actualizarBoton(index, "colorFondoActivo", false)}
-                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                    >
-                      Quitar
-                    </button>
-                  )}
-                  <input
-                    type="color"
-                    value={boton.colorFondo}
-                    onChange={(e) => {
-                      actualizarBoton(index, "colorFondo", e.target.value)
-                      actualizarBoton(index, "colorFondoActivo", true)
-                    }}
-                    className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-                  />
-                </div>
-              </label>
-              <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
-                <span className="text-xs text-muted-foreground">Color del borde</span>
-                <div className="flex items-center gap-2">
-                  {boton.colorBordeActivo && (
-                    <button
-                      type="button"
-                      onClick={() => actualizarBoton(index, "colorBordeActivo", false)}
-                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                    >
-                      Quitar
-                    </button>
-                  )}
-                  <input
-                    type="color"
-                    value={boton.colorBorde}
-                    onChange={(e) => {
-                      actualizarBoton(index, "colorBorde", e.target.value)
-                      actualizarBoton(index, "colorBordeActivo", true)
-                    }}
-                    className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-                  />
-                </div>
-              </label>
-            </div>
-
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Textura de fondo</span>
-              <select
-                value={boton.textura}
-                onChange={(e) => actualizarBoton(index, "textura", e.target.value)}
-                className={inputClase}
-              >
-                {BOTON_TEXTURAS.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.etiqueta}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
-        )
-      })}
+        )}
+      </div>
+    )
+  }
+
+  const contenidoBotones = (
+    <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+      <p className="text-xs text-muted-foreground">
+        Elegí el tipo de botón: enlace directo, WhatsApp, un menú de opciones, un catálogo de
+        productos o servicios, o un archivo descargable.
+      </p>
+
+      {botones.map((boton, index) => renderBotonFila(boton, { indice: index }, index, botones.length))}
 
       {botones.length < TOPE_BOTONES && (
-        <Button type="button" variant="outline" size="sm" onClick={agregarBoton} className="self-start">
-          <Plus className="size-3.5" /> Agregar botón
-        </Button>
+        <SelectorTipoBoton
+          opciones={[
+            { tipo: "enlace", etiqueta: "Enlace", disponible: true },
+            { tipo: "whatsapp", etiqueta: "WhatsApp", disponible: true },
+            { tipo: "opciones", etiqueta: "Opciones", disponible: true },
+            {
+              tipo: "catalogo",
+              etiqueta: "Catálogo",
+              disponible: !catalogoBloqueado,
+              plan: catalogoPlanNecesario,
+            },
+            { tipo: "archivo", etiqueta: "Archivo", disponible: archivoDisponible, plan: "poder" },
+          ]}
+          onElegir={agregarBoton}
+        />
       )}
     </div>
   )
@@ -3640,14 +3632,8 @@ export function TarjetaForm({
     { id: "redes", titulo: "Redes sociales", contenido: contenidoRedes },
     { id: "ubicacion", titulo: "Ubicación y negocio", contenido: contenidoUbicacion },
     { id: "multimedia", titulo: "Contenido multimedia", contenido: contenidoMultimedia },
-    ...seccionesServicios.map((seccion, indiceSeccion) => ({
-      id: `servicios-${indiceSeccion}`,
-      titulo: seccion.titulo.trim() || (indiceSeccion === 0 ? "Servicios" : `Sección ${indiceSeccion + 1}`),
-      contenido: contenidoSeccionServicios(indiceSeccion),
-    })),
-    { id: "productos", titulo: "Productos", contenido: contenidoProductos },
     ...(esEdicion && tarjeta ? [{ id: "agenda", titulo: "Agenda", contenido: contenidoAgenda }] : []),
-    { id: "botones", titulo: "Botón", contenido: contenidoBotones },
+    { id: "botones", titulo: "Botones", contenido: contenidoBotones },
     { id: "orden", titulo: "Orden de secciones", contenido: contenidoOrdenSecciones },
     ...(esEdicion && tarjeta
       ? [{ id: "metricas", titulo: "Estadísticas", contenido: contenidoMetricas }]

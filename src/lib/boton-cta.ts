@@ -41,7 +41,15 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
-import type { SeccionOrdenable } from "@/lib/types"
+import type {
+  Boton,
+  BotonArchivo,
+  BotonCatalogo,
+  BotonCta,
+  DatosContacto,
+  IdentidadVisual,
+  SeccionOrdenable,
+} from "@/lib/types"
 
 // ============================================================================
 // Íconos curados para el botón CTA (opción "icono" de BotonCta.iconoTipo) —
@@ -184,17 +192,117 @@ export interface SeccionOrdenableMeta {
 }
 
 export const SECCIONES_ORDENABLES: SeccionOrdenableMeta[] = [
-  { id: "servicios", etiqueta: "Servicios" },
   { id: "agenda", etiqueta: "Agenda" },
-  { id: "productos", etiqueta: "Productos" },
   { id: "botones", etiqueta: "Botones" },
 ]
 
-export const ORDEN_SECCIONES_DEFAULT: SeccionOrdenable[] = ["servicios", "agenda", "productos", "botones"]
+export const ORDEN_SECCIONES_DEFAULT: SeccionOrdenable[] = ["agenda", "botones"]
 
+/** Tolerante hacia adelante Y hacia atrás: un `ordenSecciones` viejo que
+ *  todavía mencione "servicios"/"productos" (de antes de la unificación de
+ *  Botones, 2026-08-09) simplemente los descarta acá (ya no están en
+ *  `ORDEN_SECCIONES_DEFAULT`) — su función hoy es leerse crudo desde
+ *  `normalizarBotones()` para decidir el orden relativo de los botones
+ *  migrados, no a través de esta función. */
 export function ordenSeccionesNormalizado(orden?: SeccionOrdenable[]): SeccionOrdenable[] {
   if (!orden || orden.length === 0) return ORDEN_SECCIONES_DEFAULT
   const conocidas = orden.filter((id) => ORDEN_SECCIONES_DEFAULT.includes(id))
   const faltantes = ORDEN_SECCIONES_DEFAULT.filter((id) => !conocidas.includes(id))
   return [...conocidas, ...faltantes]
+}
+
+// ============================================================================
+// Unificación de Botones/Servicios/Productos (2026-08-09) — normalizarBotones
+// es la ÚNICA fuente de verdad de "cómo se ve una tarjeta vieja como lista de
+// botones", reusada tal cual tanto por el editor (tarjeta-form.tsx, sumando
+// encima los campos propios de edición) como por el render público
+// (tarjeta-card.tsx) — así ambos NUNCA pueden divergir en qué significa el
+// contenido legacy de una tarjeta. Nunca escribe nada, solo lee.
+// ============================================================================
+
+/** IDs deliberadamente determinísticos (no `crypto.randomUUID()`) para los
+ *  botones armados a partir de contenido legacy — un id aleatorio en cada
+ *  render rompería la memoización/keys de React entre renders sucesivos. */
+const ID_BROCHURE_MIGRADO = "migrado-brochure"
+const idSeccionServiciosMigrada = (indice: number) => `migrado-servicios-${indice}`
+const ID_PRODUCTOS_MIGRADO = "migrado-productos"
+
+export function normalizarBotones(datosContacto: DatosContacto, identidadVisual: IdentidadVisual): Boton[] {
+  const botonesPlanos: Boton[] = (datosContacto.botones ?? []).map((boton) =>
+    "tipo" in boton ? boton : { ...(boton as BotonCta), tipo: "enlace" as const }
+  )
+
+  // Servicios — mismo fallback legacy que ya existía (seccionesServicios
+  // guardado, o si no, una sección armada desde `servicios`/`tituloServicios`).
+  const seccionesServicios = datosContacto.seccionesServicios?.length
+    ? datosContacto.seccionesServicios
+    : datosContacto.servicios?.length || identidadVisual.tituloServicios
+      ? [
+          {
+            titulo: identidadVisual.tituloServicios ?? "",
+            items: (datosContacto.servicios ?? []).map((servicio) => ({
+              titulo: servicio.titulo,
+              descripcion: servicio.descripcion,
+            })),
+          },
+        ]
+      : []
+
+  const catalogosMigrados: BotonCatalogo[] = []
+  seccionesServicios.forEach((seccion, indice) => {
+    if (!seccion.items.length && !seccion.titulo.trim()) return
+    catalogosMigrados.push({
+      id: idSeccionServiciosMigrada(indice),
+      tipo: "catalogo",
+      titulo: seccion.titulo.trim() || (indice === 0 ? "Servicios" : `Sección ${indice + 1}`),
+      vista: "grid2",
+      items: seccion.items,
+    })
+  })
+
+  if (datosContacto.productos?.length) {
+    catalogosMigrados.push({
+      id: ID_PRODUCTOS_MIGRADO,
+      tipo: "catalogo",
+      titulo: identidadVisual.tituloProductos?.trim() || "Productos",
+      vista: "grid2",
+      items: datosContacto.productos,
+    })
+  }
+
+  const archivosMigrados: BotonArchivo[] = identidadVisual.brochureUrl
+    ? [
+        {
+          id: ID_BROCHURE_MIGRADO,
+          tipo: "archivo",
+          titulo: "Folleto",
+          iconoTipo: "icono",
+          iconoId: "descarga",
+          archivoUrl: identidadVisual.brochureUrl,
+        },
+      ]
+    : []
+
+  const migrados: Boton[] = [...catalogosMigrados, ...archivosMigrados]
+  if (!migrados.length) return botonesPlanos
+
+  // Orden relativo: si la tarjeta ya tenía un `ordenSecciones` guardado
+  // (de antes de la unificación, puede seguir mencionando "servicios"/
+  // "productos" aunque el tipo actual ya no los liste) y ese orden ponía
+  // "botones" ANTES de "servicios"/"productos", los botones planos van
+  // primero; en cualquier otro caso (sin orden guardado, o el legacy los
+  // tenía en el orden de siempre) los catálogos/archivo migrados van
+  // primero — mismo orden fijo que la tarjeta ya mostraba de siempre.
+  const ordenGuardado = (identidadVisual.ordenSecciones as unknown as string[] | undefined) ?? []
+  const indiceBotones = ordenGuardado.indexOf("botones")
+  const indiceServiciosOProductos = Math.min(
+    ...["servicios", "productos"].map((id) => {
+      const i = ordenGuardado.indexOf(id)
+      return i === -1 ? Number.POSITIVE_INFINITY : i
+    })
+  )
+  const botonesPrimero =
+    indiceBotones !== -1 && indiceServiciosOProductos !== Number.POSITIVE_INFINITY && indiceBotones < indiceServiciosOProductos
+
+  return botonesPrimero ? [...botonesPlanos, ...migrados] : [...migrados, ...botonesPlanos]
 }

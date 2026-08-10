@@ -27,3 +27,12 @@ export function estiloImagenPosicionada(pos?: PosicionImagen): CSSProperties {
       : undefined),
   }
 }
+
+// Las URL de Cloudinary son http(s) y pueden optimizarse con next/image; las
+// vistas previas locales sin guardar todavía (blob:) no, porque no existen
+// en un servidor al que next/image pueda pedirlas. Extraída de
+// tarjeta-card.tsx (2026-08-09) porque catalogo-item-modal.tsx también la
+// necesita.
+export function esUrlOptimizable(url: string) {
+  return url.startsWith("http://") || url.startsWith("https://")
+}

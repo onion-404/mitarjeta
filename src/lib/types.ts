@@ -75,11 +75,12 @@ export interface SeccionServicios {
  *  por el dueño en el editor. */
 export type BotonCtaIconoTipo = "imagen" | "icono"
 
-/** Botón CTA de ancho completo (uno por línea) — sección "Botón" del
- *  editor, ver lib/boton-cta.ts para texturas/íconos curados y el helper
- *  de armado de link de WhatsApp. `id` es un identificador estable propio
- *  (no correlativo al índice del array, así el 3-puntos/modal no se
- *  confunde si se reordena o borra un botón antes que otro). */
+/** @deprecated Modelo viejo (plano, sin `tipo` — implícitamente "enlace")
+ *  de la sección "Botón" del editor, previo a la unificación de Botones/
+ *  Servicios/Productos (2026-08-09, ver CLAUDE.md). Se sigue leyendo tal
+ *  cual está grabado en `datos_contacto.botones` de tarjetas viejas, pero
+ *  SOLO a través de `normalizarBotones()` (lib/boton-cta.ts) — nunca se
+ *  asume este shape directo en ningún componente. Reemplazado por `Boton`. */
 export interface BotonCta {
   id: string
   titulo: string
@@ -95,10 +96,102 @@ export interface BotonCta {
   colorBorde?: string
 }
 
+/** 5 tipos de botón (2026-08-09) — reemplaza el modelo plano de `BotonCta`
+ *  Y absorbe "Servicios"/"Productos" (ahora `tipo: "catalogo"`) y el
+ *  folleto PDF suelto (ahora `tipo: "archivo"`) en un solo sistema. Ver
+ *  `normalizarBotones()` en lib/boton-cta.ts para la migración en memoria
+ *  de tarjetas viejas (nunca escribe hasta el próximo guardado) y CLAUDE.md
+ *  para el detalle de negocio (gating por plan, límites, etc.). */
+export type BotonTipo = "enlace" | "whatsapp" | "opciones" | "catalogo" | "archivo"
+
+/** Vista de un botón "catalogo" — reemplaza el grid fijo de 3 columnas que
+ *  tenían Servicios/Productos: el dueño elige entre grid de 2 columnas o
+ *  lista de 1 por línea (mismo ancho que el resto de los botones). */
+export type CatalogoVista = "grid2" | "lista1"
+
+/** Campos comunes a cualquier tipo de botón — ícono/imagen a la izquierda
+ *  + color/borde/textura de fondo, mismos campos que ya tenía `BotonCta`. */
+interface BotonBase {
+  id: string
+  titulo: string
+  subtitulo?: string
+  iconoTipo?: BotonCtaIconoTipo
+  imagenUrl?: string
+  iconoId?: string
+  /** Sin valor: usa colorBotones (mismo default que el resto de los CTA). */
+  colorFondo?: string
+  /** id de BOTON_TEXTURAS — "ninguna"/undefined = sin textura. */
+  textura?: string
+  colorBorde?: string
+}
+
+/** El botón de ancho completo de siempre — mismo comportamiento que
+ *  `BotonCta`, pero SIN el mini-helper de armar un link de WhatsApp (ese
+ *  helper es ahora exclusivo de `BotonWhatsapp`). */
+export interface BotonEnlace extends BotonBase {
+  tipo: "enlace"
+  url: string
+}
+
+/** Mismo look/estructura visual que `BotonEnlace` — en vez de un campo url
+ *  libre, número + mensaje; la URL final (`wa.me/...`) se resuelve recién
+ *  al momento de guardar/renderizar con `construirUrlWhatsapp()`
+ *  (lib/boton-cta.ts), nunca se persiste el link armado. */
+export interface BotonWhatsapp extends BotonBase {
+  tipo: "whatsapp"
+  waNumero: string
+  waMensaje?: string
+}
+
+/** Archivo descargable (reemplaza al folleto PDF suelto que colgaba de la
+ *  sección [0] de Servicios) — exclusivo del plan Poder (gating vía
+ *  `planes.features.personalizacion_avanzada`, reusa el flag que ya existe
+ *  en vez de sumar uno nuevo). Solo PDF, mismo criterio que `validarPdf`
+ *  ya usaba para el folleto. */
+export interface BotonArchivo extends BotonBase {
+  tipo: "archivo"
+  archivoUrl: string
+  nombreArchivo?: string
+}
+
+/** Reemplaza a "Servicios" (`SeccionServicios`) y "Productos" (`Producto[]`
+ *  suelto) — un botón "catalogo" trae su propia lista de ítems (mismo tipo
+ *  `Producto`, sin cambios) y una vista elegida por el dueño. Cada ítem
+ *  abre un modal de detalle en vez de mostrar todo apretado en el tile.
+ *  Gating: cuenta como "sección" contra `planes.features.
+ *  secciones_servicios_max` (1/2/3 según plan), mismo criterio que hoy
+ *  tiene Servicios — un botón "opciones" NO tiene este límite. */
+export interface BotonCatalogo extends BotonBase {
+  tipo: "catalogo"
+  vista: CatalogoVista
+  items: Producto[]
+}
+
+/** Un botón "opciones" admite un solo nivel de anidamiento — un hijo nunca
+ *  puede ser a su vez "opciones" (decisión de negocio explícita, evita
+ *  menús infinitos). */
+export type BotonHijo = BotonEnlace | BotonWhatsapp | BotonCatalogo | BotonArchivo
+
+/** Botón "padre" que despliega/colapsa (toggle inline, no modal) una lista
+ *  de botones hijos — organización visual pura, sin restricción de plan
+ *  propia (los hijos individuales sí heredan la de su propio tipo, ej. un
+ *  hijo "catalogo" sigue contando contra el tope de secciones). */
+export interface BotonOpciones extends BotonBase {
+  tipo: "opciones"
+  hijos: BotonHijo[]
+}
+
+export type Boton = BotonEnlace | BotonWhatsapp | BotonOpciones | BotonCatalogo | BotonArchivo
+
 /** Secciones cuyo ORDEN de aparición en la tarjeta pública el dueño puede
  *  cambiar (ver IdentidadVisual.ordenSecciones) — no incluye "video" ni
- *  "redes"/"contacto", que siguen en posición fija. */
-export type SeccionOrdenable = "servicios" | "agenda" | "productos" | "botones"
+ *  "redes"/"contacto", que siguen en posición fija. Desde la unificación
+ *  de Botones (2026-08-09), "servicios"/"productos" dejaron de ser bloques
+ *  propios (ahora son botones `tipo: "catalogo"` dentro de "botones"): un
+ *  `ordenSecciones` viejo que todavía los mencione simplemente los ignora
+ *  (`ordenSeccionesNormalizado()` ya filtra por inclusión en la lista
+ *  default, tolerancia ya existente, sin código nuevo necesario ahí). */
+export type SeccionOrdenable = "agenda" | "botones"
 
 // Tipo único de tarjeta (2026-08-01): el editor ya no distingue
 // personal/empresarial (ver tarjeta-form.tsx) — todos estos campos son
@@ -133,20 +226,28 @@ export interface DatosContacto {
   direccionMapsUrl?: string
   videoUrl?: string
   /** @deprecated Modelo viejo de "Servicios" (una sola lista, sin precio/
-   *  imagen/enlace) — reemplazado por `seccionesServicios`. Se sigue
-   *  leyendo (no se borra de tarjetas viejas no regrabadas) solo para armar
-   *  una sección equivalente en memoria la primera vez que se abre el
-   *  editor; ya no se escribe. */
+   *  imagen/enlace) — reemplazado primero por `seccionesServicios`, y esa a
+   *  su vez absorbida por botones `tipo: "catalogo"` (2026-08-09). Se sigue
+   *  leyendo (no se borra de tarjetas viejas no regrabadas) solo para
+   *  `normalizarBotones()` (lib/boton-cta.ts); ya no se escribe. */
   descripcionServicios?: string
   /** @deprecated Ver nota de `descripcionServicios`. */
   servicios?: Servicio[]
-  /** Reemplaza al modelo viejo de arriba — 1 a 3 secciones (tope según
-   *  plan), cada ítem con los mismos campos que Producto. */
+  /** @deprecated Reemplazaba al modelo de arriba — ahora absorbido por
+   *  botones `tipo: "catalogo"` (ver `Boton`/`BotonCatalogo` y
+   *  `normalizarBotones()`, lib/boton-cta.ts). Se sigue leyendo solo para
+   *  esa migración en memoria; ya no se escribe. */
   seccionesServicios?: SeccionServicios[]
+  /** @deprecated Ver nota de `seccionesServicios` — mismo criterio, ahora
+   *  absorbido por botones `tipo: "catalogo"`. */
   productos?: Producto[]
   redes?: RedSocial[]
-  /** Botones CTA de ancho completo, uno por línea — ver BotonCta arriba. */
-  botones?: BotonCta[]
+  /** Botones de ancho completo, uno por línea — 5 tipos posibles (ver
+   *  `Boton`, lib/types.ts). Puede contener el shape viejo y plano de
+   *  `BotonCta` (tarjetas no regrabadas desde la unificación de
+   *  2026-08-09) — nunca se consume directo, siempre a través de
+   *  `normalizarBotones()` (lib/boton-cta.ts). */
+  botones?: (Boton | BotonCta)[]
 }
 
 /** Ancla de reposicionamiento + zoom de una imagen recortable (avatar,
@@ -166,6 +267,10 @@ export interface IdentidadVisual {
   avatarUrl?: string
   bannerUrl?: string
   bannerPreset?: string
+  /** @deprecated Folleto PDF suelto del modelo viejo (colgaba de la
+   *  sección [0] de Servicios) — absorbido por botones `tipo: "archivo"`
+   *  (2026-08-09, ver `Boton`/`BotonArchivo` y `normalizarBotones()`). Se
+   *  sigue leyendo solo para esa migración en memoria; ya no se escribe. */
   brochureUrl?: string
   temaModo?: TemaModo
   avatarForma?: AvatarForma
@@ -237,12 +342,15 @@ export interface IdentidadVisual {
    *  400-800, default: 600 (equivalente al `font-semibold` fijo de siempre)
    *  si no está seteado. Gating: personalizacion_libre. */
   tituloPeso?: number
-  /** @deprecated Título de la sección "Servicios" del modelo viejo — ahora
-   *  vive por sección en `DatosContacto.seccionesServicios[].titulo`. Se
-   *  sigue leyendo solo para la migración en memoria de tarjetas viejas. */
+  /** @deprecated Título de la sección "Servicios" del modelo viejo — pasó
+   *  primero a vivir por sección en `DatosContacto.seccionesServicios[].
+   *  titulo`, y esa a su vez fue absorbida por botones `tipo: "catalogo"`
+   *  (2026-08-09, ver `normalizarBotones()`). Se sigue leyendo solo para
+   *  esa migración en memoria de tarjetas viejas. */
   tituloServicios?: string
-  /** Título personalizable de la sección "Productos" — vacío/undefined usa
-   *  el default ("Productos"). */
+  /** @deprecated Título de la sección "Productos" del modelo viejo — mismo
+   *  criterio que `tituloServicios`, absorbido por botones `tipo:
+   *  "catalogo"`. Se sigue leyendo solo para la migración en memoria. */
   tituloProductos?: string
   /** Ícono del badge "@enlace" (debajo del avatar) — opcional. `undefined`
    *  = mostrado (compatibilidad: toda tarjeta vieja se veía con el ícono

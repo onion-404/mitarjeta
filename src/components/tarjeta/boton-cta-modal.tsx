@@ -6,10 +6,26 @@ import * as React from "react"
 
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 import { obtenerBotonIcono, obtenerBotonTextura } from "@/lib/boton-cta"
-import type { BotonCta } from "@/lib/types"
+import type { BotonCtaIconoTipo } from "@/lib/types"
+
+/** Forma "ya resuelta" de un botón para mostrarlo (preview del editor, CTA
+ *  real, este modal) — sin importar su `tipo` original (enlace/whatsapp/
+ *  archivo), acá siempre llega con la `url` final ya calculada (para
+ *  whatsapp, ya pasada por `construirUrlWhatsapp`). Reemplaza el objeto
+ *  `BotonCta` de antes de la unificación de tipos (2026-08-09) — se
+ *  formaliza acá el mismo patrón ad-hoc que el editor ya armaba en su
+ *  preview en vivo. */
+export interface BotonVistaPrevia {
+  titulo: string
+  subtitulo?: string
+  iconoTipo?: BotonCtaIconoTipo
+  imagenUrl?: string
+  iconoId?: string
+  url: string
+}
 
 interface BotonCtaModalProps {
-  boton: BotonCta
+  boton: BotonVistaPrevia
   /** Estilo ya resuelto (color de fondo/texto/borde) del CTA real en
    *  TarjetaCard — se reusa tal cual para que la vista previa del modal se
    *  vea idéntica al botón de la tarjeta, sin recalcular contraste acá. */
@@ -31,7 +47,7 @@ function detectarShareNativoServidor() {
 /** Contenido del botón (ícono/imagen a la izquierda + título/subtítulo) —
  *  el mismo markup se usa tanto en el CTA real de la tarjeta como acá
  *  adentro del modal, para que la "vista previa" sea 1:1. */
-export function ContenidoBotonCta({ boton }: { boton: BotonCta }) {
+export function ContenidoBotonCta({ boton }: { boton: BotonVistaPrevia }) {
   const iconoMeta = boton.iconoTipo === "icono" ? obtenerBotonIcono(boton.iconoId) : undefined
   const Icono = iconoMeta?.Icono
 
@@ -129,9 +145,12 @@ export function BotonCtaModal({ boton, estiloCta }: BotonCtaModalProps) {
             Vista previa, información y opciones para compartir este botón.
           </Dialog.Description>
 
-          {/* Vista previa — mismo markup/estilo que el CTA real. */}
+          {/* Vista previa — mismo markup/estilo que el CTA real. `estiloCta`
+              ya trae la textura resuelta (el caller la mergea antes de
+              pasarla, ver tarjeta-card.tsx/tarjeta-form.tsx), no hace falta
+              recalcularla acá — `BotonVistaPrevia` no carga `textura`. */}
           <div
-            style={{ ...estiloCta, ...estiloTexturaBoton(boton.textura) }}
+            style={estiloCta}
             className="relative mt-4 flex w-full items-center gap-3 overflow-hidden rounded-2xl border px-4 py-3"
           >
             <ContenidoBotonCta boton={boton} />
