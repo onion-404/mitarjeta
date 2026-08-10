@@ -26,6 +26,7 @@ import { EstadisticasTarjeta } from "@/components/tarjeta/estadisticas-tarjeta"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { CandadoPlan } from "@/components/tarjeta/candado-plan"
+import { ColorPicker } from "@/components/tarjeta/color-picker"
 import { CompartirTarjeta } from "@/components/tarjeta/compartir-tarjeta"
 import { OpcionPersonalizacion, SwatchDivisor, SwatchForma } from "@/components/tarjeta/opcion-personalizacion"
 import { PlantillasGaleria } from "@/components/tarjeta/plantillas-galeria"
@@ -38,8 +39,10 @@ import { BANNER_PRESETS } from "@/lib/banner-presets"
 import {
   BOTON_ICONOS,
   BOTON_TEXTURAS,
+  CONTACTO_ORDENABLES,
   SECCIONES_ORDENABLES,
   normalizarBotones,
+  ordenContactoNormalizado,
   ordenSeccionesNormalizado,
 } from "@/lib/boton-cta"
 import { validarCupon } from "@/lib/cupones"
@@ -62,6 +65,7 @@ import type {
   BotonHijo,
   BotonTipo,
   CatalogoVista,
+  ContactoOrdenable,
   Cupon,
   DatosContacto,
   DivisorBanner,
@@ -70,6 +74,7 @@ import type {
   PeriodicidadSuscripcion,
   Plan,
   PlataformaRed,
+  PosicionImagen,
   RedSocial,
   SeccionOrdenable,
   ServicioAgendable,
@@ -86,6 +91,11 @@ interface ProductoFormState {
   imagenFile: File | null
   imagenPreview: string
   imagenUrlExistente: string
+  /** Ancla de reposicionamiento (mismo mecanismo que avatar/banner/fondo,
+   *  ver lib/imagen-posicion.ts) — la imagen del ítem cubre todo el
+   *  contenedor (object-fit:cover) y se puede reencuadrar sin volver a
+   *  subir el archivo. */
+  imagenPosicion: PosicionImagen
 }
 
 /** Estado de un botón en el editor — unifica Botones/Servicios/Productos/
@@ -121,6 +131,8 @@ interface BotonFormState {
   textura: string
   colorBordeActivo: boolean
   colorBorde: string
+  colorTextoActivo: boolean
+  colorTexto: string
   hijos: BotonFormState[] // "opciones"
   vista: CatalogoVista // "catalogo"
   items: ProductoFormState[] // "catalogo" — reusa ProductoFormState tal cual
@@ -186,6 +198,8 @@ function adaptarBotonFormState(boton: Boton | BotonHijo, expandido: boolean): Bo
     textura: boton.textura ?? "ninguna",
     colorBordeActivo: Boolean(boton.colorBorde),
     colorBorde: boton.colorBorde ?? "#18181b",
+    colorTextoActivo: Boolean(boton.colorTexto),
+    colorTexto: boton.colorTexto ?? "#ffffff",
     hijos: boton.tipo === "opciones" ? boton.hijos.map((hijo) => adaptarBotonFormState(hijo, false)) : [],
     vista: boton.tipo === "catalogo" ? boton.vista : "grid2",
     items:
@@ -198,6 +212,7 @@ function adaptarBotonFormState(boton: Boton | BotonHijo, expandido: boolean): Bo
             imagenFile: null,
             imagenPreview: "",
             imagenUrlExistente: item.imagenUrl ?? "",
+            imagenPosicion: item.imagenPosicion ?? { x: 50, y: 50 },
           }))
         : [],
     expandido,
@@ -221,6 +236,7 @@ function construirBotonPreview(boton: BotonFormState): Boton {
     colorFondo: boton.colorFondoActivo ? boton.colorFondo : undefined,
     textura: boton.textura !== "ninguna" ? boton.textura : undefined,
     colorBorde: boton.colorBordeActivo ? boton.colorBorde : undefined,
+    colorTexto: boton.colorTextoActivo ? boton.colorTexto : undefined,
   }
   if (boton.tipo === "enlace") return { ...base, tipo: "enlace", url: boton.url }
   if (boton.tipo === "whatsapp")
@@ -240,6 +256,7 @@ function construirBotonPreview(boton: BotonFormState): Boton {
           precio: item.precio || undefined,
           enlaceUrl: item.enlaceUrl || undefined,
           imagenUrl: item.imagenPreview || item.imagenUrlExistente || undefined,
+          imagenPosicion: item.imagenPosicion,
         })),
     }
   return {
@@ -260,6 +277,19 @@ function moverEnArray<T>(lista: T[], index: number, direccion: -1 | 1): T[] {
 const TOPE_BOTONES = 8
 const TOPE_HIJOS_OPCIONES = 6
 const TOPE_ITEMS_CATALOGO = 12
+
+/** Colores de fondo/borde en uso en un botón y (recursivamente) en sus
+ *  hijos — alimenta la lista de "Tus colores" del ColorPicker en toda la
+ *  sección de Botones, para poder reutilizar un color ya elegido en vez de
+ *  volver a tipearlo. */
+function recolectarColoresBoton(boton: BotonFormState): string[] {
+  return [
+    ...(boton.colorFondoActivo ? [boton.colorFondo] : []),
+    ...(boton.colorBordeActivo ? [boton.colorBorde] : []),
+    ...(boton.colorTextoActivo ? [boton.colorTexto] : []),
+    ...boton.hijos.flatMap(recolectarColoresBoton),
+  ]
+}
 
 interface OpcionTipoBoton {
   tipo: BotonTipo
@@ -473,6 +503,22 @@ export function TarjetaForm({
   const [colorTitulo, setColorTitulo] = React.useState(visualInicial?.colorTitulo ?? "")
   const [tituloTamano, setTituloTamano] = React.useState(visualInicial?.tituloTamano ?? 20)
   const [tituloPeso, setTituloPeso] = React.useState(visualInicial?.tituloPeso ?? 600)
+  // Título como logo (Poder exclusivo) — reemplaza el <h1> de texto por una
+  // imagen, sin recorte a ninguna forma (a diferencia del avatar). Mismo
+  // patrón de subida diferida que banner/fondoImagen (File + preview local +
+  // URL existente), sin ancla de reposicionamiento (no aplica: se muestra
+  // completa, "como si fuera texto").
+  const [tituloModo, setTituloModo] = React.useState<"texto" | "imagen">(
+    visualInicial?.tituloModo ?? "texto"
+  )
+  const [tituloImagenFile, setTituloImagenFile] = React.useState<File | null>(null)
+  const [tituloImagenPreview, setTituloImagenPreview] = React.useState("")
+  const [tituloImagenUrlExistente, setTituloImagenUrlExistente] = React.useState(
+    visualInicial?.tituloImagenUrl ?? ""
+  )
+  const [tituloImagenAltura, setTituloImagenAltura] = React.useState(
+    visualInicial?.tituloImagenAltura ?? 32
+  )
   // Color de la línea "Rol o descripción" (empresa) — mismo criterio que
   // colorTitulo: vacío = auto-contraste.
   const [colorTextoSecundario, setColorTextoSecundario] = React.useState(
@@ -562,6 +608,47 @@ export function TarjetaForm({
     })
   }
 
+  // Orden de los 4 "pills" de contacto (Llamar/WhatsApp/Email/Cómo llegar)
+  // DENTRO de la fila única de contacto+redes — no mueve la sección en sí
+  // (esa fila siempre va en el mismo lugar de la tarjeta), solo decide qué
+  // pill aparece primero. Ver CONTACTO_ORDENABLES en lib/boton-cta.ts.
+  const [ordenContacto, setOrdenContacto] = React.useState<ContactoOrdenable[]>(() =>
+    ordenContactoNormalizado(visualInicial?.ordenContacto)
+  )
+
+  function moverContacto(index: number, direccion: -1 | 1) {
+    setOrdenContacto((prev) => moverEnArray(prev, index, direccion))
+  }
+
+  function moverRed(index: number, direccion: -1 | 1) {
+    setRedes((prev) => moverEnArray(prev, index, direccion))
+  }
+
+  // "Tus colores" — todos los colores ya elegidos en esta tarjeta, deduplicados,
+  // para reutilizar con un click desde cualquier ColorPicker (pedido explícito
+  // del cliente). Recalculado en cada render (mismo criterio que el resto del
+  // form: son solo lecturas de estado ya en memoria, no vale la pena memoizar).
+  const coloresPersonalizados = Array.from(
+    new Set(
+      [
+        colorPrimario,
+        colorSecundario,
+        colorBotones,
+        colorBadges,
+        colorTextoBotones,
+        colorTextoBadges,
+        colorTextoGeneral,
+        colorTitulo,
+        colorTextoSecundario,
+        fondoTarjetaColor,
+        fondoTarjetaColorSecundario,
+        ...botones.flatMap(recolectarColoresBoton),
+      ]
+        .filter(Boolean)
+        .map((c) => c.toLowerCase())
+    )
+  )
+
   // Fail-closed: sin plan confirmado (ni el elegido al crear, ni uno activo
   // en edición), el gating queda en el nivel más restrictivo — mismo
   // criterio que el resto del gating por plan del proyecto.
@@ -634,6 +721,13 @@ export function TarjetaForm({
     visualInicial?.fondoImagenPosicion ?? { x: 50, y: 50 }
   )
   const [reposicionandoFondoImagen, setReposicionandoFondoImagen] = React.useState(false)
+  // "Repetir fondo": la imagen se muestra a 100% de ancho y se repite hacia
+  // abajo en vez de recortarse con object-fit:cover — mutuamente excluyente
+  // con "Reposicionar" (sin posición que anclar en este modo, ver
+  // lib/types.ts).
+  const [fondoImagenRepetir, setFondoImagenRepetir] = React.useState(
+    visualInicial?.fondoImagenRepetir ?? false
+  )
   const fondoImagenAbortRef = React.useRef<AbortController | null>(null)
 
   const avatarAbortRef = React.useRef<AbortController | null>(null)
@@ -796,6 +890,38 @@ export function TarjetaForm({
     }
   }, [bannerPreview])
 
+  React.useEffect(() => {
+    return () => {
+      if (tituloImagenPreview) URL.revokeObjectURL(tituloImagenPreview)
+    }
+  }, [tituloImagenPreview])
+
+  function handleTituloImagenChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const error = validarImagen(file)
+    if (error) {
+      mostrarErrorArchivo(error)
+      event.target.value = ""
+      return
+    }
+    setTituloImagenFile(file)
+    setTituloImagenUrlExistente("")
+    setTituloImagenPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(file)
+    })
+  }
+
+  function quitarTituloImagen() {
+    setTituloImagenFile(null)
+    setTituloImagenPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return ""
+    })
+    setTituloImagenUrlExistente("")
+  }
+
   function agregarRed() {
     setRedes((prev) =>
       prev.length >= 5 ? prev : [...prev, { plataforma: "instagram", label: "", url: "" }]
@@ -934,6 +1060,8 @@ export function TarjetaForm({
       textura: "ninguna",
       colorBordeActivo: false,
       colorBorde: "#18181b",
+      colorTextoActivo: false,
+      colorTexto: "#ffffff",
       hijos: [],
       vista: "grid2",
       items: [],
@@ -1093,6 +1221,7 @@ export function TarjetaForm({
               imagenFile: null,
               imagenPreview: "",
               imagenUrlExistente: "",
+              imagenPosicion: { x: 50, y: 50 },
             },
           ],
         }
@@ -1133,7 +1262,16 @@ export function TarjetaForm({
         items: boton.items.map((item, j) => {
           if (j !== indiceItem) return item
           if (item.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
-          return { ...item, imagenFile: file, imagenPreview: URL.createObjectURL(file), imagenUrlExistente: "" }
+          // Reinicia el encuadre para la foto nueva — el de la anterior no
+          // tiene por qué seguir siendo el correcto (mismo criterio que
+          // handleAvatarChange).
+          return {
+            ...item,
+            imagenFile: file,
+            imagenPreview: URL.createObjectURL(file),
+            imagenUrlExistente: "",
+            imagenPosicion: { x: 50, y: 50 },
+          }
         }),
       }))
     )
@@ -1161,6 +1299,27 @@ export function TarjetaForm({
       })
     )
   }
+
+  function obtenerBotonEnUbicacion(ubicacion: UbicacionBoton): BotonFormState | undefined {
+    const top = botones[ubicacion.indice]
+    if (!top) return undefined
+    return ubicacion.indiceHijo === undefined ? top : top.hijos[ubicacion.indiceHijo]
+  }
+
+  // Ítem de catálogo con el modal de "Reposicionar" abierto — mismo
+  // mecanismo que avatar/banner/fondoImagen, generalizado con
+  // UbicacionBoton porque acá puede haber muchos ítems (a diferencia de
+  // esos 3, que son singulares).
+  const [reposicionandoItemCatalogo, setReposicionandoItemCatalogo] = React.useState<{
+    ubicacion: UbicacionBoton
+    indiceItem: number
+  } | null>(null)
+  const itemEnReposicion = reposicionandoItemCatalogo
+    ? obtenerBotonEnUbicacion(reposicionandoItemCatalogo.ubicacion)?.items[reposicionandoItemCatalogo.indiceItem]
+    : undefined
+  const imagenItemEnReposicion = itemEnReposicion
+    ? itemEnReposicion.imagenPreview || itemEnReposicion.imagenUrlExistente
+    : ""
 
   function handleAvatarChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -1318,6 +1477,7 @@ export function TarjetaForm({
     let avatarUrl: string | undefined = avatarUrlExistente || undefined
     let bannerUrl: string | undefined = bannerUrlExistente || undefined
     let fondoImagenUrlFinal: string | undefined = fondoImagenUrlExistente || undefined
+    let tituloImagenUrlFinal: string | undefined = tituloImagenUrlExistente || undefined
     const imagenesBotonPorRuta = new Map<string, string>()
     const archivosBotonPorRuta = new Map<string, string>()
     const imagenesCatalogoItemPorClave = new Map<string, string>()
@@ -1326,6 +1486,7 @@ export function TarjetaForm({
       | { tipo: "avatar"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "banner"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "fondoImagen"; etiqueta: string; promesa: Promise<string | null> }
+      | { tipo: "tituloImagen"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "botonImagen"; ruta: UbicacionBoton; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "botonArchivo"; ruta: UbicacionBoton; etiqueta: string; promesa: Promise<string | null> }
       | {
@@ -1374,6 +1535,14 @@ export function TarjetaForm({
           "mitarjeta/fondos",
           fondoImagenAbortRef.current.signal
         ).catch(() => null),
+      })
+    }
+
+    if (tituloImagenFile) {
+      tareas.push({
+        tipo: "tituloImagen",
+        etiqueta: "el logo del título",
+        promesa: subirImagenCloudinary(tituloImagenFile, "mitarjeta/logos").catch(() => null),
       })
     }
 
@@ -1446,6 +1615,7 @@ export function TarjetaForm({
       if (tarea.tipo === "avatar") avatarUrl = url
       else if (tarea.tipo === "banner") bannerUrl = url
       else if (tarea.tipo === "fondoImagen") fondoImagenUrlFinal = url
+      else if (tarea.tipo === "tituloImagen") tituloImagenUrlFinal = url
       else if (tarea.tipo === "botonImagen") imagenesBotonPorRuta.set(claveBoton(tarea.ruta), url)
       else if (tarea.tipo === "botonArchivo") archivosBotonPorRuta.set(claveBoton(tarea.ruta), url)
       else imagenesCatalogoItemPorClave.set(claveItemCatalogo(tarea.ruta, tarea.indiceItem), url)
@@ -1482,6 +1652,7 @@ export function TarjetaForm({
         colorFondo: boton.colorFondoActivo ? boton.colorFondo : undefined,
         textura: boton.textura !== "ninguna" ? boton.textura : undefined,
         colorBorde: boton.colorBordeActivo ? boton.colorBorde : undefined,
+        colorTexto: boton.colorTextoActivo ? boton.colorTexto : undefined,
       }
       if (boton.tipo === "enlace") return { ...base, tipo: "enlace", url: boton.url.trim() }
       if (boton.tipo === "whatsapp")
@@ -1514,6 +1685,7 @@ export function TarjetaForm({
                 imagenesCatalogoItemPorClave.get(claveItemCatalogo(ubicacion, indiceItem)) ??
                 item.imagenUrlExistente ??
                 undefined,
+              imagenPosicion: item.imagenPosicion,
             })),
         }
       // "opciones"
@@ -1578,6 +1750,7 @@ export function TarjetaForm({
       bannerAltura: bannerAltura !== 192 ? bannerAltura : undefined,
       fondoImagenUrl: fondoImagenUrlFinal,
       fondoImagenPosicion: fondoImagenUrlFinal ? fondoImagenPosicion : undefined,
+      fondoImagenRepetir: fondoImagenUrlFinal ? fondoImagenRepetir : undefined,
       fondoTarjetaModo: fondoTarjetaActivo ? fondoTarjetaModo : undefined,
       fondoTarjetaColor: fondoTarjetaActivo ? fondoTarjetaColor : undefined,
       fondoTarjetaColorSecundario:
@@ -1590,6 +1763,10 @@ export function TarjetaForm({
           : undefined,
       colorTextoSecundario: colorTextoSecundario || undefined,
       ordenSecciones,
+      ordenContacto,
+      tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
+      tituloImagenUrl: tituloModo === "imagen" ? tituloImagenUrlFinal : undefined,
+      tituloImagenAltura: tituloModo === "imagen" && tituloImagenAltura !== 32 ? tituloImagenAltura : undefined,
       badgeIconoActivo,
       badgeIconoId: badgeIconoActivo ? badgeIconoId : undefined,
     }
@@ -1761,6 +1938,7 @@ export function TarjetaForm({
   const avatarMostrado = avatarPreview || avatarUrlExistente
   const bannerMostrado = bannerPreview || bannerUrlExistente
   const fondoImagenMostrado = fondoImagenPreview || fondoImagenUrlExistente
+  const tituloImagenMostrada = tituloImagenPreview || tituloImagenUrlExistente
 
   // La vista previa refleja el contenido tal cual el dueño lo está
   // probando, aunque todavía no haya guardado (mismo criterio que el resto
@@ -1814,6 +1992,7 @@ export function TarjetaForm({
     bannerAltura: bannerAltura !== 192 ? bannerAltura : undefined,
     fondoImagenUrl: fondoImagenMostrado || undefined,
     fondoImagenPosicion: fondoImagenMostrado ? fondoImagenPosicion : undefined,
+    fondoImagenRepetir: fondoImagenMostrado ? fondoImagenRepetir : undefined,
     fondoTarjetaModo: fondoTarjetaActivo ? fondoTarjetaModo : undefined,
     fondoTarjetaColor: fondoTarjetaActivo ? fondoTarjetaColor : undefined,
     fondoTarjetaColorSecundario:
@@ -1826,6 +2005,10 @@ export function TarjetaForm({
         : undefined,
     colorTextoSecundario: colorTextoSecundario || undefined,
     ordenSecciones,
+    ordenContacto,
+    tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
+    tituloImagenUrl: tituloModo === "imagen" ? tituloImagenMostrada || undefined : undefined,
+    tituloImagenAltura: tituloModo === "imagen" && tituloImagenAltura !== 32 ? tituloImagenAltura : undefined,
     badgeIconoActivo,
     badgeIconoId: badgeIconoActivo ? badgeIconoId : undefined,
   }
@@ -1946,6 +2129,14 @@ export function TarjetaForm({
     featuresPersonalizacion
   )
 
+  // Título como logo: Poder únicamente, mismo criterio que fondoImagen.
+  const bloqueoTituloImagen = estaBloqueada(
+    "avanzada",
+    true,
+    visualInicial?.tituloModo === "imagen",
+    featuresPersonalizacion
+  )
+
   const contenidoColoresYTipografia = (
     <div className="flex flex-col gap-5 px-5 pb-5 pt-1">
       <div className="flex flex-col gap-2">
@@ -1991,39 +2182,27 @@ export function TarjetaForm({
           <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
             <span className="text-xs text-muted-foreground">Fondo del banner</span>
             <div className="flex items-center gap-1.5">
-              <input
-                type="color"
+              <ColorPicker
                 value={colorPrimario}
-                onChange={(e) => setColorPrimario(e.target.value)}
+                onChange={setColorPrimario}
                 onFocus={() => scrollPreviewTo("banner")}
-                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                recientes={coloresPersonalizados}
               />
-              <input
-                type="color"
+              <ColorPicker
                 value={colorSecundario}
-                onChange={(e) => setColorSecundario(e.target.value)}
+                onChange={setColorSecundario}
                 onFocus={() => scrollPreviewTo("banner")}
-                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                recientes={coloresPersonalizados}
               />
             </div>
           </div>
           <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
             <span className="text-xs text-muted-foreground">Botones</span>
-            <input
-              type="color"
-              value={colorBotones}
-              onChange={(e) => setColorBotones(e.target.value)}
-              className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-            />
+            <ColorPicker value={colorBotones} onChange={setColorBotones} recientes={coloresPersonalizados} />
           </label>
           <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
             <span className="text-xs text-muted-foreground">Badges</span>
-            <input
-              type="color"
-              value={colorBadges}
-              onChange={(e) => setColorBadges(e.target.value)}
-              className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-            />
+            <ColorPicker value={colorBadges} onChange={setColorBadges} recientes={coloresPersonalizados} />
           </label>
         </div>
 
@@ -2083,21 +2262,11 @@ export function TarjetaForm({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
               <span className="text-xs text-muted-foreground">Texto de botones</span>
-              <input
-                type="color"
-                value={colorTextoBotones}
-                onChange={(e) => setColorTextoBotones(e.target.value)}
-                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-              />
+              <ColorPicker value={colorTextoBotones} onChange={setColorTextoBotones} recientes={coloresPersonalizados} />
             </label>
             <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
               <span className="text-xs text-muted-foreground">Texto de badges</span>
-              <input
-                type="color"
-                value={colorTextoBadges}
-                onChange={(e) => setColorTextoBadges(e.target.value)}
-                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-              />
+              <ColorPicker value={colorTextoBadges} onChange={setColorTextoBadges} recientes={coloresPersonalizados} />
             </label>
             <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2 sm:col-span-2">
               <span className="flex flex-col text-xs text-muted-foreground">
@@ -2106,12 +2275,7 @@ export function TarjetaForm({
                   Rol/bio, dirección, horarios, secciones y servicios/productos
                 </span>
               </span>
-              <input
-                type="color"
-                value={colorTextoGeneral}
-                onChange={(e) => setColorTextoGeneral(e.target.value)}
-                className="size-8 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
-              />
+              <ColorPicker value={colorTextoGeneral} onChange={setColorTextoGeneral} recientes={coloresPersonalizados} />
             </label>
           </div>
         )}
@@ -2154,21 +2318,15 @@ export function TarjetaForm({
                 <span className="text-xs text-muted-foreground">
                   {fondoTarjetaModo === "avanzado" ? "Color 1" : "Color"}
                 </span>
-                <input
-                  type="color"
-                  value={fondoTarjetaColor}
-                  onChange={(e) => setFondoTarjetaColor(e.target.value)}
-                  className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-                />
+                <ColorPicker value={fondoTarjetaColor} onChange={setFondoTarjetaColor} recientes={coloresPersonalizados} />
               </label>
               {fondoTarjetaModo === "avanzado" && (
                 <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
                   <span className="text-xs text-muted-foreground">Color 2</span>
-                  <input
-                    type="color"
+                  <ColorPicker
                     value={fondoTarjetaColorSecundario}
-                    onChange={(e) => setFondoTarjetaColorSecundario(e.target.value)}
-                    className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                    onChange={setFondoTarjetaColorSecundario}
+                    recientes={coloresPersonalizados}
                   />
                 </label>
               )}
@@ -2273,76 +2431,160 @@ export function TarjetaForm({
           </label>
         </div>
 
-        <SelectorTipografia
-          value={estiloTipografia}
-          onChange={setEstiloTipografia}
-          valorGuardado={visualInicial?.estiloTipografia ?? "moderna"}
-          features={featuresPersonalizacion}
-        />
-
-        {modoTipografiaAvanzado && (
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted-foreground">Fuente del cuerpo</span>
-            <SelectorTipografia
-              value={estiloTipografiaCuerpo}
-              onChange={setEstiloTipografiaCuerpo}
-              valorGuardado={visualInicial?.estiloTipografiaCuerpo ?? "moderna"}
-              features={featuresPersonalizacion}
-            />
-          </label>
-        )}
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted-foreground">
-              Tamaño del título ({tituloTamano}px)
-            </span>
-            <input
-              type="range"
-              min={20}
-              max={40}
-              value={tituloTamano}
-              onChange={(e) => setTituloTamano(Number(e.target.value))}
-              onFocus={() => scrollPreviewTo("nombre")}
-              className="w-full cursor-pointer accent-foreground"
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted-foreground">Peso del título ({tituloPeso})</span>
-            <input
-              type="range"
-              min={400}
-              max={800}
-              step={50}
-              value={tituloPeso}
-              onChange={(e) => setTituloPeso(Number(e.target.value))}
-              onFocus={() => scrollPreviewTo("nombre")}
-              className="w-full cursor-pointer accent-foreground"
-            />
-          </label>
+        {/* Título como texto (de siempre) o como imagen de logo — reemplaza
+            el <h1> entero, sin recortar a ninguna forma (a diferencia del
+            avatar). Poder exclusivo. */}
+        <div className="flex items-center gap-2">
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            Título como
+            {bloqueoTituloImagen && <CandadoPlan plan={bloqueoTituloImagen.plan} />}
+          </span>
+          <div className="inline-flex rounded-full border border-border p-0.5">
+            <button
+              type="button"
+              onClick={() => setTituloModo("texto")}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                tituloModo === "texto" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Texto
+            </button>
+            <button
+              type="button"
+              onClick={() => setTituloModo("imagen")}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                tituloModo === "imagen" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Logo (imagen)
+            </button>
+          </div>
         </div>
 
-        <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
-          <span className="text-xs text-muted-foreground">Color del título</span>
-          <div className="flex items-center gap-2">
-            {colorTitulo && (
-              <button
-                type="button"
-                onClick={() => setColorTitulo("")}
-                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-              >
-                Automático
-              </button>
-            )}
-            <input
-              type="color"
-              value={colorTitulo || "#18181b"}
-              onChange={(e) => setColorTitulo(e.target.value)}
-              onFocus={() => scrollPreviewTo("nombre")}
-              className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
-            />
+        {tituloModo === "imagen" ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-muted-foreground">
+              Imagen con fondo transparente recomendada — se muestra completa, sin recortar.
+            </p>
+            <div className="flex items-center gap-3">
+              {tituloImagenMostrada && (
+                <div className="relative flex shrink-0 items-center rounded-lg border border-border bg-muted/30 px-2 py-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local, puede ser un blob: sin subir todavía */}
+                  <img
+                    src={tituloImagenMostrada}
+                    alt=""
+                    style={{ height: `${tituloImagenAltura}px` }}
+                    className="w-auto max-w-[140px] object-contain"
+                  />
+                  <button
+                    type="button"
+                    onClick={quitarTituloImagen}
+                    aria-label="Quitar logo"
+                    className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleTituloImagenChange}
+                onFocus={() => scrollPreviewTo("nombre")}
+                className={cn(
+                  inputClase,
+                  "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                )}
+              />
+            </div>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted-foreground">Alto del logo ({tituloImagenAltura}px)</span>
+              <input
+                type="range"
+                min={24}
+                max={80}
+                value={tituloImagenAltura}
+                onChange={(e) => setTituloImagenAltura(Number(e.target.value))}
+                onFocus={() => scrollPreviewTo("nombre")}
+                className="w-full cursor-pointer accent-foreground"
+              />
+            </label>
           </div>
-        </label>
+        ) : (
+          <>
+            <SelectorTipografia
+              value={estiloTipografia}
+              onChange={setEstiloTipografia}
+              valorGuardado={visualInicial?.estiloTipografia ?? "moderna"}
+              features={featuresPersonalizacion}
+            />
+
+            {modoTipografiaAvanzado && (
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted-foreground">Fuente del cuerpo</span>
+                <SelectorTipografia
+                  value={estiloTipografiaCuerpo}
+                  onChange={setEstiloTipografiaCuerpo}
+                  valorGuardado={visualInicial?.estiloTipografiaCuerpo ?? "moderna"}
+                  features={featuresPersonalizacion}
+                />
+              </label>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted-foreground">
+                  Tamaño del título ({tituloTamano}px)
+                </span>
+                <input
+                  type="range"
+                  min={20}
+                  max={40}
+                  value={tituloTamano}
+                  onChange={(e) => setTituloTamano(Number(e.target.value))}
+                  onFocus={() => scrollPreviewTo("nombre")}
+                  className="w-full cursor-pointer accent-foreground"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted-foreground">Peso del título ({tituloPeso})</span>
+                <input
+                  type="range"
+                  min={400}
+                  max={800}
+                  step={50}
+                  value={tituloPeso}
+                  onChange={(e) => setTituloPeso(Number(e.target.value))}
+                  onFocus={() => scrollPreviewTo("nombre")}
+                  className="w-full cursor-pointer accent-foreground"
+                />
+              </label>
+            </div>
+
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+              <span className="text-xs text-muted-foreground">Color del título</span>
+              <div className="flex items-center gap-2">
+                {colorTitulo && (
+                  <button
+                    type="button"
+                    onClick={() => setColorTitulo("")}
+                    className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  >
+                    Automático
+                  </button>
+                )}
+                <ColorPicker
+                  value={colorTitulo || "#18181b"}
+                  onChange={setColorTitulo}
+                  onFocus={() => scrollPreviewTo("nombre")}
+                  recientes={coloresPersonalizados}
+                />
+              </div>
+            </label>
+          </>
+        )}
 
         <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
           <span className="text-xs text-muted-foreground">Color del texto secundario</span>
@@ -2356,12 +2598,11 @@ export function TarjetaForm({
                 Automático
               </button>
             )}
-            <input
-              type="color"
+            <ColorPicker
               value={colorTextoSecundario || "#3f3f46"}
-              onChange={(e) => setColorTextoSecundario(e.target.value)}
+              onChange={setColorTextoSecundario}
               onFocus={() => scrollPreviewTo("nombre")}
-              className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+              recientes={coloresPersonalizados}
             />
           </div>
         </label>
@@ -2629,10 +2870,19 @@ export function TarjetaForm({
             <div className="relative shrink-0">
               <div
                 className="h-12 w-20 rounded-lg border border-border bg-cover"
-                style={{
-                  backgroundImage: `url(${fondoImagenMostrado})`,
-                  backgroundPosition: `${fondoImagenPosicion.x}% ${fondoImagenPosicion.y}%`,
-                }}
+                style={
+                  fondoImagenRepetir
+                    ? {
+                        backgroundImage: `url(${fondoImagenMostrado})`,
+                        backgroundRepeat: "repeat-y",
+                        backgroundSize: "100% auto",
+                        backgroundPosition: "top center",
+                      }
+                    : {
+                        backgroundImage: `url(${fondoImagenMostrado})`,
+                        backgroundPosition: `${fondoImagenPosicion.x}% ${fondoImagenPosicion.y}%`,
+                      }
+                }
               />
               <button
                 type="button"
@@ -2656,6 +2906,14 @@ export function TarjetaForm({
           />
         </div>
         {fondoImagenMostrado && (
+          <label className="flex items-center justify-between gap-3">
+            <span className="text-xs text-muted-foreground">
+              Repetir fondo (ancho completo, se repite hacia abajo)
+            </span>
+            <Switch checked={fondoImagenRepetir} onCheckedChange={setFondoImagenRepetir} />
+          </label>
+        )}
+        {fondoImagenMostrado && !fondoImagenRepetir && (
           <button
             type="button"
             onClick={() => setReposicionandoFondoImagen(true)}
@@ -2757,6 +3015,49 @@ export function TarjetaForm({
           className={inputClase}
         />
       </label>
+
+      {/* Orden de los enlaces de contacto+redes en la tarjeta — todos viven en
+          UNA sola fila ("uno junto al otro", nunca separados en bloques); acá
+          solo se decide qué pill de contacto va primero dentro de esa fila
+          (el enlace de "Cómo llegar" usa el dato de la sección Ubicación,
+          pero su posición se elige acá para no duplicar el control). Las
+          redes sociales se reordenan con sus propias flechas más abajo. */}
+      <div className="flex flex-col gap-2 border-t border-border/60 pt-4">
+        <p className="text-xs text-muted-foreground">
+          Orden de estos enlaces dentro de la fila de contacto de tu tarjeta.
+        </p>
+        {ordenContacto.map((id, index) => {
+          const meta = CONTACTO_ORDENABLES.find((c) => c.id === id)
+          return (
+            <div
+              key={id}
+              className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/50 px-3 py-2"
+            >
+              <span className="text-sm font-medium text-foreground">{meta?.etiqueta ?? id}</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => moverContacto(index, -1)}
+                  disabled={index === 0}
+                  aria-label={`Subir ${meta?.etiqueta ?? id}`}
+                  className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+                >
+                  <ChevronUp className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moverContacto(index, 1)}
+                  disabled={index === ordenContacto.length - 1}
+                  aria-label={`Bajar ${meta?.etiqueta ?? id}`}
+                  className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+                >
+                  <ChevronDown className="size-4" />
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 
@@ -2791,6 +3092,24 @@ export function TarjetaForm({
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                onClick={() => moverRed(index, -1)}
+                disabled={index === 0}
+                aria-label="Subir red"
+                className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronUp className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => moverRed(index, 1)}
+                disabled={index === redes.length - 1}
+                aria-label="Bajar red"
+                className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronDown className="size-4" />
+              </button>
               <button
                 type="button"
                 onClick={() => quitarRed(index)}
@@ -3035,6 +3354,28 @@ export function TarjetaForm({
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+            <span className="text-xs text-muted-foreground">Color del texto</span>
+            <div className="flex items-center gap-2">
+              {boton.colorTextoActivo && (
+                <button
+                  type="button"
+                  onClick={() => actualizarBotonEn(ubicacion, "colorTextoActivo", false)}
+                  className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                >
+                  Automático
+                </button>
+              )}
+              <ColorPicker
+                value={boton.colorTexto}
+                onChange={(hex) => {
+                  actualizarBotonEn(ubicacion, "colorTexto", hex)
+                  actualizarBotonEn(ubicacion, "colorTextoActivo", true)
+                }}
+                recientes={coloresPersonalizados}
+              />
+            </div>
+          </label>
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
             <span className="text-xs text-muted-foreground">Color de fondo</span>
             <div className="flex items-center gap-2">
               {boton.colorFondoActivo && (
@@ -3046,14 +3387,13 @@ export function TarjetaForm({
                   Quitar
                 </button>
               )}
-              <input
-                type="color"
+              <ColorPicker
                 value={boton.colorFondo}
-                onChange={(e) => {
-                  actualizarBotonEn(ubicacion, "colorFondo", e.target.value)
+                onChange={(hex) => {
+                  actualizarBotonEn(ubicacion, "colorFondo", hex)
                   actualizarBotonEn(ubicacion, "colorFondoActivo", true)
                 }}
-                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                recientes={coloresPersonalizados}
               />
             </div>
           </label>
@@ -3069,14 +3409,13 @@ export function TarjetaForm({
                   Quitar
                 </button>
               )}
-              <input
-                type="color"
+              <ColorPicker
                 value={boton.colorBorde}
-                onChange={(e) => {
-                  actualizarBotonEn(ubicacion, "colorBorde", e.target.value)
+                onChange={(hex) => {
+                  actualizarBotonEn(ubicacion, "colorBorde", hex)
                   actualizarBotonEn(ubicacion, "colorBordeActivo", true)
                 }}
-                className="size-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                recientes={coloresPersonalizados}
               />
             </div>
           </label>
@@ -3339,6 +3678,14 @@ export function TarjetaForm({
 
             {boton.tipo === "catalogo" && (
               <>
+                <input
+                  value={boton.subtitulo}
+                  onChange={(e) => actualizarBotonEn(ubicacion, "subtitulo", e.target.value)}
+                  onFocus={() => scrollPreviewTo("botones")}
+                  placeholder="Subtítulo (opcional)"
+                  className={inputClase}
+                />
+                {contenidoIconoYColorBoton(boton, ubicacion)}
                 <label className="flex flex-col gap-1.5">
                   <span className={labelClase}>Vista</span>
                   <div className="inline-flex w-fit rounded-full border border-border bg-white/70 p-0.5 dark:bg-zinc-900/60">
@@ -3451,6 +3798,15 @@ export function TarjetaForm({
                           )}
                         />
                       </div>
+                      {imagenItemMostrada && (
+                        <button
+                          type="button"
+                          onClick={() => setReposicionandoItemCatalogo({ ubicacion, indiceItem })}
+                          className="inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-background/50 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+                        >
+                          <Move className="size-3.5" /> Reposicionar
+                        </button>
+                      )}
                       <span className="text-[11px] text-muted-foreground">
                         Imagen cuadrada (1:1), mínimo 600×600px para que se vea nítida al ampliarse.
                       </span>
@@ -3501,6 +3857,26 @@ export function TarjetaForm({
             { tipo: "archivo", etiqueta: "Archivo", disponible: archivoDisponible, plan: "poder" },
           ]}
           onElegir={agregarBoton}
+        />
+      )}
+
+      {itemEnReposicion && (
+        <ReposicionarImagen
+          abierto={Boolean(reposicionandoItemCatalogo)}
+          imagenUrl={imagenItemEnReposicion}
+          valorInicial={itemEnReposicion.imagenPosicion}
+          alto={280}
+          onCancelar={() => setReposicionandoItemCatalogo(null)}
+          onConfirmar={(pos) => {
+            if (!reposicionandoItemCatalogo) return
+            actualizarItemCatalogo(
+              reposicionandoItemCatalogo.ubicacion,
+              reposicionandoItemCatalogo.indiceItem,
+              "imagenPosicion",
+              pos
+            )
+            setReposicionandoItemCatalogo(null)
+          }}
         />
       )}
     </div>

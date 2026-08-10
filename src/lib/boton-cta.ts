@@ -1,15 +1,20 @@
 import {
   Award,
+  Beef,
   BookOpen,
+  Beer,
   Briefcase,
   Building2,
+  Cake,
   Calendar,
   Camera,
   Car,
   ChefHat,
   Coffee,
+  CupSoda,
   Download,
   Dumbbell,
+  Fish,
   Gavel,
   Gift,
   GraduationCap,
@@ -17,6 +22,7 @@ import {
   HardHat,
   Heart,
   Home,
+  IceCreamCone,
   Leaf,
   Link2,
   Mail,
@@ -27,15 +33,23 @@ import {
   Palette,
   PawPrint,
   Phone,
+  Pizza,
   Play,
+  Salad,
+  Sandwich,
   Scissors,
   ShoppingBag,
+  ShoppingCart,
+  Soup,
   Sparkles,
   Star,
   Stethoscope,
+  Store,
   Ticket,
   Truck,
+  Utensils,
   Video,
+  Wine,
   Wrench,
   Zap,
   type LucideIcon,
@@ -46,6 +60,7 @@ import type {
   BotonArchivo,
   BotonCatalogo,
   BotonCta,
+  ContactoOrdenable,
   DatosContacto,
   IdentidadVisual,
   SeccionOrdenable,
@@ -106,6 +121,25 @@ export const BOTON_ICONOS: BotonIconoMeta[] = [
   { id: "plomeria", etiqueta: "Plomería", Icono: Wrench },
   { id: "veterinaria", etiqueta: "Veterinaria", Icono: PawPrint },
   { id: "mudanzas", etiqueta: "Mudanzas", Icono: Truck },
+  // Gastronomía/comercio — pedido explícito del cliente para cubrir más
+  // rubros de negocio (restaurantes, bares, cafeterías, tiendas). Sin
+  // ícono de "taco" literal (no existe en lucide-react, se comprobó contra
+  // el export completo del paquete) — Sandwich es el más cercano
+  // disponible para comida envuelta/de mano en general.
+  { id: "cubiertos", etiqueta: "Restaurante", Icono: Utensils },
+  { id: "taco", etiqueta: "Comida rápida", Icono: Sandwich },
+  { id: "bebida", etiqueta: "Bebida", Icono: CupSoda },
+  { id: "carne", etiqueta: "Carnicería/parrilla", Icono: Beef },
+  { id: "pizza", etiqueta: "Pizzería", Icono: Pizza },
+  { id: "sopa", etiqueta: "Sopas/caldos", Icono: Soup },
+  { id: "ensalada", etiqueta: "Comida saludable", Icono: Salad },
+  { id: "helado", etiqueta: "Heladería", Icono: IceCreamCone },
+  { id: "pastel", etiqueta: "Pastelería", Icono: Cake },
+  { id: "pescado", etiqueta: "Pescadería/mariscos", Icono: Fish },
+  { id: "cerveza", etiqueta: "Bar/cervecería", Icono: Beer },
+  { id: "vino", etiqueta: "Vinería", Icono: Wine },
+  { id: "carrito", etiqueta: "Compras", Icono: ShoppingCart },
+  { id: "tienda-fisica", etiqueta: "Tienda física", Icono: Store },
 ]
 
 export function obtenerBotonIcono(iconoId: string | undefined): BotonIconoMeta | undefined {
@@ -159,6 +193,32 @@ export const BOTON_TEXTURAS: BotonTexturaMeta[] = [
       "repeating-radial-gradient(circle at 0 0, transparent 0, rgba(255,255,255,0.14) 8px, transparent 16px)",
     backgroundSize: "32px 32px",
   },
+  {
+    id: "lineas",
+    etiqueta: "Líneas verticales",
+    backgroundImage:
+      "repeating-linear-gradient(90deg, rgba(255,255,255,0.18) 0px, rgba(255,255,255,0.18) 3px, transparent 3px, transparent 11px)",
+  },
+  {
+    id: "cruzado",
+    etiqueta: "Cruzado",
+    backgroundImage:
+      "repeating-linear-gradient(45deg, rgba(255,255,255,0.14) 0px, rgba(255,255,255,0.14) 2px, transparent 2px, transparent 10px), repeating-linear-gradient(-45deg, rgba(255,255,255,0.14) 0px, rgba(255,255,255,0.14) 2px, transparent 2px, transparent 10px)",
+  },
+  {
+    id: "circulos",
+    etiqueta: "Círculos",
+    backgroundImage:
+      "radial-gradient(circle, transparent 55%, rgba(255,255,255,0.18) 56%, rgba(255,255,255,0.18) 62%, transparent 63%)",
+    backgroundSize: "22px 22px",
+  },
+  {
+    id: "cuadros",
+    etiqueta: "Cuadros",
+    backgroundImage:
+      "conic-gradient(rgba(255,255,255,0.14) 90deg, transparent 90deg 180deg, rgba(255,255,255,0.14) 180deg 270deg, transparent 270deg)",
+    backgroundSize: "20px 20px",
+  },
 ]
 
 export function obtenerBotonTextura(texturaId: string | undefined): BotonTexturaMeta | undefined {
@@ -209,6 +269,32 @@ export function ordenSeccionesNormalizado(orden?: SeccionOrdenable[]): SeccionOr
   const conocidas = orden.filter((id) => ORDEN_SECCIONES_DEFAULT.includes(id))
   const faltantes = ORDEN_SECCIONES_DEFAULT.filter((id) => !conocidas.includes(id))
   return [...conocidas, ...faltantes]
+}
+
+// ============================================================================
+// Orden de los pills de "Datos de contacto" (2026-08-10) — a diferencia de
+// SeccionOrdenable (que mueve secciones ENTERAS entre sí), esto reordena los
+// 4 pills fijos DENTRO de esa sección, que en sí misma no se mueve.
+// ============================================================================
+export interface ContactoOrdenableMeta {
+  id: ContactoOrdenable
+  etiqueta: string
+}
+
+export const CONTACTO_ORDENABLES: ContactoOrdenableMeta[] = [
+  { id: "telefono", etiqueta: "Llamar" },
+  { id: "whatsapp", etiqueta: "WhatsApp" },
+  { id: "email", etiqueta: "Email" },
+  { id: "ubicacion", etiqueta: "Cómo llegar" },
+]
+
+export const ORDEN_CONTACTO_DEFAULT: ContactoOrdenable[] = ["telefono", "whatsapp", "email", "ubicacion"]
+
+export function ordenContactoNormalizado(orden?: ContactoOrdenable[]): ContactoOrdenable[] {
+  if (!orden || orden.length === 0) return ORDEN_CONTACTO_DEFAULT
+  const conocidos = orden.filter((id) => ORDEN_CONTACTO_DEFAULT.includes(id))
+  const faltantes = ORDEN_CONTACTO_DEFAULT.filter((id) => !conocidos.includes(id))
+  return [...conocidos, ...faltantes]
 }
 
 // ============================================================================

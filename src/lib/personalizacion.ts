@@ -410,6 +410,11 @@ export function calcularBloqueos(
     if (b) bloqueos.push({ ...b, campo: "Imagen de fondo de la tarjeta", valorEtiqueta: "Activada" })
   }
 
+  if (draft.tituloModo === "imagen") {
+    const b = estaBloqueada("avanzada", true, base.tituloModo === "imagen", features)
+    if (b) bloqueos.push({ ...b, campo: "Título como logo", valorEtiqueta: "Activado" })
+  }
+
   if (draft.fondoTarjetaColor) {
     const tierFondoTarjeta: TierPersonalizacion = draft.fondoTarjetaModo === "avanzado" ? "avanzada" : "basica"
     const b = estaBloqueada(

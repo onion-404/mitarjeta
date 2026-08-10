@@ -5,7 +5,7 @@ import { ExternalLink, X } from "lucide-react"
 import Image from "next/image"
 import type { CSSProperties } from "react"
 
-import { esUrlOptimizable } from "@/lib/imagen-posicion"
+import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import { cn } from "@/lib/utils"
 import type { Producto } from "@/lib/types"
 
@@ -33,9 +33,16 @@ export function CatalogoItemModal({ item, open, onOpenChange, estiloCta, onAbrir
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm transition-opacity data-ending-style:opacity-0 data-starting-style:opacity-0 dark:bg-black/60" />
         <Dialog.Popup className="fixed top-1/2 left-1/2 z-50 w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-border bg-background p-6 shadow-2xl transition-all data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+          {/* z-10 explícito: sin esto, la imagen de abajo (también
+              `position: relative`, mismo nivel de stacking que un
+              `absolute` sin z-index) pinta DESPUÉS en el DOM y termina
+              tapando este botón — bug real reportado (la imagen "tapaba"
+              el cierre). Fondo semi-opaco propio (no solo hover) para que
+              siga siendo legible apoyado sobre cualquier imagen, no solo
+              sobre el fondo del modal. */}
           <Dialog.Close
             aria-label="Cerrar"
-            className="absolute right-4 top-4 rounded-full p-1.5 text-muted-foreground hover:bg-muted"
+            className="absolute right-4 top-4 z-10 rounded-full bg-background/80 p-1.5 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted"
           >
             <X className="size-4" />
           </Dialog.Close>
@@ -48,7 +55,7 @@ export function CatalogoItemModal({ item, open, onOpenChange, estiloCta, onAbrir
               </Dialog.Description>
 
               {item.imagenUrl && (
-                <div className="relative aspect-square w-full overflow-hidden rounded-2xl">
+                <div className="relative mt-8 aspect-square w-full overflow-hidden rounded-2xl">
                   <Image
                     src={item.imagenUrl}
                     alt={item.titulo}
@@ -56,10 +63,13 @@ export function CatalogoItemModal({ item, open, onOpenChange, estiloCta, onAbrir
                     sizes="(max-width: 640px) 90vw, 384px"
                     unoptimized={!esUrlOptimizable(item.imagenUrl)}
                     className="object-cover"
+                    style={estiloImagenPosicionada(item.imagenPosicion)}
                   />
                 </div>
               )}
-              <h3 className={cn("text-base font-semibold text-foreground", item.imagenUrl && "mt-4")}>
+              <h3
+                className={cn("text-base font-semibold text-foreground", item.imagenUrl ? "mt-4" : "mt-8")}
+              >
                 {item.titulo}
               </h3>
               {item.precio?.trim() && (

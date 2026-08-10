@@ -123,7 +123,14 @@ export function BotonCtaModal({ boton, estiloCta }: BotonCtaModalProps) {
           setOpen(true)
         }}
         aria-label="Opciones del botón"
-        className="absolute left-2 top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-current opacity-60 hover:opacity-100"
+        // `text-current` no alcanza: hereda el color del ancestro en el DOM
+        // (el <div> "relative" que envuelve a este botón y al <a>), NO el
+        // `color` del CTA — que vive en un inline style sobre el <a>
+        // hermano, no en un ancestro. Se fija explícito acá para que los
+        // "⋮" siempre calcen con el color de texto real del botón (auto o
+        // personalizado).
+        style={{ color: estiloCta?.color }}
+        className="absolute right-2 top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded-full opacity-60 hover:opacity-100"
       >
         <MoreVertical className="size-4" />
       </button>

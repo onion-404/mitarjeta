@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-08-09. Fuente de verdad para que una sesión nueva entienda el
+> Última actualización: 2026-08-10. Fuente de verdad para que una sesión nueva entienda el
 > estado real del proyecto sin releer el historial de chat. Actualizar cuando cambie algo de
 > lo que describe. **Para el detalle histórico de verificaciones, bugs encontrados en el
 > camino, capturas de pantalla y logs de sesiones anteriores, ver [HISTORIAL.md](HISTORIAL.md)
@@ -994,7 +994,105 @@ real desde esta sesión salvo que se indique lo contrario):
   la vez, sin tocar nunca) porque ninguna tarjeta real de esta cuenta tenía ese contenido viejo
   guardado — si aparece una, vale la pena confirmarlo.
 
+## ColorPicker unificado + botón Catálogo con apariencia de CTA + fondo repetible (2026-08-10)
+- **Selector de color** (`src/components/tarjeta/color-picker.tsx`, nuevo): reemplaza los 13
+  `<input type="color">` sueltos de todo `tarjeta-form.tsx` — feedback del cliente ("la
+  experiencia con los selectores de color es muy mala"). Swatch que abre un popover
+  (`@base-ui/react/popover`) con: rueda nativa, campo hex, 3 campos RGB, y una fila "Tus
+  colores" con los colores ya usados en cualquier parte de la tarjeta (banner, botones,
+  badges, fondo de tarjeta, título, y colores de cada botón/hijo incluido) — deduplicados,
+  calculados en `coloresPersonalizados` (tarjeta-form.tsx). No reemplaza el patrón "activo"/
+  "Quitar" que ya tenían varios campos, solo el mecanismo de elegir el color.
+- **Botón Catálogo**: pasa a compartir cabecera con "Opciones" (`renderCabeceraToggle()` en
+  `tarjeta-card.tsx`, factorizada de lo que antes era código separado) — mismo CTA de ancho
+  completo con ícono/imagen + color/borde/textura propios, en vez del título chico en
+  mayúsculas + contador que tenía antes. `BotonCatalogo` ya traía esos campos en el tipo (nunca
+  se usaban en el render); ahora sí. El editor ganó el campo "Subtítulo" y el bloque de ícono/
+  color/textura para este tipo (antes solo tenía título+vista+ítems). El grid/lista de ítems y
+  el modal de detalle no cambiaron.
+- **Fondo de imagen — "Repetir fondo"**: `IdentidadVisual.fondoImagenRepetir` (boolean, default
+  false). Activo: la imagen se muestra a 100% de ancho (alto proporcional, `background-size:
+  100% auto`) y se repite verticalmente (`background-repeat: repeat-y`) en vez de recortarse
+  con `object-fit:cover` — se resuelve con un `<div>` de `background-image` plano en vez de
+  `next/image` (no soporta repetición). Mutuamente excluyente con "Reposicionar" (sin posición
+  que anclar en este modo: siempre ancho completo, siempre arranca arriba) — el botón
+  "Reposicionar" se oculta cuando el toggle está activo.
+- Verificado: `tsc --noEmit`/`eslint`/`npm run build` limpios. Probado en navegador real (misma
+  cuenta/tarjeta que la sesión anterior, sin guardar): el ColorPicker abre, el hex escribe y
+  actualiza el swatch/preview en vivo, "Tus colores" se puebla con los colores reales ya en uso;
+  el botón Catálogo se ve idéntico a un CTA normal (ícono + título + chevron) con su propio
+  color. 🔴 "Repetir fondo" no se verificó visualmente con una imagen real en esta sesión (el
+  patrón CSS es estándar y de bajo riesgo, pero no se confirmó con los ojos).
+
+## Color de texto por botón + más íconos/texturas + catálogo con título de 2 líneas (2026-08-10, mismo día)
+- **`BotonBase.colorTexto`** (nuevo, opcional): mismo patrón "activo"/`ColorPicker` que
+  `colorFondo`/`colorBorde` — sin valor, auto-contraste como siempre. `estiloDeBoton()`
+  (tarjeta-card.tsx) lo prioriza sobre el auto-contraste. Editor: 3er `ColorPicker` en
+  `contenidoIconoYColorBoton()`.
+- **`BOTON_ICONOS`** sumó ~14 íconos de gastronomía/comercio (pedido explícito: tenedor, taco,
+  bebida, carne) — `Utensils`, `Sandwich` (sin ícono de "taco" literal en lucide-react,
+  comprobado contra el export completo), `CupSoda`, `Beef`, `Pizza`, `Soup`, `Salad`,
+  `IceCreamCone`, `Cake`, `Fish`, `Beer`, `Wine`, `ShoppingCart`, `Store`.
+- **`BOTON_TEXTURAS`** sumó 4 patrones CSS puros (mismo criterio que los 6 existentes, sin
+  assets): `lineas` (rayas verticales), `cruzado` (crosshatch diagonal), `circulos` (anillos),
+  `cuadros` (checkerboard vía `conic-gradient`, sin necesitar `background-position`).
+- **Título de ítem de catálogo**: `truncate` (1 línea) → `line-clamp-2` (hasta 2 líneas).
+- **Fondo del título de ítem de catálogo**: adopta `colorFondo` (o `colorBotonesFinal`) del
+  botón catálogo padre, con auto-contraste — antes el texto iba sobre el fondo plano de la
+  card, ahora es un "chip" con el color de identidad del catálogo.
+- Verificado: `tsc`/`eslint`/`build` limpios + navegador real (sin guardar): los 3 color
+  pickers (texto/fondo/borde) presentes, grid de íconos con las nuevas opciones de comida, los
+  10 valores de textura confirmados en el `<select>` y "Cuadros" renderizando en vivo, ítem de
+  catálogo con título largo envolviendo a 2 líneas sobre fondo negro (heredado del botón
+  padre). Cero errores de consola.
+
+## Imagen de ítem de catálogo reposicionable, fixes de consistencia visual y título como logo (2026-08-10, mismo día)
+- **Ítem de catálogo — imagen reposicionable**: `Producto.imagenPosicion?: PosicionImagen`
+  (mismo mecanismo `{x,y}` que avatar/banner/fondoImagen). El tile del grid/lista ahora cubre
+  el contenedor completo (`estiloImagenPosicionada`, antes no se usaba) y el editor ganó un
+  botón "Reposicionar" (mismo `<ReposicionarImagen>` reusado, sin componente nuevo) junto a la
+  imagen de cada ítem.
+- **Fix — modal de detalle de catálogo tapaba el botón de cerrar**: el Close y la imagen son
+  ambos elementos posicionados sin `z-index` explícito, pintando en orden de DOM — la imagen
+  (más abajo en el DOM) quedaba encima. Fix: `z-10` + fondo semi-opaco propio en el botón
+  Close, más `mt-8` de separación.
+- **Consistencia del "⋮" (opciones de un botón CTA) entre tipos**: se movió de la izquierda a
+  la derecha, calzando con la posición del chevron de los tipos desplegables (catálogo/
+  opciones) — todos los tipos de botón se ven en la misma posición ahora. También se corrigió
+  su color: `text-current` heredaba de un ancestro del DOM, no del `<a>` hermano que tiene el
+  color real (custom o auto-contraste) — se pasa `estiloCta?.color` explícito.
+- **Contacto y redes sociales — reordenables, siempre en una sola fila**: pedido inicial mal
+  interpretado como reposicionar la SECCIÓN completa (revertido tras corrección del cliente:
+  la sección va donde siempre fue). Lo correcto: los ÍTEMS dentro de esa fila única se
+  reordenan con flechas ↑/↓ en el editor, sin separar visualmente contacto de redes en dos
+  bloques apilados — `renderContactoYRedes()` (`tarjeta-card.tsx`) envuelve ambos grupos en el
+  mismo contenedor `flex flex-wrap`. Los 4 pills fijos de contacto (Llamar/WhatsApp/Email/Cómo
+  llegar) usan el nuevo `IdentidadVisual.ordenContacto`/`ContactoOrdenable`
+  (`ordenContactoNormalizado()`, `lib/boton-cta.ts` — mismo criterio tolerante que
+  `ordenSeccionesNormalizado`); las redes sociales reordenan el array `redes` directo (mismo
+  `moverEnArray` que ya usaba Botones). Sin gating de plan (es organización, no contenido).
+- **Título como logo**: `IdentidadVisual.tituloModo?: "texto"|"imagen"` +
+  `tituloImagenUrl`/`tituloImagenAltura` (24-80px, default 32) — Poder exclusivo
+  (`personalizacion_avanzada`, mismo criterio que imagen de fondo). Reemplaza el `<h1>` por un
+  `<img>` SIN recortar a ninguna forma (a diferencia del avatar) — ancho libre, alto fijo,
+  "como si fuera texto". Carpeta Cloudinary nueva `mitarjeta/logos` (whitelisteada en
+  `cloudinary-sign/route.ts`). Toggle Texto/Logo en el bloque de tipografía de "Datos
+  Esenciales" — en modo Logo se oculta el resto de los controles de tipografía (no aplican).
+  **Bug real encontrado por el cliente probando en vivo**: el logo quedaba pegado a la
+  izquierda en vez de centrado — Tailwind Preflight pone `img { display: block }` por defecto,
+  así que el `text-center` del panel (que sí centra el `<h1>` de texto, contenido inline) no
+  alcanza para centrar un elemento block; fix con `mx-auto` explícito.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios en cada paso. 🔴 No
+  verificado todavía en navegador real (solo chequeos estáticos) salvo el fix de centrado del
+  logo, confirmado por el cliente en vivo.
+
 ## Pendiente técnico sin resolver (consolidado)
+- 🔴 Lo de esta sesión (2026-08-10, ítem de arriba) sin verificar en navegador salvo el fix de
+  centrado del logo — pendiente probar reposicionamiento de imagen de catálogo, fix del modal,
+  posición/color del "⋮" y el reorder de contacto/redes con una tarjeta real.
+- 🔴 "Repetir fondo" (imagen de fondo, 2026-08-10) sin verificar visualmente con una imagen
+  real — el CSS (`background-repeat`/`background-size`) es estándar, pero no se confirmó en
+  navegador.
 - 🔴 Unificación de Botones (2026-08-09): los 5 tipos + opciones anidado + catálogo + archivo en
   Poder ya se verificaron en navegador real sobre una tarjeta real, sin guardar (ver esa
   sección) — falta todavía probar los 4 casos de migración legacy (tarjeta vieja con solo

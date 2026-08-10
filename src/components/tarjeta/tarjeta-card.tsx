@@ -13,7 +13,13 @@ import Image from "next/image"
 import * as React from "react"
 
 import { obtenerBannerPreset } from "@/lib/banner-presets"
-import { construirUrlWhatsapp, normalizarBotones, obtenerBotonIcono, ordenSeccionesNormalizado } from "@/lib/boton-cta"
+import {
+  construirUrlWhatsapp,
+  normalizarBotones,
+  obtenerBotonIcono,
+  ordenContactoNormalizado,
+  ordenSeccionesNormalizado,
+} from "@/lib/boton-cta"
 import { obtenerColorContraste } from "@/lib/contraste"
 import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import { DIVISORES_BANNER, ESTILOS_TIPOGRAFIA } from "@/lib/personalizacion"
@@ -170,6 +176,7 @@ export function TarjetaCard({
     bannerAltura,
     fondoImagenUrl,
     fondoImagenPosicion,
+    fondoImagenRepetir,
     fondoTarjetaModo,
     fondoTarjetaColor,
     fondoTarjetaColorSecundario,
@@ -177,8 +184,12 @@ export function TarjetaCard({
     fondoTarjetaDireccionGrados,
     colorTextoSecundario,
     ordenSecciones,
+    ordenContacto,
     badgeIconoActivo,
     badgeIconoId,
+    tituloModo,
+    tituloImagenUrl,
+    tituloImagenAltura,
   } = identidadVisual
   // Ícono del badge "@enlace" — opcional (default: mostrado, con Sparkles
   // si no se eligió otro, para que una tarjeta vieja sin este campo se
@@ -261,6 +272,18 @@ export function TarjetaCard({
   const tieneFondoImagen = Boolean(fondoImagenUrl)
   const estiloBannerImagen = estiloImagenPosicionada(bannerPosicion)
   const estiloFondoImagen = estiloImagenPosicionada(fondoImagenPosicion)
+  // "Repetir fondo": ancho 100% (alto proporcional) repitiendo hacia abajo
+  // para llenar la pantalla, en vez de recortarse con object-fit:cover — no
+  // usa next/image (no soporta background-repeat), se resuelve con un div
+  // con background-image plano. fondoImagenPosicion no aplica en este modo.
+  const estiloFondoImagenRepetido: React.CSSProperties | undefined = fondoImagenRepetir
+    ? {
+        backgroundImage: `url(${fondoImagenUrl})`,
+        backgroundRepeat: "repeat-y",
+        backgroundSize: "100% auto",
+        backgroundPosition: "top center",
+      }
+    : undefined
   const alturaBanner = bannerAltura ?? 192
 
   // Fondo del panel de contenido (separado del fondo del banner de arriba).
@@ -343,23 +366,116 @@ export function TarjetaCard({
     ? ({ "--alto-min-divisor": `calc(100dvh - ${alturaBanner}px)` } as React.CSSProperties)
     : undefined
 
-  // Contador de ítems junto al título de "Servicios"/"Productos" — antes
-  // "Título (N)" en texto plano, ahora un círculo (mismo gris que el
-  // título, sin depender de colorBadges) a pedido del cliente.
-  function ContadorCirculo({ cantidad }: { cantidad: number }): React.ReactNode {
+
+  // Contacto/Redes/Agenda/Botones: extraídas a funciones (en vez de quedar
+  // embebidas directo en el JSX de más abajo) para poder recorrerlas en el
+  // ORDEN que eligió el dueño (identidadVisual.ordenSecciones, ver
+  // lib/boton-cta.ts) en lugar de un orden fijo por código. "Servicios"/
+  // "Productos" dejaron de ser bloques propios (2026-08-09) — ahora son
+  // botones `tipo: "catalogo"` dentro de "Botones" (ver renderBotones más
+  // abajo). "Contacto"/"Redes" se separaron en dos secciones reordenables
+  // independientes (2026-08-10) — antes eran una sola fila fija con los
+  // pills de teléfono/WhatsApp/email/ubicación mezclados con las redes.
+  // Orden ENTRE los 4 pills fijos (no de la sección en sí, que sigue en
+  // posición fija — ver ContactoOrdenable/ordenContactoNormalizado en
+  // lib/boton-cta.ts): un Record de renders puntuales recorrido según el
+  // orden que eligió el dueño, mismo patrón que RENDER_SECCION/ordenFinal
+  // más abajo pero acotado a este grupo.
+  const RENDER_CONTACTO: Record<string, () => React.ReactNode> = {
+    telefono: () =>
+      telefonoPrincipal && (
+        <a
+          key="telefono"
+          data-campo="contacto"
+          href={`tel:${telefonoPrincipal}`}
+          onClick={() => track("click_enlace", { tipo_enlace: "tel" })}
+          className={accionClase}
+        >
+          <Phone className="size-3.5" /> Llamar
+        </a>
+      ),
+    whatsapp: () =>
+      whatsapp && (
+        <a
+          key="whatsapp"
+          data-campo="contacto"
+          href={`https://wa.me/${soloDigitos(whatsapp)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => track("click_enlace", { tipo_enlace: "whatsapp" })}
+          className={accionClase}
+        >
+          <SOCIAL_ICONS.whatsapp className="size-3.5" /> WhatsApp
+        </a>
+      ),
+    email: () =>
+      email && (
+        <a
+          key="email"
+          data-campo="contacto"
+          href={`mailto:${email}`}
+          onClick={() => track("click_enlace", { tipo_enlace: "email" })}
+          className={accionClase}
+        >
+          <Mail className="size-3.5" /> Email
+        </a>
+      ),
+    ubicacion: () =>
+      direccionMapsUrl && (
+        <a
+          key="ubicacion"
+          data-campo="ubicacion"
+          href={direccionMapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => track("click_enlace", { tipo_enlace: "ubicacion" })}
+          className={accionClase}
+        >
+          <MapPin className="size-3.5" /> Cómo llegar
+        </a>
+      ),
+  }
+
+  function renderContacto(): React.ReactNode {
+    return ordenContactoNormalizado(ordenContacto).map((id) => RENDER_CONTACTO[id]())
+  }
+
+  function renderRedes(): React.ReactNode {
+    if (!redes?.length) return null
+    return redes.map((red) => {
+      if (!red.url) return null
+      const Icono = SOCIAL_ICONS[red.plataforma] ?? Globe
+      const etiqueta =
+        red.plataforma === "personalizado" ? red.label || "Enlace" : obtenerPlataforma(red.plataforma).nombre
+      return (
+        <a
+          key={red.url}
+          data-campo="redes"
+          href={red.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => track("click_enlace", { tipo_enlace: "red_social", red: red.plataforma })}
+          className={accionClase}
+        >
+          <Icono className="size-3.5" /> {etiqueta}
+        </a>
+      )
+    })
+  }
+
+  /** Contacto y redes van SIEMPRE en una sola fila, uno junto al otro (nunca
+   *  dos bloques apilados) — el "arriba/abajo" del editor solo decide el
+   *  ORDEN de los ítems dentro de este mismo contenedor, no separa nada. */
+  function renderContactoYRedes(): React.ReactNode {
+    if (!(telefonoPrincipal || whatsapp || email || direccionMapsUrl || redes?.length)) return null
     return (
-      <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-[#71717a]/15 text-[10px] font-semibold normal-case tracking-normal text-[#71717a] dark:bg-[#a1a1aa]/15 dark:text-[#a1a1aa]">
-        {cantidad}
-      </span>
+      <div className="mt-5 flex w-full flex-wrap items-center justify-center gap-2">
+        {renderContacto()}
+        {renderRedes()}
+      </div>
     )
   }
 
-  // Agenda/Botones: extraídas a funciones (en vez de quedar embebidas
-  // directo en el JSX de más abajo) para poder recorrerlas en el ORDEN que
-  // eligió el dueño (identidadVisual.ordenSecciones, ver lib/boton-cta.ts)
-  // en lugar de un orden fijo por código. "Servicios"/"Productos" dejaron
-  // de ser bloques propios (2026-08-09) — ahora son botones `tipo:
-  // "catalogo"` dentro de "Botones" (ver renderBotones más abajo).
   function renderAgenda(): React.ReactNode {
     if (!agendaServicios?.length) return null
     return (
@@ -411,7 +527,8 @@ export function TarjetaCard({
   // lugar en vez de repetir el cálculo por tipo.
   function estiloDeBoton(boton: Boton | BotonHijo): React.CSSProperties {
     const colorFondoBoton = boton.colorFondo || colorBotonesFinal
-    const colorTextoBoton = boton.colorFondo ? obtenerColorContraste(boton.colorFondo) : colorTextoCta
+    const colorTextoBoton =
+      boton.colorTexto || (boton.colorFondo ? obtenerColorContraste(boton.colorFondo) : colorTextoCta)
     return {
       backgroundColor: colorFondoBoton ? `${colorFondoBoton}${alfaVidrio}` : undefined,
       color: colorTextoBoton,
@@ -429,8 +546,11 @@ export function TarjetaCard({
   // wa.me/... recién acá, nunca se persiste armada). El "⋮" (BotonCtaModal)
   // es un elemento hermano del <a>, no un hijo — un <button> anidado
   // dentro de un <a> es HTML inválido y además complica evitar que el
-  // click del menú dispare la navegación. `opts` cubre el caso de un hijo
-  // de "opciones" (metadata de tracking distinta, mismo render).
+  // click del menú dispare la navegación. Vive del lado DERECHO (pr-9),
+  // en la misma posición que el chevron de "opciones"/"catalogo" — así
+  // cualquier tipo de botón se ve consistente sin importar si es
+  // desplegable o no. `opts` cubre el caso de un hijo de "opciones"
+  // (metadata de tracking distinta, mismo render).
   function renderBotonSimple(
     boton: BotonEnlace | BotonWhatsapp | BotonArchivo,
     opts?: { tipoEnlace?: string; botonPadre?: string }
@@ -463,7 +583,7 @@ export function TarjetaCard({
           style={estiloBotonCta}
           className={cn(
             claseBotonBase,
-            "pl-9 pr-4",
+            "pl-4 pr-9",
             tieneUrl && "hover:-translate-y-0.5 hover:shadow-md active:translate-y-0",
             !boton.colorBorde && "border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.12)]",
             !(boton.colorFondo || colorBotonesFinal) &&
@@ -476,13 +596,17 @@ export function TarjetaCard({
     )
   }
 
-  // Botón "opciones" — despliega/colapsa (toggle inline, no modal) sus
-  // hijos, cada uno renderizado con el mismo switch que un botón top-level
-  // (un hijo "catalogo" reusa renderBotonCatalogo, el resto renderBotonSimple
-  // con tracking marcado como "hijo de opciones"). Sin "⋮"/modal propio: no
-  // es un link, no hay nada que compartir.
-  function renderBotonOpciones(boton: BotonOpciones): React.ReactNode {
-    const abierta = abiertos.has(boton.id)
+  // Cabecera-toggle compartida por "opciones" y "catalogo" — mismo look que
+  // cualquier otro botón de ancho completo (icono/imagen + título/subtítulo
+  // + color/borde/textura propios), con el chevron a la derecha en vez de
+  // navegar. Unificada acá a pedido del cliente: el botón catálogo antes se
+  // veía distinto (título chico en mayúsculas + contador), ahora es
+  // indistinguible de "opciones" salvo por lo que despliega.
+  function renderCabeceraToggle(
+    boton: BotonOpciones | BotonCatalogo,
+    abierta: boolean,
+    onClick: () => void
+  ): React.ReactNode {
     const vistaPrevia: BotonVistaPrevia = {
       titulo: boton.titulo,
       subtitulo: boton.subtitulo,
@@ -493,27 +617,39 @@ export function TarjetaCard({
     }
     const estiloBotonCta = estiloDeBoton(boton)
     return (
-      <div key={boton.id} className="flex flex-col gap-2.5">
-        <button
-          type="button"
-          onClick={() => toggleAbierto(boton.id)}
-          style={estiloBotonCta}
+      <button
+        type="button"
+        onClick={onClick}
+        style={estiloBotonCta}
+        className={cn(
+          claseBotonBase,
+          "px-4",
+          !boton.colorBorde && "border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.12)]",
+          !(boton.colorFondo || colorBotonesFinal) &&
+            "bg-[rgba(255,255,255,0.85)] text-[#18181b] dark:bg-[rgba(255,255,255,0.06)] dark:text-[#fafafa]"
+        )}
+      >
+        <ContenidoBotonCta boton={vistaPrevia} />
+        <ChevronDown
           className={cn(
-            claseBotonBase,
-            "px-4",
-            !boton.colorBorde && "border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.12)]",
-            !(boton.colorFondo || colorBotonesFinal) &&
-              "bg-[rgba(255,255,255,0.85)] text-[#18181b] dark:bg-[rgba(255,255,255,0.06)] dark:text-[#fafafa]"
+            "ml-auto size-4 shrink-0 transition-transform duration-200 ease-out",
+            abierta && "rotate-180"
           )}
-        >
-          <ContenidoBotonCta boton={vistaPrevia} />
-          <ChevronDown
-            className={cn(
-              "ml-auto size-4 shrink-0 transition-transform duration-200 ease-out",
-              abierta && "rotate-180"
-            )}
-          />
-        </button>
+        />
+      </button>
+    )
+  }
+
+  // Botón "opciones" — despliega/colapsa (toggle inline, no modal) sus
+  // hijos, cada uno renderizado con el mismo switch que un botón top-level
+  // (un hijo "catalogo" reusa renderBotonCatalogo, el resto renderBotonSimple
+  // con tracking marcado como "hijo de opciones"). Sin "⋮"/modal propio: no
+  // es un link, no hay nada que compartir.
+  function renderBotonOpciones(boton: BotonOpciones): React.ReactNode {
+    const abierta = abiertos.has(boton.id)
+    return (
+      <div key={boton.id} className="flex flex-col gap-2.5">
+        {renderCabeceraToggle(boton, abierta, () => toggleAbierto(boton.id))}
         {abierta && (
           <div className="flex flex-col gap-2.5 pl-4">
             {boton.hijos.map((hijo) =>
@@ -527,38 +663,25 @@ export function TarjetaCard({
     )
   }
 
-  // Botón "catalogo" — reemplaza a "Servicios"/"Productos": header
-  // colapsable (mismo patrón visual que tenían antes) + grid de 2 columnas
-  // o lista de 1 por línea (elegido por el dueño) — cada ítem abre el modal
-  // de detalle en vez de mostrar descripción/precio/enlace apretado en el
-  // tile.
+  // Botón "catalogo" — reemplaza a "Servicios"/"Productos": misma cabecera
+  // de ancho completo que el resto de los botones (ver renderCabeceraToggle)
+  // + grid de 2 columnas o lista de 1 por línea (elegido por el dueño) —
+  // cada ítem abre el modal de detalle en vez de mostrar descripción/
+  // precio/enlace apretado en el tile.
   function renderBotonCatalogo(boton: BotonCatalogo): React.ReactNode {
     const abierta = abiertos.has(boton.id)
+    // El "chip" de título de cada ítem adopta el color del botón padre (o el
+    // color de botones por defecto), igual criterio que estiloDeBoton pero
+    // sin vidrio/textura — acá es solo una etiqueta de texto, no el CTA.
+    const colorFondoTitulo = boton.colorFondo || colorBotonesFinal
+    const colorTextoTitulo = boton.colorTexto || (colorFondoTitulo ? obtenerColorContraste(colorFondoTitulo) : undefined)
     return (
-      <div key={boton.id} className="w-full text-left">
-        <button
-          type="button"
-          onClick={() => toggleAbierto(boton.id)}
-          className="flex w-full items-center justify-between gap-2"
-        >
-          <h2
-            style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
-            className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
-          >
-            {boton.titulo?.trim() || "Catálogo"}
-            <ContadorCirculo cantidad={boton.items.length} />
-          </h2>
-          <ChevronDown
-            className={cn(
-              "size-3.5 shrink-0 text-[#71717a] transition-transform duration-200 ease-out dark:text-[#a1a1aa]",
-              abierta && "rotate-180"
-            )}
-          />
-        </button>
+      <div key={boton.id} className="flex flex-col gap-2.5">
+        {renderCabeceraToggle(boton, abierta, () => toggleAbierto(boton.id))}
         {abierta && boton.items.length > 0 && (
           <div
             className={cn(
-              "mt-3 gap-2.5",
+              "gap-2.5 pl-4",
               boton.vista === "lista1" ? "flex flex-col" : "grid grid-cols-2"
             )}
           >
@@ -586,6 +709,7 @@ export function TarjetaCard({
                       sizes="(max-width: 640px) 45vw, 160px"
                       unoptimized={!esUrlOptimizable(item.imagenUrl)}
                       className="object-cover"
+                      style={estiloImagenPosicionada(item.imagenPosicion)}
                     />
                   </div>
                 ) : (
@@ -597,10 +721,11 @@ export function TarjetaCard({
                   />
                 )}
                 <p
-                  style={estiloTextoGeneral}
+                  style={{ backgroundColor: colorFondoTitulo, color: colorTextoTitulo, ...estiloTextoGeneral }}
                   className={cn(
-                    "truncate text-[11px] font-medium text-[#18181b] dark:text-[#fafafa]",
-                    boton.vista === "lista1" ? "px-3" : "px-1.5 py-1.5 text-center"
+                    "line-clamp-2 text-[11px] font-medium",
+                    boton.vista === "lista1" ? "flex-1 px-3 py-1" : "w-full px-1.5 py-1.5 text-center",
+                    !colorFondoTitulo && "text-[#18181b] dark:text-[#fafafa]"
                   )}
                 >
                   {item.titulo}
@@ -686,16 +811,20 @@ export function TarjetaCard({
             // que puede quedar un margen angosto debajo en el momento en
             // que la barra se oculta, preferible al salto.
             <div className="fixed inset-x-0 top-0 z-0 h-[100svh] sm:hidden" aria-hidden>
-              <Image
-                src={fondoImagenUrl!}
-                alt=""
-                fill
-                priority
-                sizes="100vw"
-                unoptimized={!esUrlOptimizable(fondoImagenUrl!)}
-                className="object-cover"
-                style={estiloFondoImagen}
-              />
+              {fondoImagenRepetir ? (
+                <div className="size-full" style={estiloFondoImagenRepetido} />
+              ) : (
+                <Image
+                  src={fondoImagenUrl!}
+                  alt=""
+                  fill
+                  priority
+                  sizes="100vw"
+                  unoptimized={!esUrlOptimizable(fondoImagenUrl!)}
+                  className="object-cover"
+                  style={estiloFondoImagen}
+                />
+              )}
             </div>
           ) : null)}
         {tieneFondoImagen && (
@@ -717,16 +846,20 @@ export function TarjetaCard({
             style={{ height: ALTO_FONDO_IMAGEN }}
             aria-hidden
           >
-            <Image
-              src={fondoImagenUrl!}
-              alt=""
-              fill
-              priority={!pantallaCompleta}
-              sizes="(max-width: 640px) 100vw, 384px"
-              unoptimized={!esUrlOptimizable(fondoImagenUrl!)}
-              className="object-cover"
-              style={estiloFondoImagen}
-            />
+            {fondoImagenRepetir ? (
+              <div className="size-full" style={estiloFondoImagenRepetido} />
+            ) : (
+              <Image
+                src={fondoImagenUrl!}
+                alt=""
+                fill
+                priority={!pantallaCompleta}
+                sizes="(max-width: 640px) 100vw, 384px"
+                unoptimized={!esUrlOptimizable(fondoImagenUrl!)}
+                className="object-cover"
+                style={estiloFondoImagen}
+              />
+            )}
           </div>
         )}
 
@@ -840,19 +973,37 @@ export function TarjetaCard({
             </span>
           )}
 
-          <h1
-            data-campo="nombre"
-            style={{
-              fontFamily: fuenteEncabezado,
-              ...estiloTextoGeneral,
-              fontSize: tituloTamano ? `${tituloTamano}px` : undefined,
-              fontWeight: tituloPeso ?? undefined,
-              ...(colorTitulo ? { color: colorTitulo } : undefined),
-            }}
-            className="mt-2 text-xl font-semibold text-balance text-[#18181b] dark:text-[#fafafa]"
-          >
-            {nombrePrincipal?.trim() || "Sin nombre"}
-          </h1>
+          {tituloModo === "imagen" && tituloImagenUrl ? (
+            // Logo en vez de texto — a propósito SIN recortar a ninguna
+            // forma (a diferencia del avatar): ancho libre, alto fijo, se
+            // ve "como si fuera texto" en su proporción natural.
+            // eslint-disable-next-line @next/next/no-img-element -- alto variable elegido por el dueño, next/image exige dimensiones fijas
+            <img
+              data-campo="nombre"
+              src={tituloImagenUrl}
+              alt={nombrePrincipal?.trim() || "Logo"}
+              style={{ height: `${tituloImagenAltura ?? 32}px` }}
+              // mx-auto: Tailwind Preflight pone `img { display: block }`
+              // por defecto, así que el `text-center` del panel (que sí
+              // centra el <h1> de texto) no alcanza para centrar un
+              // elemento block — hace falta centrarlo explícito.
+              className="mx-auto mt-2 w-auto max-w-full object-contain"
+            />
+          ) : (
+            <h1
+              data-campo="nombre"
+              style={{
+                fontFamily: fuenteEncabezado,
+                ...estiloTextoGeneral,
+                fontSize: tituloTamano ? `${tituloTamano}px` : undefined,
+                fontWeight: tituloPeso ?? undefined,
+                ...(colorTitulo ? { color: colorTitulo } : undefined),
+              }}
+              className="mt-2 text-xl font-semibold text-balance text-[#18181b] dark:text-[#fafafa]"
+            >
+              {nombrePrincipal?.trim() || "Sin nombre"}
+            </h1>
+          )}
           {empresa?.trim() && (
             <p
               style={{
@@ -921,79 +1072,7 @@ export function TarjetaCard({
             </div>
           )}
 
-          {Boolean(
-            telefonoPrincipal || whatsapp || email || direccionMapsUrl || redes?.length
-          ) && (
-            <div className="mt-5 flex w-full flex-wrap items-center justify-center gap-2">
-              {telefonoPrincipal && (
-                <a
-                  data-campo="contacto"
-                  href={`tel:${telefonoPrincipal}`}
-                  onClick={() => track("click_enlace", { tipo_enlace: "tel" })}
-                  className={accionClase}
-                >
-                  <Phone className="size-3.5" /> Llamar
-                </a>
-              )}
-              {whatsapp && (
-                <a
-                  data-campo="contacto"
-                  href={`https://wa.me/${soloDigitos(whatsapp)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => track("click_enlace", { tipo_enlace: "whatsapp" })}
-                  className={accionClase}
-                >
-                  <SOCIAL_ICONS.whatsapp className="size-3.5" /> WhatsApp
-                </a>
-              )}
-              {email && (
-                <a
-                  data-campo="contacto"
-                  href={`mailto:${email}`}
-                  onClick={() => track("click_enlace", { tipo_enlace: "email" })}
-                  className={accionClase}
-                >
-                  <Mail className="size-3.5" /> Email
-                </a>
-              )}
-              {direccionMapsUrl && (
-                <a
-                  data-campo="ubicacion"
-                  href={direccionMapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => track("click_enlace", { tipo_enlace: "ubicacion" })}
-                  className={accionClase}
-                >
-                  <MapPin className="size-3.5" /> Cómo llegar
-                </a>
-              )}
-              {redes?.map((red) => {
-                if (!red.url) return null
-                const Icono = SOCIAL_ICONS[red.plataforma] ?? Globe
-                const etiqueta =
-                  red.plataforma === "personalizado"
-                    ? red.label || "Enlace"
-                    : obtenerPlataforma(red.plataforma).nombre
-                return (
-                  <a
-                    key={red.url}
-                    data-campo="redes"
-                    href={red.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() =>
-                      track("click_enlace", { tipo_enlace: "red_social", red: red.plataforma })
-                    }
-                    className={accionClase}
-                  >
-                    <Icono className="size-3.5" /> {etiqueta}
-                  </a>
-                )
-              })}
-            </div>
-          )}
+          {renderContactoYRedes()}
 
           {videoEmbedUrl && (
             <div data-campo="video" className="mt-5 aspect-video w-full overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.1)]">

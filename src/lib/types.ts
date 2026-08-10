@@ -56,6 +56,10 @@ export interface Producto {
   titulo: string
   descripcion?: string
   imagenUrl?: string
+  /** Ancla de reposicionamiento de `imagenUrl` (mismo mecanismo que avatar/
+   *  banner/fondo, ver `PosicionImagen` más abajo) — sin valor, se asume
+   *  50/50 (comportamiento de siempre, object-fit:cover centrado). */
+  imagenPosicion?: PosicionImagen
   precio?: string
   enlaceUrl?: string
 }
@@ -123,6 +127,9 @@ interface BotonBase {
   /** id de BOTON_TEXTURAS — "ninguna"/undefined = sin textura. */
   textura?: string
   colorBorde?: string
+  /** Sin valor: auto-contraste contra el fondo (mismo criterio que el resto
+   *  de los colores de texto de la tarjeta). */
+  colorTexto?: string
 }
 
 /** El botón de ancho completo de siempre — mismo comportamiento que
@@ -185,13 +192,23 @@ export type Boton = BotonEnlace | BotonWhatsapp | BotonOpciones | BotonCatalogo 
 
 /** Secciones cuyo ORDEN de aparición en la tarjeta pública el dueño puede
  *  cambiar (ver IdentidadVisual.ordenSecciones) — no incluye "video" ni
- *  "redes"/"contacto", que siguen en posición fija. Desde la unificación
- *  de Botones (2026-08-09), "servicios"/"productos" dejaron de ser bloques
+ *  "redes"/"contacto", que siguen en posición fija (esos SÍ permiten
+ *  reordenar sus propios ítems puertas adentro, ver `ordenContacto` más
+ *  abajo y el reorden ↑/↓ de `redes` en el editor — pero la sección en sí
+ *  no se mueve respecto de Agenda/Botones). Desde la unificación de
+ *  Botones (2026-08-09), "servicios"/"productos" dejaron de ser bloques
  *  propios (ahora son botones `tipo: "catalogo"` dentro de "botones"): un
  *  `ordenSecciones` viejo que todavía los mencione simplemente los ignora
  *  (`ordenSeccionesNormalizado()` ya filtra por inclusión en la lista
  *  default, tolerancia ya existente, sin código nuevo necesario ahí). */
 export type SeccionOrdenable = "agenda" | "botones"
+
+/** Los 4 pills fijos de "Datos de contacto" (teléfono/WhatsApp/email/cómo
+ *  llegar) — el dueño reordena ENTRE ELLOS con ↑/↓ (mismo patrón que
+ *  `SeccionOrdenable`, pero acotado a estos 4 en vez de mover toda la
+ *  sección respecto de otras). Sin este campo, se usa el orden fijo de
+ *  siempre. */
+export type ContactoOrdenable = "telefono" | "whatsapp" | "email" | "ubicacion"
 
 // Tipo único de tarjeta (2026-08-01): el editor ya no distingue
 // personal/empresarial (ver tarjeta-form.tsx) — todos estos campos son
@@ -320,6 +337,11 @@ export interface IdentidadVisual {
    *  hubiera, "moviendo" la imagen sin que el dueño la haya tocado. */
   fondoImagenUrl?: string
   fondoImagenPosicion?: PosicionImagen
+  /** true = la imagen se muestra a 100% de ancho (alto proporcional) y se
+   *  repite verticalmente para llenar la pantalla, en vez de recortarse con
+   *  object-fit:cover. `fondoImagenPosicion` se ignora en este modo (no hay
+   *  "posición" que anclar: siempre arranca arriba, ancho completo). */
+  fondoImagenRepetir?: boolean
   /** Fondo del panel de contenido (blanco/oscuro por defecto según
    *  temaModo) — separado a propósito del fondo del banner (colorPrimario/
    *  colorSecundario) para no repetir la confusión de que "Fondo" en
@@ -370,6 +392,20 @@ export interface IdentidadVisual {
    *  (lib/boton-cta.ts), que reproduce el orden fijo de siempre
    *  (servicios → agenda → productos), con "botones" al final. */
   ordenSecciones?: SeccionOrdenable[]
+  /** Orden entre los 4 pills de "Datos de contacto" (no de la sección en
+   *  sí, ver `ContactoOrdenable`) — el dueño lo reordena con flechas ↑/↓
+   *  en "Canales de contacto". Sin este campo, orden fijo de siempre
+   *  (teléfono → WhatsApp → email → cómo llegar). */
+  ordenContacto?: ContactoOrdenable[]
+  /** Reemplaza el `<h1>` de texto (nombre) por una imagen de logo — a
+   *  diferencia del avatar, esta imagen NO se recorta a ninguna forma, se
+   *  muestra con su proporción natural (ancho libre, alto fijo) "como si
+   *  fuera texto". `undefined`/`"texto"` = comportamiento de siempre.
+   *  Gating: personalizacion_avanzada (Poder exclusivo). */
+  tituloModo?: "texto" | "imagen"
+  tituloImagenUrl?: string
+  /** Alto del logo en px — rango sugerido en el editor 24-80, default 32. */
+  tituloImagenAltura?: number
 }
 
 export type MetodoPago = "mercado_pago" | "transferencia"
