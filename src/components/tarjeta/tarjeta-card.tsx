@@ -18,7 +18,6 @@ import {
   normalizarBotones,
   obtenerBotonIcono,
   ordenContactoNormalizado,
-  ordenSeccionesNormalizado,
 } from "@/lib/boton-cta"
 import { obtenerColorContraste } from "@/lib/contraste"
 import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
@@ -29,6 +28,7 @@ import { cn } from "@/lib/utils"
 import { obtenerYoutubeEmbedUrl } from "@/lib/youtube"
 import type {
   Boton,
+  BotonAgenda,
   BotonArchivo,
   BotonCatalogo,
   BotonEnlace,
@@ -183,7 +183,6 @@ export function TarjetaCard({
     fondoTarjetaTipoDegradado,
     fondoTarjetaDireccionGrados,
     colorTextoSecundario,
-    ordenSecciones,
     ordenContacto,
     badgeIconoActivo,
     badgeIconoId,
@@ -367,20 +366,21 @@ export function TarjetaCard({
     : undefined
 
 
-  // Contacto/Redes/Agenda/Botones: extraídas a funciones (en vez de quedar
-  // embebidas directo en el JSX de más abajo) para poder recorrerlas en el
-  // ORDEN que eligió el dueño (identidadVisual.ordenSecciones, ver
-  // lib/boton-cta.ts) en lugar de un orden fijo por código. "Servicios"/
-  // "Productos" dejaron de ser bloques propios (2026-08-09) — ahora son
-  // botones `tipo: "catalogo"` dentro de "Botones" (ver renderBotones más
-  // abajo). "Contacto"/"Redes" se separaron en dos secciones reordenables
-  // independientes (2026-08-10) — antes eran una sola fila fija con los
-  // pills de teléfono/WhatsApp/email/ubicación mezclados con las redes.
-  // Orden ENTRE los 4 pills fijos (no de la sección en sí, que sigue en
-  // posición fija — ver ContactoOrdenable/ordenContactoNormalizado en
-  // lib/boton-cta.ts): un Record de renders puntuales recorrido según el
-  // orden que eligió el dueño, mismo patrón que RENDER_SECCION/ordenFinal
-  // más abajo pero acotado a este grupo.
+  // Contacto/Redes/Botones: extraídas a funciones (en vez de quedar
+  // embebidas directo en el JSX de más abajo). "Servicios"/"Productos"
+  // dejaron de ser bloques propios (2026-08-09) — ahora son botones
+  // `tipo: "catalogo"` dentro de "Botones" (ver renderBotones más abajo);
+  // "Agenda" siguió el mismo camino (2026-08-10, `tipo: "agenda"`, ver
+  // renderBotonAgenda) — ya no queda más de un bloque a este nivel, así
+  // que `renderBotones()` se llama directo en el JSX, sin ninguna capa de
+  // "orden entre secciones" (esa maquinaria quedó deprecada, ver
+  // `SeccionOrdenable` en lib/types.ts). "Contacto"/"Redes" se separaron
+  // en dos secciones reordenables independientes (2026-08-10) — antes eran
+  // una sola fila fija con los pills de teléfono/WhatsApp/email/ubicación
+  // mezclados con las redes. Orden ENTRE los 4 pills fijos (no de la
+  // sección en sí, que sigue en posición fija — ver ContactoOrdenable/
+  // ordenContactoNormalizado en lib/boton-cta.ts): un Record de renders
+  // puntuales recorrido según el orden que eligió el dueño.
   const RENDER_CONTACTO: Record<string, () => React.ReactNode> = {
     telefono: () =>
       telefonoPrincipal && (
@@ -476,48 +476,54 @@ export function TarjetaCard({
     )
   }
 
-  function renderAgenda(): React.ReactNode {
+  // Botón "agenda" (2026-08-10) — reemplaza a la vieja sección "Agenda"
+  // (siempre visible, sin colapsar): ahora comparte la misma cabecera
+  // toggle de ancho completo que catálogo/opciones (ícono/color/textura
+  // propios, posición reordenable entre el resto de los botones). Sigue
+  // ocultándose ENTERO sin servicios agendables activos (gating real de
+  // plan ya resuelto río arriba, en cómo llega `agendaServicios`) — mismo
+  // criterio de siempre, ahora aplicado al botón completo en vez de a un
+  // bloque fijo.
+  function renderBotonAgenda(boton: BotonAgenda): React.ReactNode {
     if (!agendaServicios?.length) return null
+    const abierta = abiertos.has(boton.id)
     return (
-      <div data-campo="agenda" className="mt-5 w-full text-left">
-        <h2
-          style={{ fontFamily: fuenteEncabezado, ...estiloTextoGeneral }}
-          className="text-xs font-semibold uppercase tracking-wide text-[#71717a] dark:text-[#a1a1aa]"
-        >
-          Agendar
-        </h2>
-        <div className="mt-3 flex flex-col gap-2">
-          {agendaServicios.map((servicio) =>
-            agendaInteractiva ? (
-              <ReservarServicio
-                key={servicio.id}
-                tarjetaId={tarjetaId!}
-                zonaHoraria={zonaHoraria!}
-                servicio={servicio}
-              />
-            ) : (
-              <div
-                key={servicio.id}
-                style={estiloTextoGeneral}
-                className="flex items-center justify-between gap-3 rounded-xl border border-[rgba(0,0,0,0.05)] p-3 dark:border-[rgba(255,255,255,0.08)]"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
-                    {servicio.nombre}
-                  </p>
-                  <p className="mt-0.5 flex items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]">
-                    <Clock className="size-3" /> {formatDuracion(servicio.duracion_minutos)}
-                    {" · "}
-                    {servicio.requiere_pago_inmediato ? "Pago al agendar" : "Pago contra entrega"}
-                  </p>
+      <div key={boton.id} className="flex flex-col gap-2.5">
+        {renderCabeceraToggle(boton, abierta, () => toggleAbierto(boton.id))}
+        {abierta && (
+          <div className="flex flex-col gap-2 pl-4">
+            {agendaServicios.map((servicio) =>
+              agendaInteractiva ? (
+                <ReservarServicio
+                  key={servicio.id}
+                  tarjetaId={tarjetaId!}
+                  zonaHoraria={zonaHoraria!}
+                  servicio={servicio}
+                />
+              ) : (
+                <div
+                  key={servicio.id}
+                  style={estiloTextoGeneral}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-[rgba(0,0,0,0.05)] p-3 dark:border-[rgba(255,255,255,0.08)]"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-[#18181b] dark:text-[#fafafa]">
+                      {servicio.nombre}
+                    </p>
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-[#71717a] dark:text-[#a1a1aa]">
+                      <Clock className="size-3" /> {formatDuracion(servicio.duracion_minutos)}
+                      {" · "}
+                      {servicio.requiere_pago_inmediato ? "Pago al agendar" : "Pago contra entrega"}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-sm font-semibold text-[#18181b] dark:text-[#fafafa]">
+                    ${servicio.precio}
+                  </span>
                 </div>
-                <span className="shrink-0 text-sm font-semibold text-[#18181b] dark:text-[#fafafa]">
-                  ${servicio.precio}
-                </span>
-              </div>
-            )
-          )}
-        </div>
+              )
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -603,7 +609,7 @@ export function TarjetaCard({
   // veía distinto (título chico en mayúsculas + contador), ahora es
   // indistinguible de "opciones" salvo por lo que despliega.
   function renderCabeceraToggle(
-    boton: BotonOpciones | BotonCatalogo,
+    boton: BotonOpciones | BotonCatalogo | BotonAgenda,
     abierta: boolean,
     onClick: () => void
   ): React.ReactNode {
@@ -767,18 +773,14 @@ export function TarjetaCard({
               ? renderBotonCatalogo(boton)
               : boton.tipo === "opciones"
                 ? renderBotonOpciones(boton)
-                : renderBotonSimple(boton)}
+                : boton.tipo === "agenda"
+                  ? renderBotonAgenda(boton)
+                  : renderBotonSimple(boton)}
           </React.Fragment>
         ))}
       </div>
     )
   }
-
-  const RENDER_SECCION: Record<string, () => React.ReactNode> = {
-    agenda: renderAgenda,
-    botones: renderBotones,
-  }
-  const ordenFinal = ordenSeccionesNormalizado(ordenSecciones)
 
   return (
     <div className={cn("flex flex-col items-center gap-4", esOscuro && "dark")}>
@@ -1086,9 +1088,7 @@ export function TarjetaCard({
             </div>
           )}
 
-          {ordenFinal.map((id) => (
-            <React.Fragment key={id}>{RENDER_SECCION[id]()}</React.Fragment>
-          ))}
+          {renderBotones()}
         </div>
       </article>
 

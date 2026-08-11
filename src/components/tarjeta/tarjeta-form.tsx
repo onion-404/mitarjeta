@@ -40,10 +40,8 @@ import {
   BOTON_ICONOS,
   BOTON_TEXTURAS,
   CONTACTO_ORDENABLES,
-  SECCIONES_ORDENABLES,
   normalizarBotones,
   ordenContactoNormalizado,
-  ordenSeccionesNormalizado,
 } from "@/lib/boton-cta"
 import { validarCupon } from "@/lib/cupones"
 import { estiloImagenPosicionada } from "@/lib/imagen-posicion"
@@ -76,7 +74,6 @@ import type {
   PlataformaRed,
   PosicionImagen,
   RedSocial,
-  SeccionOrdenable,
   ServicioAgendable,
   Tarjeta,
   TarjetaTipo,
@@ -166,6 +163,7 @@ const ETIQUETA_TIPO_BOTON: Record<BotonTipo, string> = {
   opciones: "Opciones",
   catalogo: "Catálogo",
   archivo: "Archivo",
+  agenda: "Agenda",
 }
 
 /** Convierte un `Boton` ya normalizado (`normalizarBotones()`, ver
@@ -259,6 +257,7 @@ function construirBotonPreview(boton: BotonFormState): Boton {
           imagenPosicion: item.imagenPosicion,
         })),
     }
+  if (boton.tipo === "agenda") return { ...base, tipo: "agenda" }
   return {
     ...base,
     tipo: "opciones",
@@ -588,25 +587,6 @@ export function TarjetaForm({
   const [fondoTarjetaDireccionGrados, setFondoTarjetaDireccionGrados] = React.useState(
     visualInicial?.fondoTarjetaDireccionGrados ?? 135
   )
-
-  // Orden de aparición de Agenda/Botones en la tarjeta pública — el dueño
-  // lo reordena con flechas ↑/↓ (ver contenidoOrdenSecciones más abajo).
-  // Normalizado siempre: una tarjeta vieja sin este campo (o con un valor
-  // legacy que mencione "servicios"/"productos", de antes de la
-  // unificación de Botones) arranca en el orden fijo de siempre.
-  const [ordenSecciones, setOrdenSecciones] = React.useState<SeccionOrdenable[]>(() =>
-    ordenSeccionesNormalizado(visualInicial?.ordenSecciones)
-  )
-
-  function moverSeccion(index: number, direccion: -1 | 1) {
-    setOrdenSecciones((prev) => {
-      const destino = index + direccion
-      if (destino < 0 || destino >= prev.length) return prev
-      const copia = [...prev]
-      ;[copia[index], copia[destino]] = [copia[destino], copia[index]]
-      return copia
-    })
-  }
 
   // Orden de los 4 "pills" de contacto (Llamar/WhatsApp/Email/Cómo llegar)
   // DENTRO de la fila única de contacto+redes — no mueve la sección en sí
@@ -1070,13 +1050,17 @@ export function TarjetaForm({
   }
 
   function agregarBoton(tipo: BotonTipo) {
+    // Agenda es singleton (ver quitarBotonEn) — `normalizarBotones()` ya
+    // garantiza que exista siempre uno, nunca se agrega manualmente desde
+    // acá (tampoco se ofrece en SelectorTipoBoton, esto es solo defensivo).
+    if (tipo === "agenda") return
     if (botones.length >= TOPE_BOTONES) return
     if (tipo === "catalogo" && catalogoBloqueado) return
     if (tipo === "archivo" && !archivoDisponible) return
     setBotones((prev) => [...prev, crearBotonNuevo(tipo)])
   }
 
-  function agregarBotonHijo(indicePadre: number, tipo: Exclude<BotonTipo, "opciones">) {
+  function agregarBotonHijo(indicePadre: number, tipo: Exclude<BotonTipo, "opciones" | "agenda">) {
     if (tipo === "catalogo" && catalogoBloqueado) return
     if (tipo === "archivo" && !archivoDisponible) return
     setBotones((prev) =>
@@ -1137,6 +1121,12 @@ export function TarjetaForm({
     setBotones((prev) => {
       if (ubicacion.indiceHijo === undefined) {
         const actual = prev[ubicacion.indice]
+        // Agenda es singleton (ver BotonAgenda, lib/types.ts) — su
+        // aparición sigue siendo automática en cuanto hay servicios
+        // agendables activos, no depende de que el dueño se acuerde de
+        // agregarla; por eso no se puede eliminar del todo, solo
+        // reordenar/personalizar como a cualquier otro botón.
+        if (actual?.tipo === "agenda") return prev
         if (actual) revocarPreviewsBoton(actual)
         return prev.filter((_, i) => i !== ubicacion.indice)
       }
@@ -1688,6 +1678,7 @@ export function TarjetaForm({
               imagenPosicion: item.imagenPosicion,
             })),
         }
+      if (boton.tipo === "agenda") return { ...base, tipo: "agenda" }
       // "opciones"
       return {
         ...base,
@@ -1762,7 +1753,6 @@ export function TarjetaForm({
           ? fondoTarjetaDireccionGrados
           : undefined,
       colorTextoSecundario: colorTextoSecundario || undefined,
-      ordenSecciones,
       ordenContacto,
       tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
       tituloImagenUrl: tituloModo === "imagen" ? tituloImagenUrlFinal : undefined,
@@ -2004,7 +1994,6 @@ export function TarjetaForm({
         ? fondoTarjetaDireccionGrados
         : undefined,
     colorTextoSecundario: colorTextoSecundario || undefined,
-    ordenSecciones,
     ordenContacto,
     tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
     tituloImagenUrl: tituloModo === "imagen" ? tituloImagenMostrada || undefined : undefined,
@@ -2463,6 +2452,31 @@ export function TarjetaForm({
           </div>
         </div>
 
+        {/* Fuente principal/cuerpo — se mantienen SIEMPRE seleccionables,
+            aunque el título esté en modo "imagen": `fuenteEncabezado`/
+            `fuenteCuerpo` no solo pintan el <h1>, también el resto de los
+            encabezados/texto de la tarjeta (agenda, bio, etc. — ver
+            TarjetaCard). Solo tamaño/peso/color DEL título (que no aplican
+            a una imagen) se ocultan en modo imagen. */}
+        <SelectorTipografia
+          value={estiloTipografia}
+          onChange={setEstiloTipografia}
+          valorGuardado={visualInicial?.estiloTipografia ?? "moderna"}
+          features={featuresPersonalizacion}
+        />
+
+        {modoTipografiaAvanzado && (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">Fuente del cuerpo</span>
+            <SelectorTipografia
+              value={estiloTipografiaCuerpo}
+              onChange={setEstiloTipografiaCuerpo}
+              valorGuardado={visualInicial?.estiloTipografiaCuerpo ?? "moderna"}
+              features={featuresPersonalizacion}
+            />
+          </label>
+        )}
+
         {tituloModo === "imagen" ? (
           <div className="flex flex-col gap-2">
             <p className="text-xs text-muted-foreground">
@@ -2514,25 +2528,6 @@ export function TarjetaForm({
           </div>
         ) : (
           <>
-            <SelectorTipografia
-              value={estiloTipografia}
-              onChange={setEstiloTipografia}
-              valorGuardado={visualInicial?.estiloTipografia ?? "moderna"}
-              features={featuresPersonalizacion}
-            />
-
-            {modoTipografiaAvanzado && (
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted-foreground">Fuente del cuerpo</span>
-                <SelectorTipografia
-                  value={estiloTipografiaCuerpo}
-                  onChange={setEstiloTipografiaCuerpo}
-                  valorGuardado={visualInicial?.estiloTipografiaCuerpo ?? "moderna"}
-                  features={featuresPersonalizacion}
-                />
-              </label>
-            )}
-
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted-foreground">
@@ -3223,50 +3218,6 @@ export function TarjetaForm({
     </div>
   )
 
-  // Orden de aparición de Agenda/Botones en la tarjeta pública — mismo
-  // patrón de flechas ↑/↓ que ya usa /admin/testimonios para reordenar (sin
-  // librería de drag-and-drop nueva). "Servicios"/"Productos" ya no son
-  // bloques propios (2026-08-09) — ahora son botones tipo "catalogo" dentro
-  // de "Botones", reordenables individualmente (ver renderBotonFila).
-  const contenidoOrdenSecciones = (
-    <div className="flex flex-col gap-2 px-5 pb-5 pt-1">
-      <p className="text-xs text-muted-foreground">
-        Elegí en qué orden aparecen estas secciones en tu tarjeta pública.
-      </p>
-      {ordenSecciones.map((id, index) => {
-        const meta = SECCIONES_ORDENABLES.find((s) => s.id === id)
-        return (
-          <div
-            key={id}
-            className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/50 px-3 py-2"
-          >
-            <span className="text-sm font-medium text-foreground">{meta?.etiqueta ?? id}</span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => moverSeccion(index, -1)}
-                disabled={index === 0}
-                aria-label={`Subir ${meta?.etiqueta ?? id}`}
-                className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
-              >
-                <ChevronUp className="size-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => moverSeccion(index, 1)}
-                disabled={index === ordenSecciones.length - 1}
-                aria-label={`Bajar ${meta?.etiqueta ?? id}`}
-                className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
-              >
-                <ChevronDown className="size-4" />
-              </button>
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-
   /** Ícono/imagen a la izquierda + color de fondo/borde/textura — común a
    *  enlace/whatsapp/archivo/opciones (NO a catálogo: su tile público no
    *  usa ninguno de estos campos, ver renderBotonCatalogo en
@@ -3495,8 +3446,9 @@ export function TarjetaForm({
             <button
               type="button"
               onClick={() => quitarBotonEn(ubicacion)}
-              aria-label="Quitar botón"
-              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted"
+              disabled={boton.tipo === "agenda"}
+              aria-label={boton.tipo === "agenda" ? "Agenda no se puede eliminar" : "Quitar botón"}
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
             >
               <Trash2 className="size-3.5" />
             </button>
@@ -3631,6 +3583,39 @@ export function TarjetaForm({
               </>
             )}
 
+            {boton.tipo === "agenda" && (
+              <>
+                <input
+                  value={boton.subtitulo}
+                  onChange={(e) => actualizarBotonEn(ubicacion, "subtitulo", e.target.value)}
+                  onFocus={() => scrollPreviewTo("botones")}
+                  placeholder="Subtítulo (opcional)"
+                  className={inputClase}
+                />
+                {contenidoIconoYColorBoton(boton, ubicacion)}
+                {/* Los horarios/servicios agendables viven en tablas propias
+                    (servicios_agendables/disponibilidad_*), no en este
+                    botón — mismo componente/escritura directa a Supabase
+                    que ya existía en la antigua sección "Agenda", solo
+                    reubicado acá. Sin tarjeta.id (modo creación) no hay
+                    dónde escribir todavía. */}
+                <div className="flex flex-col gap-2 border-t border-border/60 pt-3">
+                  {esEdicion && tarjeta ? (
+                    <AgendaServicios
+                      tarjetaId={tarjeta.id}
+                      planId={tarjeta.plan_id}
+                      onServiciosChange={onAgendaServiciosChange}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Vas a poder configurar tus horarios y servicios agendables después de crear
+                      la tarjeta.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+
             {boton.tipo === "opciones" && (
               <>
                 <input
@@ -3668,7 +3653,7 @@ export function TarjetaForm({
                         { tipo: "archivo", etiqueta: "Archivo", disponible: archivoDisponible, plan: "poder" },
                       ]}
                       onElegir={(tipoHijo) =>
-                        agregarBotonHijo(ubicacion.indice, tipoHijo as Exclude<BotonTipo, "opciones">)
+                        agregarBotonHijo(ubicacion.indice, tipoHijo as Exclude<BotonTipo, "opciones" | "agenda">)
                       }
                     />
                   )}
@@ -3882,16 +3867,6 @@ export function TarjetaForm({
     </div>
   )
 
-  const contenidoAgenda = esEdicion && tarjeta && (
-    <div className="px-5 pb-5 pt-1">
-      <AgendaServicios
-        tarjetaId={tarjeta.id}
-        planId={tarjeta.plan_id}
-        onServiciosChange={onAgendaServiciosChange}
-      />
-    </div>
-  )
-
   const contenidoMetricas = esEdicion && tarjeta && (
     <div className="px-5 pb-5 pt-1">
       <EstadisticasTarjeta tarjetaId={tarjeta.id} planId={tarjeta.plan_id} />
@@ -4008,9 +3983,13 @@ export function TarjetaForm({
     { id: "redes", titulo: "Redes sociales", contenido: contenidoRedes },
     { id: "ubicacion", titulo: "Ubicación y negocio", contenido: contenidoUbicacion },
     { id: "multimedia", titulo: "Contenido multimedia", contenido: contenidoMultimedia },
-    ...(esEdicion && tarjeta ? [{ id: "agenda", titulo: "Agenda", contenido: contenidoAgenda }] : []),
+    // "Agenda" (2026-08-10) ya no es su propia pestaña — es un botón más
+    // dentro de "Botones" (ver renderBotonFila, tipo "agenda"), siempre
+    // presente (singleton) y editable ahí mismo. "Orden de secciones"
+    // desapareció por completo: era solo para elegir Agenda-antes-o-
+    // después-de-Botones, y ahora ambos viven en la misma lista
+    // reordenable (ver SeccionOrdenable, lib/types.ts).
     { id: "botones", titulo: "Botones", contenido: contenidoBotones },
-    { id: "orden", titulo: "Orden de secciones", contenido: contenidoOrdenSecciones },
     ...(esEdicion && tarjeta
       ? [{ id: "metricas", titulo: "Estadísticas", contenido: contenidoMetricas }]
       : []),

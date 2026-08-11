@@ -57,6 +57,7 @@ import {
 
 import type {
   Boton,
+  BotonAgenda,
   BotonArchivo,
   BotonCatalogo,
   BotonCta,
@@ -241,29 +242,30 @@ export function construirUrlWhatsapp(numero: string, mensaje: string): string {
 }
 
 // ============================================================================
-// Orden de secciones opcionales (servicios/agenda/productos/botones) — ver
-// IdentidadVisual.ordenSecciones. `ordenSeccionesNormalizado` es tolerante
-// hacia adelante: una tarjeta que ya guardó un orden ANTES de que existiera
-// "botones" simplemente lo agrega al final en vez de perderlo/romper.
+// @deprecated Orden ENTRE secciones (servicios/agenda/productos/botones) —
+// superado por completo desde que Agenda pasó a ser un botón más dentro de
+// "botones" (2026-08-10): ya no queda más de un bloque a este nivel, así que
+// no hay nada que reordenar entre secciones (ver `SeccionOrdenable`,
+// lib/types.ts). Sin caller — `normalizarBotones()` lee `ordenSecciones`
+// crudo por su cuenta para decidir dónde migrar el botón Agenda/catálogos
+// legacy, no a través de estos exports. Se dejan sin borrar por si hiciera
+// falta reconstruir el criterio de migración más adelante.
 // ============================================================================
 export interface SeccionOrdenableMeta {
   id: SeccionOrdenable
   etiqueta: string
 }
 
+/** @deprecated Sin caller, ver nota de arriba. */
 export const SECCIONES_ORDENABLES: SeccionOrdenableMeta[] = [
   { id: "agenda", etiqueta: "Agenda" },
   { id: "botones", etiqueta: "Botones" },
 ]
 
+/** @deprecated Sin caller, ver nota de arriba. */
 export const ORDEN_SECCIONES_DEFAULT: SeccionOrdenable[] = ["agenda", "botones"]
 
-/** Tolerante hacia adelante Y hacia atrás: un `ordenSecciones` viejo que
- *  todavía mencione "servicios"/"productos" (de antes de la unificación de
- *  Botones, 2026-08-09) simplemente los descarta acá (ya no están en
- *  `ORDEN_SECCIONES_DEFAULT`) — su función hoy es leerse crudo desde
- *  `normalizarBotones()` para decidir el orden relativo de los botones
- *  migrados, no a través de esta función. */
+/** @deprecated Sin caller, ver nota de arriba. */
 export function ordenSeccionesNormalizado(orden?: SeccionOrdenable[]): SeccionOrdenable[] {
   if (!orden || orden.length === 0) return ORDEN_SECCIONES_DEFAULT
   const conocidas = orden.filter((id) => ORDEN_SECCIONES_DEFAULT.includes(id))
@@ -370,7 +372,6 @@ export function normalizarBotones(datosContacto: DatosContacto, identidadVisual:
     : []
 
   const migrados: Boton[] = [...catalogosMigrados, ...archivosMigrados]
-  if (!migrados.length) return botonesPlanos
 
   // Orden relativo: si la tarjeta ya tenía un `ordenSecciones` guardado
   // (de antes de la unificación, puede seguir mencionando "servicios"/
@@ -390,5 +391,34 @@ export function normalizarBotones(datosContacto: DatosContacto, identidadVisual:
   const botonesPrimero =
     indiceBotones !== -1 && indiceServiciosOProductos !== Number.POSITIVE_INFINITY && indiceBotones < indiceServiciosOProductos
 
-  return botonesPrimero ? [...botonesPlanos, ...migrados] : [...migrados, ...botonesPlanos]
+  let resultado = migrados.length
+    ? botonesPrimero
+      ? [...botonesPlanos, ...migrados]
+      : [...migrados, ...botonesPlanos]
+    : botonesPlanos
+
+  // Agenda (2026-08-10) — singleton, SIEMPRE presente (ver BotonAgenda,
+  // lib/types.ts): su aparición en la tarjeta pública sigue siendo
+  // automática en cuanto haya servicios agendables activos (gating real
+  // vive en TarjetaCard/agendaServicios, no acá), igual que antes de esta
+  // unificación. Si el listado ya trae uno explícito (tarjeta regrabada
+  // desde esta feature) se respeta tal cual — posición/título/ícono/color
+  // ya elegidos por el dueño; si no, se sintetiza uno por default en la
+  // posición que tenía la vieja sección "Agenda" (antes o después de
+  // "Botones" según `ordenSecciones` — agenda primero por default, mismo
+  // orden fijo de siempre).
+  if (!resultado.some((boton) => boton.tipo === "agenda")) {
+    const agendaBoton: BotonAgenda = {
+      id: "agenda",
+      tipo: "agenda",
+      titulo: "Agendar",
+      iconoTipo: "icono",
+      iconoId: "calendario",
+    }
+    const indiceAgenda = ordenGuardado.indexOf("agenda")
+    const agendaAlFinal = indiceBotones !== -1 && indiceAgenda !== -1 && indiceBotones < indiceAgenda
+    resultado = agendaAlFinal ? [...resultado, agendaBoton] : [agendaBoton, ...resultado]
+  }
+
+  return resultado
 }

@@ -100,13 +100,14 @@ export interface BotonCta {
   colorBorde?: string
 }
 
-/** 5 tipos de botón (2026-08-09) — reemplaza el modelo plano de `BotonCta`
- *  Y absorbe "Servicios"/"Productos" (ahora `tipo: "catalogo"`) y el
- *  folleto PDF suelto (ahora `tipo: "archivo"`) en un solo sistema. Ver
+/** 6 tipos de botón (2026-08-09, + "agenda" 2026-08-10) — reemplaza el
+ *  modelo plano de `BotonCta` Y absorbe "Servicios"/"Productos" (ahora
+ *  `tipo: "catalogo"`), el folleto PDF suelto (ahora `tipo: "archivo"`) y
+ *  la sección "Agenda" (ahora `tipo: "agenda"`) en un solo sistema. Ver
  *  `normalizarBotones()` en lib/boton-cta.ts para la migración en memoria
  *  de tarjetas viejas (nunca escribe hasta el próximo guardado) y CLAUDE.md
  *  para el detalle de negocio (gating por plan, límites, etc.). */
-export type BotonTipo = "enlace" | "whatsapp" | "opciones" | "catalogo" | "archivo"
+export type BotonTipo = "enlace" | "whatsapp" | "opciones" | "catalogo" | "archivo" | "agenda"
 
 /** Vista de un botón "catalogo" — reemplaza el grid fijo de 3 columnas que
  *  tenían Servicios/Productos: el dueño elige entre grid de 2 columnas o
@@ -176,7 +177,8 @@ export interface BotonCatalogo extends BotonBase {
 
 /** Un botón "opciones" admite un solo nivel de anidamiento — un hijo nunca
  *  puede ser a su vez "opciones" (decisión de negocio explícita, evita
- *  menús infinitos). */
+ *  menús infinitos). "agenda" tampoco es hijo válido: es un singleton por
+ *  tarjeta (ver `BotonAgenda`), no tendría sentido duplicado ni anidado. */
 export type BotonHijo = BotonEnlace | BotonWhatsapp | BotonCatalogo | BotonArchivo
 
 /** Botón "padre" que despliega/colapsa (toggle inline, no modal) una lista
@@ -188,19 +190,38 @@ export interface BotonOpciones extends BotonBase {
   hijos: BotonHijo[]
 }
 
-export type Boton = BotonEnlace | BotonWhatsapp | BotonOpciones | BotonCatalogo | BotonArchivo
+/** Reemplaza la sección "Agenda" de siempre (2026-08-10) — SIN campos
+ *  propios: los horarios/servicios agendables viven en las tablas
+ *  `servicios_agendables`/`disponibilidad_*` (por `tarjeta_id`, sin
+ *  relación con este objeto), este botón solo aporta título/ícono/color/
+ *  posición como cualquier otro. Singleton: `normalizarBotones()` asegura
+ *  que exista SIEMPRE exactamente uno (top-level, nunca dentro de
+ *  "opciones") — el dueño lo reordena/personaliza como a cualquier botón,
+ *  pero no puede eliminarlo del todo (decisión de negocio explícita: la
+ *  aparición de Agenda sigue siendo automática en cuanto hay servicios
+ *  agendables activos, igual que antes de esta unificación — no depende
+ *  de que el dueño se acuerde de agregarlo). Sin servicios activos (o sin
+ *  plan que los habilite), el botón entero no se renderiza — mismo
+ *  criterio de siempre. */
+export interface BotonAgenda extends BotonBase {
+  tipo: "agenda"
+}
 
-/** Secciones cuyo ORDEN de aparición en la tarjeta pública el dueño puede
- *  cambiar (ver IdentidadVisual.ordenSecciones) — no incluye "video" ni
- *  "redes"/"contacto", que siguen en posición fija (esos SÍ permiten
- *  reordenar sus propios ítems puertas adentro, ver `ordenContacto` más
- *  abajo y el reorden ↑/↓ de `redes` en el editor — pero la sección en sí
- *  no se mueve respecto de Agenda/Botones). Desde la unificación de
- *  Botones (2026-08-09), "servicios"/"productos" dejaron de ser bloques
- *  propios (ahora son botones `tipo: "catalogo"` dentro de "botones"): un
- *  `ordenSecciones` viejo que todavía los mencione simplemente los ignora
- *  (`ordenSeccionesNormalizado()` ya filtra por inclusión en la lista
- *  default, tolerancia ya existente, sin código nuevo necesario ahí). */
+export type Boton =
+  | BotonEnlace
+  | BotonWhatsapp
+  | BotonOpciones
+  | BotonCatalogo
+  | BotonArchivo
+  | BotonAgenda
+
+/** @deprecated Superado por la unificación de Agenda como `tipo: "agenda"`
+ *  dentro de "Botones" (2026-08-10) — ya no queda más de un bloque
+ *  reordenable a este nivel, así que no tiene sentido elegir un orden
+ *  ENTRE secciones. Se sigue leyendo (nunca se escribe en un guardado
+ *  nuevo) solo dentro de `normalizarBotones()`, para decidir si el botón
+ *  Agenda migrado de una tarjeta vieja va antes o después de sus botones
+ *  planos ya existentes, reproduciendo el orden que esa tarjeta ya tenía. */
 export type SeccionOrdenable = "agenda" | "botones"
 
 /** Los 4 pills fijos de "Datos de contacto" (teléfono/WhatsApp/email/cómo
@@ -386,11 +407,9 @@ export interface IdentidadVisual {
    *  secundaria bajo el título) — mismo criterio que `colorTitulo`: default
    *  auto-contraste si no está seteado. Gating: personalizacion_libre. */
   colorTextoSecundario?: string
-  /** Orden de aparición de las secciones opcionales en la tarjeta pública
-   *  — el dueño lo reordena con flechas ↑/↓ en el editor. Sin este campo
-   *  (tarjeta vieja o nunca tocado), se usa ORDEN_SECCIONES_DEFAULT
-   *  (lib/boton-cta.ts), que reproduce el orden fijo de siempre
-   *  (servicios → agenda → productos), con "botones" al final. */
+  /** @deprecated Ver `SeccionOrdenable` — ya no se escribe (Agenda pasó a
+   *  ser un botón más dentro de "botones", 2026-08-10). Se sigue leyendo
+   *  solo dentro de `normalizarBotones()` para migrar tarjetas viejas. */
   ordenSecciones?: SeccionOrdenable[]
   /** Orden entre los 4 pills de "Datos de contacto" (no de la sección en
    *  sí, ver `ContactoOrdenable`) — el dueño lo reordena con flechas ↑/↓

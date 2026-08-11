@@ -224,6 +224,21 @@
 - Integración Google Calendar (candidato a feature de plan "poder").
 - Billetera nativa con ledger de comisión + solicitud de retiro.
 - Migración del modelo de pago único legacy de `tarjetas` (coexiste, no se toca).
+- **Guardar la tarjeta en el wallet del celular** (Apple Wallet / Google Wallet) — un "pase"
+  con nombre/logo del negocio + QR a `linkard.mx/{slug}`. Requisitos relevados
+  (2026-08-10), nada implementado todavía:
+  - **Apple Wallet**: cuenta Apple Developer ($99/año) + certificado "Pass Type ID" + WWDR
+    intermedio. `.pkpass` = ZIP firmado (`pass.json` + imágenes + firma), generado por tarjeta
+    al vuelo (librería `passkit-generator` en Node). Sin proceso de aprobación externo.
+  - **Google Wallet**: proyecto de Google Cloud + API de Wallet + cuenta de servicio +
+    **Issuer ID que requiere aprobación de Google** (verificación de negocio, puede tardar
+    días/semanas — es un trámite aparte del código, conviene iniciarlo temprano si se decide
+    avanzar). Pase = JWT firmado que arma el link "Agregar a Google Wallet".
+  - En ambos casos alcanza con lo que ya existe (logo/avatar de Cloudinary, `colorPrimario`,
+    slug para el QR) — faltarían 2 endpoints nuevos + botón "Agregar a Wallet" en `/[slug]` +
+    gestión de certificados/credenciales como secrets.
+  - Recomendación dada al cliente: arrancar por Apple (sin trámite externo) y dejar Google
+    Wallet para después / en paralelo si se quiere iniciar ya el trámite de aprobación.
 
 ## Estado de la base de datos (producción, sin ambiente de staging)
 Todas las migraciones siguientes están **APLICADAS** en producción (confirmadas por consulta
@@ -1086,7 +1101,53 @@ real desde esta sesión salvo que se indique lo contrario):
   verificado todavía en navegador real (solo chequeos estáticos) salvo el fix de centrado del
   logo, confirmado por el cliente en vivo.
 
+## Fuente del título/cuerpo siempre visible + Agenda absorbida como 6º tipo de botón (2026-08-10, mismo día)
+- **Fix — la tipografía se ocultaba en modo "Título como logo"**: `SelectorTipografia` (título Y
+  cuerpo) vivía dentro de la rama `tituloModo === "texto"` del bloque de tipografía — pero
+  `fuenteEncabezado`/`fuenteCuerpo` pintan MÁS que el `<h1>` (también "Agendar", bio, etc. en
+  todo `TarjetaCard`), así que en modo logo el dueño perdía la posibilidad de elegir esas
+  fuentes para el resto de la tarjeta. Fix: ambos `SelectorTipografia` se movieron fuera del
+  ternario (siempre visibles); solo tamaño/peso/color DEL título (que no aplican a una imagen)
+  siguen ocultos en modo logo.
+- **Agenda pasa a ser el 6º tipo de botón** (`BotonAgenda`, `tipo: "agenda"`) — la vieja sección
+  "Agenda" (siempre visible, sin colapsar, en su propia pestaña del editor) desaparece; ahora es
+  un botón más dentro de "Botones", con la misma cabecera de ícono/color/textura y toggle
+  colapsable que Catálogo/Opciones. El componente `<AgendaServicios>` (horarios + CRUD de
+  servicios agendables, escritura directa a Supabase) NO cambió — solo se reubicó, ahora vive
+  dentro del panel expandido de ESE botón en vez de en su propia pestaña.
+  - **Decisión de negocio confirmada con el cliente** (preguntado explícitamente antes de
+    tocar código): la aparición de Agenda en la tarjeta pública sigue siendo 100% AUTOMÁTICA
+    en cuanto hay servicios agendables activos — no depende de que el dueño se acuerde de
+    agregar el botón. Por eso `BotonAgenda` es un **singleton**: `normalizarBotones()`
+    (lib/boton-cta.ts) garantiza que SIEMPRE exista exactamente uno (se sintetiza uno default
+    si no hay ninguno explícito todavía); el botón "Agenda" NO aparece en el selector "+
+    agregar botón" (nunca se agrega manualmente, ya está ahí siempre) y su ✕/eliminar queda
+    deshabilitado en el editor (`quitarBotonEn` lo ignora) — el dueño solo puede
+    reordenarlo/personalizarlo (título/ícono/color/posición) como a cualquier otro botón.
+    Sin servicios activos (o sin plan que los habilite), el botón entero sigue sin renderizarse
+    en la tarjeta pública — mismo criterio de siempre, ahora aplicado al botón completo.
+  - Nunca es hijo de "Opciones" (excluido de `BotonHijo`, igual criterio que "opciones" mismo
+    — no tendría sentido duplicado ni anidado).
+  - **`SeccionOrdenable`/`ordenSecciones`/"Orden de secciones" (editor) quedan deprecados por
+    completo** — ya no queda más de un bloque a top-level (Agenda se mudó adentro de
+    "Botones"), así que no hay nada que reordenar ENTRE secciones. Se sigue leyendo el
+    `ordenSecciones` viejo, pero solo dentro de `normalizarBotones()`, para decidir si el botón
+    Agenda migrado de una tarjeta vieja va antes o después de sus botones planos ya existentes
+    (reproduce el orden que esa tarjeta ya mostraba). `RENDER_SECCION`/`ordenFinal`
+    (tarjeta-card.tsx) se eliminaron — `renderBotones()` se llama directo.
+  - Consecuencia menor aceptada: Agenda ahora ocupa una de las `TOPE_BOTONES = 8` posiciones
+    del editor (antes no contaba contra ningún tope, al ser una pestaña aparte) — deja 7
+    lugares reales para el resto de los tipos en vez de 8. No pedido explícito, cambio de
+    comportamiento menor y de bajo impacto.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 No verificado
+  todavía en navegador real (fix de tipografía ni Agenda-como-botón) — pendiente probar con una
+  tarjeta real que ya tenga servicios agendables activos, confirmando que el botón sigue
+  apareciendo automático, se puede reordenar/personalizar, y que el editor de horarios/
+  servicios sigue funcionando igual dentro de su panel expandido.
+
 ## Pendiente técnico sin resolver (consolidado)
+- 🔴 Fuente siempre visible en modo logo + Agenda como 6º tipo de botón (2026-08-10, ítem de
+  arriba) — sin verificar en navegador real todavía.
 - 🔴 Lo de esta sesión (2026-08-10, ítem de arriba) sin verificar en navegador salvo el fix de
   centrado del logo — pendiente probar reposicionamiento de imagen de catálogo, fix del modal,
   posición/color del "⋮" y el reorder de contacto/redes con una tarjeta real.
