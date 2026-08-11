@@ -64,6 +64,7 @@ export async function getServiciosAgendablesActivos(
       nombre: fila.nombre,
       descripcion: fila.descripcion,
       duracion_minutos: fila.duracion_minutos,
+      colchon_minutos: fila.colchon_minutos,
       precio: fila.precio,
       requiere_pago_inmediato: fila.requiere_pago_inmediato,
       activo: fila.activo,

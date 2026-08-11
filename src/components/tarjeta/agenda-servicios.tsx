@@ -1,9 +1,10 @@
 "use client"
 
-import { Plus, Trash2 } from "lucide-react"
+import { AlertTriangle, CalendarClock, Plus, Trash2 } from "lucide-react"
 import * as React from "react"
 
 import { Button } from "@/components/ui/button"
+import { formatearFechaHoraLocal } from "@/lib/fecha"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import type {
@@ -21,6 +22,15 @@ const itemCardClase =
   "flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
 
 const DURACIONES_MINUTOS = [15, 30, 45, 60, 90, 120]
+const COLCHONES_MINUTOS = [0, 5, 10, 15, 20, 30, 45, 60]
+
+/** Minutos entre dos horas "HH:MM" (o "HH:MM:SS", como vienen de Postgres) — usado
+ *  tanto para la validación de ventanas como en cualquier cálculo de duración local. */
+function minutosEntre(horaInicio: string, horaFin: string): number {
+  const [hi, mi] = horaInicio.split(":").map(Number)
+  const [hf, mf] = horaFin.split(":").map(Number)
+  return hf * 60 + mf - (hi * 60 + mi)
+}
 
 const DIAS_SEMANA: DiaSemana[] = [0, 1, 2, 3, 4, 5, 6]
 const NOMBRES_DIA: Record<DiaSemana, string> = {
@@ -48,6 +58,13 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
   const [nombrePlan, setNombrePlan] = React.useState<string | null>(null)
   const [cargando, setCargando] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  // Zona horaria de la tarjeta — para formatear el preview de horarios más
+  // abajo sin otra consulta aparte. Un solo proveedor por tarjeta comparte
+  // un único calendario (confirmado con el cliente, 2026-08-10): no hay
+  // "cada cuánto ofrecer un horario" como config aparte — los horarios se
+  // calculan directo desde duración+colchón de cada servicio (ver
+  // `obtenerSlotsDisponibles`, lib/agenda.ts).
+  const [zonaHoraria, setZonaHoraria] = React.useState("America/Mexico_City")
 
   React.useEffect(() => {
     let cancelado = false
@@ -59,7 +76,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
         if (!cancelado) setCargando(false)
         return
       }
-      const [serviciosRes, semanalRes, excepcionesRes] = await Promise.all([
+      const [serviciosRes, semanalRes, excepcionesRes, tarjetaRes] = await Promise.all([
         supabase
           .from("servicios_agendables")
           .select("*")
@@ -75,11 +92,15 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
           .select("*")
           .eq("tarjeta_id", tarjetaId)
           .order("fecha"),
+        supabase.from("tarjetas").select("zona_horaria").eq("id", tarjetaId).maybeSingle(),
       ])
       if (cancelado) return
       setServicios((serviciosRes.data ?? []) as ServicioAgendable[])
       setSemanal((semanalRes.data ?? []) as DisponibilidadSemanal[])
       setExcepciones((excepcionesRes.data ?? []) as DisponibilidadExcepcion[])
+      if (tarjetaRes.data) {
+        setZonaHoraria(tarjetaRes.data.zona_horaria || "America/Mexico_City")
+      }
       setCargando(false)
     }
     cargar()
@@ -125,6 +146,78 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
   // "sin límite" — mejor bloquear de más que dejar pasar servicios gratis.
   const limiteAlcanzado = servicios.length >= (limite ?? 0)
 
+  // Validación de ventanas vs. duración (2026-08-10) — antes de esto, un
+  // servicio de 60 min en una ventana de menos de 60 min nunca mostraba
+  // ningún horario disponible, sin ningún aviso que explicara por qué (bug
+  // real reportado por el cliente). Recorre tanto el horario semanal
+  // (rangos de días "abiertos") como las excepciones "apertura_extra" — un
+  // "bloqueo" no aporta ventanas, no hace falta revisarlo acá.
+  function ventanasCortasPara(duracionMinutos: number): string[] {
+    const problemas: string[] = []
+    for (const rango of semanal) {
+      const minutos = minutosEntre(rango.hora_inicio, rango.hora_fin)
+      if (minutos < duracionMinutos) {
+        problemas.push(
+          `${NOMBRES_DIA[rango.dia_semana]} ${rango.hora_inicio.slice(0, 5)}–${rango.hora_fin.slice(0, 5)} (${minutos} min)`
+        )
+      }
+    }
+    for (const exc of excepciones) {
+      if (exc.tipo === "apertura_extra" && exc.hora_inicio && exc.hora_fin) {
+        const minutos = minutosEntre(exc.hora_inicio, exc.hora_fin)
+        if (minutos < duracionMinutos) {
+          problemas.push(
+            `${exc.fecha} ${exc.hora_inicio.slice(0, 5)}–${exc.hora_fin.slice(0, 5)} (${minutos} min)`
+          )
+        }
+      }
+    }
+    return problemas
+  }
+
+  // Preview de horarios reales (2026-08-10) — reusa el mismo endpoint
+  // público que ya consume la tarjeta al agendar (/api/citas/disponibilidad,
+  // GET sin auth), en vez de duplicar el cálculo de lib/agenda.ts (que
+  // además es server-only) acá en un componente cliente. Sin caché a
+  // propósito: cualquier cambio de horario/intervalo/colchón vuelve a
+  // pedirlo la próxima vez que se abre, así nunca muestra un resultado
+  // desactualizado (es un click manual, no vale la pena la complejidad de
+  // invalidar un caché por esto).
+  const [previewAbiertos, setPreviewAbiertos] = React.useState<Set<string>>(() => new Set())
+  const [previewSlots, setPreviewSlots] = React.useState<Record<string, string[] | null>>({})
+  const [previewCargando, setPreviewCargando] = React.useState<Set<string>>(() => new Set())
+
+  async function toggleServicioPreview(servicioId: string) {
+    if (previewAbiertos.has(servicioId)) {
+      setPreviewAbiertos((prev) => {
+        const s = new Set(prev)
+        s.delete(servicioId)
+        return s
+      })
+      return
+    }
+    setPreviewAbiertos((prev) => new Set(prev).add(servicioId))
+    setPreviewCargando((prev) => new Set(prev).add(servicioId))
+    try {
+      const res = await fetch(
+        `/api/citas/disponibilidad?tarjeta_id=${tarjetaId}&servicio_id=${servicioId}`
+      )
+      const data = (await res.json()) as { slots?: { inicio: string }[] }
+      setPreviewSlots((prev) => ({
+        ...prev,
+        [servicioId]: Array.isArray(data.slots) ? data.slots.slice(0, 5).map((s) => s.inicio) : [],
+      }))
+    } catch {
+      setPreviewSlots((prev) => ({ ...prev, [servicioId]: [] }))
+    } finally {
+      setPreviewCargando((prev) => {
+        const s = new Set(prev)
+        s.delete(servicioId)
+        return s
+      })
+    }
+  }
+
   // ---------------------------------------------------------------------
   // Servicios agendables
   // ---------------------------------------------------------------------
@@ -143,6 +236,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
       nombre: "Nuevo servicio",
       descripcion: null,
       duracion_minutos: 30,
+      colchon_minutos: 0,
       precio: 0,
       requiere_pago_inmediato: false,
       activo: true,
@@ -356,7 +450,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
               placeholder="Descripción corta (opcional)"
               className={inputClase}
             />
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-muted-foreground">Duración</span>
                 <select
@@ -371,6 +465,24 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
                   {DURACIONES_MINUTOS.map((min) => (
                     <option key={min} value={min}>
                       {min} min
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-muted-foreground">Colchón</span>
+                <select
+                  value={servicio.colchon_minutos}
+                  onChange={(e) => {
+                    const colchon_minutos = Number(e.target.value)
+                    actualizarServicioLocal(servicio.id, { colchon_minutos })
+                    persistirServicio(servicio.id, { colchon_minutos })
+                  }}
+                  className={inputClase}
+                >
+                  {COLCHONES_MINUTOS.map((min) => (
+                    <option key={min} value={min}>
+                      {min === 0 ? "Sin colchón" : `${min} min`}
                     </option>
                   ))}
                 </select>
@@ -391,6 +503,49 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
                   className={inputClase}
                 />
               </label>
+            </div>
+
+            {(() => {
+              const problemas = ventanasCortasPara(servicio.duracion_minutos)
+              if (!problemas.length) return null
+              return (
+                <p className="flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                  <span>
+                    Este servicio ({servicio.duracion_minutos} min) no entra en{" "}
+                    {problemas.length === 1 ? "esta ventana" : "estas ventanas"}: {problemas.join(", ")}.
+                    Nunca vas a poder agendarlo ahí — agrandá el rango o subí la duración.
+                  </span>
+                </p>
+              )
+            })()}
+
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => toggleServicioPreview(servicio.id)}
+                className="self-start"
+              >
+                <CalendarClock className="size-3.5" />
+                {previewAbiertos.has(servicio.id) ? "Ocultar próximos horarios" : "Ver próximos horarios"}
+              </Button>
+              {previewAbiertos.has(servicio.id) && (
+                <div className="rounded-xl border border-border/60 bg-background/50 px-3 py-2 text-xs text-muted-foreground">
+                  {previewCargando.has(servicio.id) ? (
+                    "Calculando..."
+                  ) : !previewSlots[servicio.id]?.length ? (
+                    "Sin horarios disponibles en los próximos 14 días con la configuración actual."
+                  ) : (
+                    <ul className="flex flex-col gap-1">
+                      {previewSlots[servicio.id]!.map((inicio) => (
+                        <li key={inicio}>{formatearFechaHoraLocal(inicio, zonaHoraria)}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
 
             <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">

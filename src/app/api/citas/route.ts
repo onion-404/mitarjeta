@@ -52,7 +52,7 @@ export async function POST(request: Request) {
 
   const { data: servicio } = await admin
     .from("servicios_agendables")
-    .select("id, nombre, duracion_minutos, precio, requiere_pago_inmediato, activo")
+    .select("id, nombre, duracion_minutos, colchon_minutos, precio, requiere_pago_inmediato, activo")
     .eq("id", servicio_id)
     .eq("tarjeta_id", tarjeta_id)
     .maybeSingle()
@@ -81,6 +81,7 @@ export async function POST(request: Request) {
     p_tarjeta_id: tarjeta_id,
     p_fecha_hora_inicio: inicio.toISOString(),
     p_fecha_hora_fin: fin.toISOString(),
+    p_colchon_minutos: servicio.colchon_minutos,
   })
 
   if (errorSolape) {

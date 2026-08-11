@@ -2,10 +2,6 @@ import "server-only"
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin"
 
-// Granularidad de los huecos generados dentro de cada ventana disponible.
-// No tiene por qué coincidir con duracion_minutos del servicio.
-const PASO_MINUTOS = 15
-
 // Mismo default que tarjetas.zona_horaria (ver migración
 // 20260718090000_add_plan_default_y_zona_horaria.sql): fallback defensivo
 // si por lo que sea no se pudo leer la fila de la tarjeta.
@@ -118,6 +114,14 @@ function horaLocalAUtc(fecha: string, minutosDelDia: number, zonaHoraria: string
   return new Date(aproximado.getTime() - offset * 60_000)
 }
 
+/** Fallback defensivo si por lo que sea no se pudo leer la fila de la
+ *  tarjeta (borrada entre medio, etc.) — reproduce el comportamiento de
+ *  siempre. `tarjetas.intervalo_agenda_minutos` (migración 20260810000000)
+ *  quedó @deprecated sin caller: un solo proveedor por tarjeta hace que
+ *  "cada cuánto ofrecer un horario" no tenga sentido como config aparte —
+ *  los horarios se calculan directo a partir de duración+colchón de CADA
+ *  servicio (ver `obtenerSlotsDisponibles` más abajo), back-to-back dentro
+ *  de cada hueco realmente libre. */
 async function obtenerZonaHoraria(
   admin: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
   tarjetaId: string
@@ -188,12 +192,21 @@ function construirVentanasDelDia(
 interface ServicioAgenda {
   tarjeta_id: string
   duracion_minutos: number
+  colchon_minutos: number
   activo: boolean
 }
 
+// El colchón que aplica entre dos citas es el MAYOR entre el del servicio
+// que se está por agendar y el del servicio de la cita YA ocupada — join
+// vía la relación `citas.servicio_id -> servicios_agendables.id` (embed
+// automático de PostgREST/Supabase, misma FK que ya existía). Sin filtrar
+// por servicio_id acá a propósito: TODAS las citas de la tarjeta bloquean,
+// sin importar de qué servicio son (evita que dos servicios distintos de
+// la misma tarjeta se agenden en el mismo horario).
 interface CitaOcupada {
   fecha_hora_inicio: string
   fecha_hora_fin: string
+  servicios_agendables: { colchon_minutos: number } | null
 }
 
 interface ObtenerSlotsParams {
@@ -211,6 +224,18 @@ interface ObtenerSlotsParams {
  * de select sobre servicios/disponibilidad, no sobre `citas`, así que leer
  * `citas` con el cliente anon devolvería siempre "sin ocupar" y el cálculo
  * de huecos libres quedaría mal (mostraría horarios ya tomados como libres).
+ *
+ * Modelo de negocio (confirmado con el cliente, 2026-08-10): un solo
+ * proveedor atiende TODOS los servicios de la tarjeta, así que hay un único
+ * horario compartido — no existe "cada cuánto ofrecer un horario" como
+ * config aparte (ver `@deprecated tarjetas.intervalo_agenda_minutos`).
+ * Los horarios ofrecidos se calculan restando cada cita ya ocupada (más su
+ * colchón) de las ventanas disponibles, y dentro de cada hueco realmente
+ * libre resultante se ofrecen horarios BACK-TO-BACK espaciados por
+ * `duracion + colchón` del servicio que se está consultando — así nunca se
+ * pierde un hueco real (a diferencia de un paso fijo arbitrario, que podía
+ * saltarse un hueco que no calzara con ese paso) ni se ofrece algo que
+ * choque con otra cita, sea del mismo servicio o de otro.
  */
 export async function obtenerSlotsDisponibles({
   tarjetaId,
@@ -223,7 +248,7 @@ export async function obtenerSlotsDisponibles({
 
   const { data: servicioData } = await admin
     .from("servicios_agendables")
-    .select("tarjeta_id, duracion_minutos, activo")
+    .select("tarjeta_id, duracion_minutos, colchon_minutos, activo")
     .eq("id", servicioId)
     .eq("tarjeta_id", tarjetaId)
     .maybeSingle()
@@ -250,7 +275,12 @@ export async function obtenerSlotsDisponibles({
       .lte("fecha", hasta),
     admin
       .from("citas")
-      .select("fecha_hora_inicio, fecha_hora_fin")
+      // Sin filtrar por servicio_id — TODAS las citas confirmadas/pagadas
+      // de la tarjeta bloquean el horario, sin importar de qué servicio
+      // son (ver nota en CitaOcupada): un solo proveedor no puede atender
+      // dos servicios distintos a la vez, así que se agenda todo en el
+      // mismo calendario compartido.
+      .select("fecha_hora_inicio, fecha_hora_fin, servicios_agendables(colchon_minutos)")
       .eq("tarjeta_id", tarjetaId)
       .in("estado", ["confirmada", "pagada"])
       .lt("fecha_hora_inicio", `${sumarDias(hasta, 1)}T00:00:00Z`)
@@ -259,13 +289,17 @@ export async function obtenerSlotsDisponibles({
 
   const semanalRows = (semanal ?? []) as FilaSemanal[]
   const excepcionesRows = (excepciones ?? []) as FilaExcepcion[]
-  const ocupadas = ((citasOcupadas ?? []) as CitaOcupada[]).map((c) => ({
+  const ocupadas = ((citasOcupadas ?? []) as unknown as CitaOcupada[]).map((c) => ({
     inicio: new Date(c.fecha_hora_inicio),
     fin: new Date(c.fecha_hora_fin),
+    colchonMinutos: c.servicios_agendables?.colchon_minutos ?? 0,
   }))
 
   const slots: SlotDisponible[] = []
-  const duracion = servicio.duracion_minutos
+  const duracionMs = servicio.duracion_minutos * 60_000
+  // Paso DENTRO de un mismo hueco libre: back-to-back según la propia
+  // duración+colchón del servicio consultado (ver comentario de la función).
+  const pasoMs = duracionMs + servicio.colchon_minutos * 60_000
   const ahora = Date.now()
 
   for (let fecha = desde; fecha <= hasta; fecha = sumarDias(fecha, 1)) {
@@ -275,20 +309,41 @@ export async function obtenerSlotsDisponibles({
       excepcionesRows.filter((e) => e.fecha === fecha)
     )
 
-    for (const v of ventanas) {
-      for (let inicio = v.inicio; inicio + duracion <= v.fin; inicio += PASO_MINUTOS) {
-        const inicioDate = horaLocalAUtc(fecha, inicio, zonaHoraria)
+    // Ventanas del día en instantes UTC absolutos (no minutos-del-día
+    // locales): restar acá evita cualquier problema de un colchón
+    // empujando el bloqueo de una cita cruzando la medianoche local —
+    // `restarIntervalo` es aritmética numérica pura, sirve igual para ms
+    // que para minutos.
+    let huecosLibres: Ventana[] = ventanas.map((v) => ({
+      inicio: horaLocalAUtc(fecha, v.inicio, zonaHoraria).getTime(),
+      fin: horaLocalAUtc(fecha, v.fin, zonaHoraria).getTime(),
+    }))
+
+    for (const o of ocupadas) {
+      // Colchón (servicios_agendables.colchon_minutos, por servicio): se
+      // usa el MAYOR entre el propio de la cita ya ocupada y el del
+      // servicio que se está consultando — mismo criterio que
+      // `existe_solapamiento_cita` en SQL, para que la lista de horarios
+      // nunca ofrezca algo que el insert real luego rechace.
+      const colchonMs = Math.max(servicio.colchon_minutos, o.colchonMinutos) * 60_000
+      huecosLibres = restarIntervalo(huecosLibres, {
+        inicio: o.inicio.getTime() - colchonMs,
+        fin: o.fin.getTime() + colchonMs,
+      })
+    }
+
+    for (const hueco of huecosLibres) {
+      for (let inicioMs = hueco.inicio; inicioMs + duracionMs <= hueco.fin; inicioMs += pasoMs) {
         // Un slot que ya pasó (relevante sobre todo para "hoy") no es un
         // horario real disponible: /api/citas lo rechazaría igual, pero con
         // un error genérico de "fecha inválida" que no le dice al visitante
         // por qué. Se descarta acá para que la lista que ve nunca incluya
         // horarios que ya no puede tomar.
-        if (inicioDate.getTime() <= ahora) continue
-        const finDate = horaLocalAUtc(fecha, inicio + duracion, zonaHoraria)
-        const ocupado = ocupadas.some((o) => inicioDate < o.fin && finDate > o.inicio)
-        if (!ocupado) {
-          slots.push({ inicio: inicioDate.toISOString(), fin: finDate.toISOString() })
-        }
+        if (inicioMs <= ahora) continue
+        slots.push({
+          inicio: new Date(inicioMs).toISOString(),
+          fin: new Date(inicioMs + duracionMs).toISOString(),
+        })
       }
     }
   }
@@ -312,6 +367,8 @@ export async function estaDentroDeDisponibilidad(
   const admin = getSupabaseAdmin()
   if (!admin) return false
 
+  // Solo hace falta la zona acá (el colchón no aplica a "¿esto está dentro
+  // del horario publicado?", eso es tarea de existe_solapamiento_cita).
   const zonaHoraria = await obtenerZonaHoraria(admin, tarjetaId)
   const inicioLocal = partesLocales(fechaHoraInicio, zonaHoraria)
   const finLocal = partesLocales(fechaHoraFin, zonaHoraria)

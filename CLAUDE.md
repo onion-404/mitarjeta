@@ -239,6 +239,14 @@
     gestión de certificados/credenciales como secrets.
   - Recomendación dada al cliente: arrancar por Apple (sin trámite externo) y dejar Google
     Wallet para después / en paralelo si se quiere iniciar ya el trámite de aprobación.
+- **Confirmación de agenda por WhatsApp vía Make** (pedido 2026-08-10, "en otro paso" — todavía
+  sin diseñar ni construir): agregar un número de WhatsApp para la agenda (¿el mismo de "Canales
+  de contacto" o uno propio de la agenda, a confirmar?) + integración con Make (webhook saliente
+  al crear una cita) para que se envíe un mensaje de confirmación automático tanto al cliente que
+  agendó como al dueño de la tarjeta, avisándole de la nueva cita. Sin explorar todavía: si Make
+  dispara el mensaje él mismo (vía su propio conector de WhatsApp Business API) y este proyecto
+  solo necesita pegarle un webhook con los datos de la cita (`POST` server-side desde
+  `/api/citas` al confirmar), o si hace falta algo más de nuestro lado.
 
 ## Estado de la base de datos (producción, sin ambiente de staging)
 Todas las migraciones siguientes están **APLICADAS** en producción (confirmadas por consulta
@@ -282,6 +290,10 @@ real desde esta sesión salvo que se indique lo contrario):
   sección "Editor unificado" abajo). El límite de 2 cambios/14 días de slug NO está enforced
   todavía a nivel de DB — el chequeo del cliente es puramente decorativo hasta que se corra.
   Pendiente de que el usuario la corra manualmente (backup primero).
+- `20260810000000_add_agenda_intervalo_colchon.sql` — `tarjetas.intervalo_agenda_minutos`,
+  `servicios_agendables.colchon_minutos`, `existe_solapamiento_cita()` actualizada con
+  `p_colchon_minutos`. Confirmada aplicada por consulta real desde esta sesión (columnas +
+  RPC responden sin error).
 
 ## Dashboards de métricas
 - **Instrumentación**: `POST /api/eventos` (sin auth, rate-limit 60/min por IP,
@@ -1101,6 +1113,68 @@ real desde esta sesión salvo que se indique lo contrario):
   verificado todavía en navegador real (solo chequeos estáticos) salvo el fix de centrado del
   logo, confirmado por el cliente en vivo.
 
+## Agenda: horarios calculados como un solo calendario compartido, colchón por servicio, sin "paso" configurable (2026-08-10, mismo día, iterado varias veces)
+- **Modelo de negocio confirmado explícitamente con el cliente**: un solo proveedor (una
+  persona) atiende TODOS los servicios agendables de la tarjeta — no hay "un calendario por
+  servicio", es un único horario compartido. Distintos servicios pueden tener distinta
+  duración Y distinto colchón (uno puede necesitar más espacio de preparación/traslado que
+  otro), pero nunca pueden chocar entre sí.
+- **Iteración de diseño** (registrado para no repetir el camino): primero se agregó un
+  `PASO_MINUTOS` configurable POR TARJETA (`tarjetas.intervalo_agenda_minutos`, "cada cuánto
+  ofrecer un horario") — el cliente hizo notar que, si duración+colchón de cada servicio ya
+  determinan huecos válidos y sin choques, ese campo aparte sobraba y solo agregaba una
+  configuración más para explicar. Se sacó por completo del código (`tarjetas.
+  intervalo_agenda_minutos` sigue @deprecated en la columna de DB — no se borra, mismo criterio
+  que el resto de columnas huérfanas del proyecto — pero no queda ningún caller ni UI).
+- **`servicios_agendables.colchon_minutos`** (migración `20260810000000_add_agenda_intervalo_
+  colchon.sql`, default 0) — por SERVICIO, no por tarjeta. `<select>` "Colchón" (0-60 min) junto
+  a "Duración"/"Precio" en cada servicio de `agenda-servicios.tsx`.
+- **Algoritmo final de `obtenerSlotsDisponibles()`** (lib/agenda.ts, reemplaza por completo el
+  paso fijo/configurable de antes): para cada día, arranca de las ventanas de disponibilidad
+  (horario semanal + excepciones, igual que siempre) convertidas a instantes UTC absolutos, y le
+  RESTA cada cita ya ocupada de la tarjeta (`restarIntervalo()`, la misma función que ya usaba
+  `construirVentanasDelDia` para bloqueos — funciona igual con milisegundos que con minutos, es
+  aritmética de intervalos pura) expandida por el colchón que corresponda (`Math.max` entre el
+  colchón de esa cita y el del servicio que se está consultando, mismo criterio que
+  `existe_solapamiento_cita`). Sobre cada hueco REALMENTE libre que queda, ofrece horarios
+  back-to-back espaciados por `duración + colchón` del servicio consultado — así nunca se
+  pierde un hueco real (a diferencia de un paso fijo arbitrario, que podía saltearse un hueco
+  que no calzara con ese paso) ni se ofrece algo que choque, sea del mismo servicio o de otro.
+  Restar en instantes UTC absolutos (no en minutos-del-día locales) evita cualquier problema de
+  un colchón empujando el bloqueo cruzando la medianoche local.
+- **Anti-choque entre servicios distintos de la misma tarjeta** (confirmado con el cliente —
+  ya era el diseño correcto desde la migración original de agenda, 2026-07-17, no hizo falta
+  cambiar nada ahí): tanto `obtenerSlotsDisponibles()` como `existe_solapamiento_cita()` filtran
+  las citas ocupadas por `tarjeta_id`, **nunca por `servicio_id`** — si el Servicio 1 está
+  agendado de 10:00 a 11:00, esa franja queda bloqueada para CUALQUIER otro servicio de la misma
+  tarjeta (un solo proveedor no puede atender dos cosas a la vez).
+  - `existe_solapamiento_cita()` (SQL, `create or replace function`) gana `p_colchon_minutos`
+    (el colchón del servicio que se está por agendar, ya en mano de `/api/citas/route.ts` —
+    único caller, actualizado en el mismo commit). Para cada cita YA ocupada, hace `join` contra
+    `servicios_agendables` para saber SU colchón y usa el mayor entre ambos (`greatest()`).
+  - `obtenerSlotsDisponibles()`: la consulta de `citas` ocupadas embebe
+    `servicios_agendables(colchon_minutos)` (relación FK ya existente, embed automático de
+    PostgREST) para saber el colchón de CADA cita ya tomada.
+  - 🔴 **Orden de deploy** (ya no crítico — la migración está aplicada, ver abajo): igual, toda
+    migración futura de este tipo debe correr antes que el código que depende de sus columnas.
+- **Validación de ventanas cortas** (`agenda-servicios.tsx`): por cada servicio activo, compara su
+  `duracion_minutos` contra cada rango de "Horario semanal" y cada excepción "apertura_extra" —
+  si alguno es más corto, muestra un aviso inline ("Este servicio (60 min) no entra en Martes
+  10:00–10:30 (30 min)...") justo debajo de la duración del servicio, en vez de que el dueño lo
+  descubra con una lista vacía sin explicación.
+- **Preview de próximos horarios reales**: botón "Ver próximos horarios" por servicio — reusa el
+  endpoint público existente `GET /api/citas/disponibilidad` (mismo que ya consume
+  `reservar-servicio.tsx` al agendar) en vez de duplicar el cálculo de `lib/agenda.ts` (server-only)
+  en un componente cliente. Sin caché a propósito (se vuelve a pedir cada vez que se abre, así
+  nunca muestra algo desactualizado tras editar horario/colchón).
+- Migración `20260810000000_add_agenda_intervalo_colchon.sql` **APLICADA en producción**
+  (confirmado desde esta sesión con una consulta real: `servicios_agendables.colchon_minutos`
+  existe con su default, `existe_solapamiento_cita` acepta `p_colchon_minutos`;
+  `tarjetas.intervalo_agenda_minutos` también existe pero quedó sin caller, ver arriba).
+  Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 Sin verificar en
+  navegador real todavía — pendiente probar con servicios de distinta duración/colchón reales,
+  confirmando que los huecos libres se calculan bien y que ningún horario ofrecido choca.
+
 ## Fuente del título/cuerpo siempre visible + Agenda absorbida como 6º tipo de botón (2026-08-10, mismo día)
 - **Fix — la tipografía se ocultaba en modo "Título como logo"**: `SelectorTipografia` (título Y
   cuerpo) vivía dentro de la rama `tituloModo === "texto"` del bloque de tipografía — pero
@@ -1146,6 +1220,10 @@ real desde esta sesión salvo que se indique lo contrario):
   servicios sigue funcionando igual dentro de su panel expandido.
 
 ## Pendiente técnico sin resolver (consolidado)
+- 🔴 Agenda como calendario único (duración+colchón por servicio, sin "paso" configurable,
+  2026-08-10) — migración APLICADA y confirmada por consulta real desde esta sesión, código
+  listo para deploy; falta la prueba en navegador con servicios reales de distinta
+  duración/colchón, confirmando huecos libres calculados bien y cero choques.
 - 🔴 Fuente siempre visible en modo logo + Agenda como 6º tipo de botón (2026-08-10, ítem de
   arriba) — sin verificar en navegador real todavía.
 - 🔴 Lo de esta sesión (2026-08-10, ítem de arriba) sin verificar en navegador salvo el fix de

@@ -444,6 +444,14 @@ export interface Tarjeta {
   cupon_codigo: string | null
   plan_id: string | null
   zona_horaria: string
+  /** @deprecated Columna existe en DB (migración
+   *  20260810000000_add_agenda_intervalo_colchon.sql) pero sin caller: un
+   *  solo proveedor por tarjeta comparte un único calendario, así que "cada
+   *  cuánto ofrecer un horario" no es una config aparte — los horarios se
+   *  calculan directo desde duración+colchón de cada servicio (ver
+   *  `obtenerSlotsDisponibles`, lib/agenda.ts). No se borra la columna
+   *  (mismo criterio que el resto de campos deprecados del proyecto). */
+  intervalo_agenda_minutos: number
   created_at: string
 }
 
@@ -475,6 +483,13 @@ export interface ServicioAgendable {
   nombre: string
   descripcion: string | null
   duracion_minutos: number
+  /** Minutos de colchón antes/después de UNA cita de este servicio,
+   *  durante los cuales no se ofrece ni se permite agendar otra — por
+   *  servicio (no por tarjeta): cada uno puede necesitar más o menos
+   *  espacio según su propia naturaleza. Default 0 (sin colchón, mismo
+   *  comportamiento de siempre). Ver migración
+   *  20260810000000_add_agenda_intervalo_colchon.sql. */
+  colchon_minutos: number
   precio: number
   requiere_pago_inmediato: boolean
   activo: boolean
