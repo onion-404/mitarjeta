@@ -872,7 +872,7 @@ export function TarjetaCard({
               {urls.map((url, indice) => (
                 <div
                   key={indice}
-                  className="flex w-[280px] shrink-0 snap-center justify-center overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] shadow-md dark:border-[rgba(255,255,255,0.1)]"
+                  className="flex w-[328px] shrink-0 snap-center justify-center overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] shadow-md dark:border-[rgba(255,255,255,0.1)]"
                 >
                   <InstagramReelEmbed url={url} />
                 </div>

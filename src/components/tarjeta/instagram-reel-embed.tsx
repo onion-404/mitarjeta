@@ -65,7 +65,15 @@ export function InstagramReelEmbed({ url }: InstagramReelEmbedProps) {
       className="instagram-media"
       data-instgrm-permalink={url}
       data-instgrm-version="14"
-      style={{ background: "#FFF", border: 0, borderRadius: 12, margin: 0, minWidth: 236, maxWidth: 400, width: "100%" }}
+      // Sin data-instgrm-captioned: es la variante MÁS compacta que soporta
+      // el widget oficial (sin el bloque de texto de la descripción debajo
+      // del video) — igual conserva el encabezado (foto+usuario) y el pie
+      // (íconos + link "Ver en Instagram") propios de Instagram, que no se
+      // pueden quitar (contenido de un iframe de otro origen, no hay CSS
+      // nuestro que llegue adentro). 328px = el ANCHO MÍNIMO real que
+      // Instagram documenta para este widget — achicarlo más de acá no lo
+      // hace más chico, lo corta mal (bug real reportado: "se ve feo").
+      style={{ background: "#FFF", border: 0, borderRadius: 12, margin: 0, minWidth: 328, maxWidth: 328, width: 328 }}
     >
       <a href={url} target="_blank" rel="noopener noreferrer">
         Ver esta publicación en Instagram

@@ -1547,6 +1547,25 @@ real desde esta sesión salvo que se indique lo contrario):
   todavía en navegador real — pendiente confirmar con el cliente que ahora sí reproduce inline
   (no redirige) y que la posición "al final" se ve bien con una tarjeta real que tenga
   Botones + Agenda + multimedia a la vez.
+- **Bug real encontrado por el cliente probando en `/limpio` al día siguiente**: los reels
+  seguían viéndose mal (recortados/rotos). Causa: `w-[328px]` — el ancho que le había puesto
+  al wrapper/blockquote (280px/236px) estaba POR DEBAJO del ancho mínimo real que Instagram
+  exige para este widget (**328px** — no es un número inventado, es lo que Instagram
+  documenta como mínimo soportado) — Instagram igual intentaba renderizar a su ancho mínimo
+  real y quedaba recortado por nuestro `overflow-hidden` más angosto. Fix: wrapper y
+  blockquote ambos a `328px` fijo (antes eran anchos distintos entre sí, ninguno correcto).
+- **Límite real explicado y confirmado con el cliente, no un bug**: el encabezado
+  (foto+usuario) y pie (íconos + "Ver en Instagram") del widget oficial **no se pueden quitar
+  por ningún medio** — es contenido de un iframe de `instagram.com` (otro origen), ningún CSS
+  nuestro llega ahí adentro, y es intencional de parte de Instagram (su marca siempre visible
+  en cualquier embed). Ya se había sacado la descripción del post (sin
+  `data-instgrm-captioned`, la variante más compacta que existe) — no hay forma de achicarlo
+  más sin perder la reproducción inline. Se le presentaron 3 opciones al cliente (dejarlo así
+  con la marca de Instagram visible / volver a una tarjeta propia sin marca pero que redirige
+  al tocar / sacar reels de la feature por ahora) — **eligió dejarlo así** (reproducción
+  inline real, con el chrome de Instagram que no se puede evitar). No volver a intentar
+  "limpiar" el embed en el futuro sin releer esto primero — es una limitación de la
+  plataforma, no una tarea pendiente.
 
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
@@ -1562,10 +1581,12 @@ real desde esta sesión salvo que se indique lo contrario):
 - 🔴 Contenido multimedia como lista tipada (video/reels) y fix de altura del chip de catálogo
   en vista Lista (2026-08-13) — solo verificado con `tsc`/`eslint`/`build`, sin probar en
   navegador real todavía (ver esa sección para el detalle completo).
-- 🔴 Fix de reproducción de reels de Instagram (widget oficial en vez de iframe directo) y
-  posición elegible de "Contenido multimedia" (2026-08-14) — solo verificado con
-  `tsc`/`eslint`/`build`, sin confirmar todavía con el cliente que reproduce inline de verdad
-  (ver esa sección para el detalle completo).
+- 🔴 Fix de reproducción de reels de Instagram (widget oficial en vez de iframe directo),
+  posición elegible de "Contenido multimedia" y fix de ancho mínimo del widget (328px real,
+  el cliente probó y confirmó que el problema era el ancho, no la reproducción — ver esa
+  sección para el detalle completo, incluye la decisión del cliente de aceptar el
+  encabezado/pie de Instagram, no se puede quitar) — solo verificado con `tsc`/`eslint`/
+  `build`, falta confirmación final del cliente en `/limpio` con el fix de ancho aplicado.
 - 🔴 Agenda como calendario único (duración+colchón por servicio, sin "paso" configurable,
   2026-08-10) — migración APLICADA y confirmada por consulta real desde esta sesión, código
   listo para deploy; falta la prueba en navegador con servicios reales de distinta
