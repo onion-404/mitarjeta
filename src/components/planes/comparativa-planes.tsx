@@ -47,11 +47,14 @@ export function ComparativaPlanes({ planes, cuponCodigo }: ComparativaPlanesProp
 
       <div className="grid w-full max-w-3xl grid-cols-1 gap-6 md:grid-cols-2">
         {planes.map((plan) => {
-          const precio = ciclo === "anual" ? plan.precio_anual : plan.precio_mensual
-          // Monto ahorrado en pesos (no el %) — más claro de un vistazo que
-          // un porcentaje abstracto, pedido explícito del cliente.
-          const ahorroMonto =
-            ciclo === "anual" ? Math.round(plan.precio_mensual * 12 - plan.precio_anual) : 0
+          // Mismos 3 números que el teaser del home (PreciosDestacados) en
+          // vez de mostrar directo el total anual con un "%" de ahorro —
+          // equivalente por mes, total facturado una vez al año, y el
+          // monto ahorrado en pesos (pedido explícito del cliente: un
+          // monto concreto se lee más rápido que calcularlo a partir de
+          // un porcentaje).
+          const precioMensualEquivalente = Math.round(plan.precio_anual / 12)
+          const ahorroMonto = Math.round(plan.precio_mensual * 12 - plan.precio_anual)
           const copy: CopyPlan | undefined = COPY_PLAN[plan.slug as PlanSlug]
 
           return (
@@ -64,21 +67,31 @@ export function ComparativaPlanes({ planes, cuponCodigo }: ComparativaPlanesProp
                 {copy && <p className="mt-1.5 text-sm text-muted-foreground">{copy.propuesta}</p>}
               </div>
 
-              <div className="flex flex-col gap-1">
+              {ciclo === "mensual" ? (
                 <div className="flex items-baseline gap-1">
                   <span className="text-3xl font-bold text-foreground">
-                    ${precio.toLocaleString("es-MX")}
+                    ${plan.precio_mensual.toLocaleString("es-MX")}
                   </span>
-                  <span className="text-sm text-muted-foreground">
-                    /{ciclo === "anual" ? "año" : "mes"}
-                  </span>
+                  <span className="text-sm text-muted-foreground">MXN/mes</span>
                 </div>
-                {ahorroMonto > 0 && (
-                  <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                    Ahorrás ${ahorroMonto.toLocaleString("es-MX")} al año vs. pagar mensual
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-3xl font-bold text-foreground">
+                      ${precioMensualEquivalente.toLocaleString("es-MX")}
+                    </span>
+                    <span className="text-sm text-muted-foreground">MXN/mes</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    Facturado ${plan.precio_anual.toLocaleString("es-MX")} una vez al año
                   </span>
-                )}
-              </div>
+                  {ahorroMonto > 0 && (
+                    <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                      Ahorras ${ahorroMonto.toLocaleString("es-MX")} al año pagando anual
+                    </span>
+                  )}
+                </div>
+              )}
 
               <Button type="button" size="lg" className="w-full" onClick={() => continuar(plan.slug)}>
                 Continuar
