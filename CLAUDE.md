@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-08-13. Fuente de verdad para que una sesión nueva entienda el
+> Última actualización: 2026-08-14. Fuente de verdad para que una sesión nueva entienda el
 > estado real del proyecto sin releer el historial de chat. Actualizar cuando cambie algo de
 > lo que describe. **Para el detalle histórico de verificaciones, bugs encontrados en el
 > camino, capturas de pantalla y logs de sesiones anteriores, ver [HISTORIAL.md](HISTORIAL.md)
@@ -1473,10 +1473,10 @@ real desde esta sesión salvo que se indique lo contrario):
     `vimeo.com/123`, `player.vimeo.com/video/123` y las variantes `/channels/`/`/groups/`.
   - **Tipo "Reels de Instagram"**: un solo ítem agrupa hasta `TOPE_REELS_POR_BLOQUE = 5` URLs
     (no un ítem por reel — a diferencia de Botones, acá no hace falta título/ícono/color por
-    reel individual). Cada reel se resuelve a `https://www.instagram.com/reel/{codigo}/embed`
-    (`obtenerInstagramReelEmbedUrl()`) — embed directo por iframe, **a propósito sin el script
-    oficial `embed.js` de Instagram** (evita cargar/ejecutar JS de terceros en la tarjeta
-    pública; contrapartida conocida: sin contador de likes/comentarios, solo el video).
+    reel individual). 🔴→✅ **La primera versión de esta sección describía un embed directo por
+    iframe a `/embed`, a propósito sin el script oficial — quedó DESCARTADO al día siguiente
+    por un bug real (no reproducía, redirigía a Instagram), ver la sección "Reels de Instagram:
+    fix de reproducción + posición elegible" más abajo para el estado real.**
   - **Render público** (`renderMultimedia()`, tarjeta-card.tsx): "Video" mantiene el mismo
     embed `aspect-video` de siempre; "Reels" es un slide horizontal con **scroll-snap nativo
     de CSS** (`snap-x snap-mandatory` + `.scrollbar-hide`, clase nueva en `globals.css`) —
@@ -1501,11 +1501,52 @@ real desde esta sesión salvo que se indique lo contrario):
   `items-center` en vez de `items-stretch`. Fix: `items-center` → `items-stretch` en la fila
   de vista "Lista" — la imagen (altura fija explícita, no afectada por `align-items`) y el
   chip de fondo (ahora sí estirado a esa altura) quedan parejos.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. Sin verificar en
+  navegador real en el momento de escribir esto — el cliente probó los reels al día siguiente
+  en una tarjeta real y confirmó el bug de arriba (🔴→✅, ver sección siguiente para el fix).
+
+## Reels de Instagram: fix de reproducción + posición elegible de "Contenido multimedia" (2026-08-14)
+- **🔴→✅ Bug real reportado por el cliente probando en una tarjeta real**: los reels no se
+  reproducían — al tocarlos, redirigía a Instagram en vez de reproducir ahí mismo. Causa: el
+  iframe directo a `https://www.instagram.com/reel/{codigo}/embed` (la primera versión de esta
+  feature, día anterior) **no es un embed reproducible sin el script oficial de Instagram** —
+  sin `embed.js`, esa URL sirve una tarjeta estática con nada más que un link de salida. No
+  existe una forma de reproducir un reel embebido de verdad sin ese script — no es una opción
+  entre varias, es la única soportada por Instagram.
+  - **Fix**: `src/components/tarjeta/instagram-reel-embed.tsx` (nuevo) — el widget oficial
+    (`<blockquote class="instagram-media" data-instgrm-permalink="...">` + `<script
+    src="https://www.instagram.com/embed.js">`, exactamente lo que da el botón "Insertar" de
+    Instagram). El script se carga UNA sola vez de forma compartida (`let promesaScript`,
+    módulo-level) y se reusa entre reels; cada `<InstagramReelEmbed>` llama
+    `window.instgrm.Embeds.process()` en su propio mount — Instagram ignora los blockquotes
+    que ya procesó, seguro de llamar más de una vez con varios reels en la misma página (el
+    slide). **Contrapartida aceptada conscientemente** (no había alternativa): esto SÍ carga y
+    ejecuta JS de un tercero (instagram.com) en la tarjeta pública — se había evitado a
+    propósito en la primera versión, pero sin eso no hay reproducción real, y el pedido
+    explícito era "que la reproducción sea desde la Linkard, tal cual lo haría un video".
+  - `lib/multimedia.ts`: `obtenerInstagramReelEmbedUrl()` (armaba una URL de `/embed`) pasó a
+    `normalizarInstagramReelUrl()` — el widget oficial necesita el PERMALINK real del reel
+    (`https://www.instagram.com/reel/{codigo}/`), no una URL de embed; la función cambió de
+    "armar el embed" a "validar y normalizar el link tal cual lo pegó el dueño".
+  - **Tamaño de card ya no es 100% controlable por CSS**: a diferencia del iframe directo (que
+    sí se podía forzar a `aspect-[9/16]` completo), el widget oficial decide su propio tamaño
+    internamente (responsive dentro de un rango, `minWidth`/`maxWidth` seteados en el
+    `<blockquote>`) — la card del slide pasó de "ancho % + aspect-ratio forzado" a un ancho
+    fijo (`w-[280px]`) con `overflow-hidden` de contención, sin forzar alto. Ligero downgrade
+    de control visual, aceptado porque no hay forma de tener reproducción real Y control
+    pixel-perfect al mismo tiempo con este widget.
+- **Posición de "Contenido multimedia" elegible** (pedido explícito, mismo día):
+  `IdentidadVisual.multimediaAlFinal?: boolean` — `false`/sin valor (default, sin cambios) deja
+  el bloque donde siempre estuvo (después de Canales de contacto/redes, antes de Botones);
+  `true` lo corre al final de la tarjeta, después de Botones/Agenda. Control nuevo (segmented
+  pill, mismo patrón que "Texto/Logo" del título) arriba de la lista de ítems en "Contenido
+  multimedia". Render: `tarjeta-card.tsx` llama `renderMultimedia()` en 2 puntos posibles del
+  JSX (antes o después de `renderBotones()`), gateados por el mismo booleano — sin duplicar la
+  función de render, solo el PUNTO donde se invoca cambia.
 - Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 No verificado
-  todavía en navegador real — pendiente probar: un video de Vimeo real (YouTube ya se probó
-  en su momento con el campo viejo), un slide de reels con varios reels cargados (scroll/snap
-  se siente bien, los iframes de Instagram cargan), y el fix de altura del chip en vista Lista
-  con una imagen real.
+  todavía en navegador real — pendiente confirmar con el cliente que ahora sí reproduce inline
+  (no redirige) y que la posición "al final" se ve bien con una tarjeta real que tenga
+  Botones + Agenda + multimedia a la vez.
 
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
@@ -1521,6 +1562,10 @@ real desde esta sesión salvo que se indique lo contrario):
 - 🔴 Contenido multimedia como lista tipada (video/reels) y fix de altura del chip de catálogo
   en vista Lista (2026-08-13) — solo verificado con `tsc`/`eslint`/`build`, sin probar en
   navegador real todavía (ver esa sección para el detalle completo).
+- 🔴 Fix de reproducción de reels de Instagram (widget oficial en vez de iframe directo) y
+  posición elegible de "Contenido multimedia" (2026-08-14) — solo verificado con
+  `tsc`/`eslint`/`build`, sin confirmar todavía con el cliente que reproduce inline de verdad
+  (ver esa sección para el detalle completo).
 - 🔴 Agenda como calendario único (duración+colchón por servicio, sin "paso" configurable,
   2026-08-10) — migración APLICADA y confirmada por consulta real desde esta sesión, código
   listo para deploy; falta la prueba en navegador con servicios reales de distinta

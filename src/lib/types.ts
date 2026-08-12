@@ -473,6 +473,11 @@ export interface IdentidadVisual {
    *  que el resto de los campos de "solo alineación/orden" del editor
    *  (ordenContacto, orden de botones). */
   ubicacionCentrada?: boolean
+  /** true = "Contenido multimedia" se renderiza al FINAL de la tarjeta
+   *  (después de Botones/Agenda), en vez de en su posición de siempre
+   *  (justo después de Canales de contacto/redes, antes de Botones).
+   *  Default `false`/sin valor: sin cambios para tarjetas existentes. */
+  multimediaAlFinal?: boolean
   /** @deprecated Ver `SeccionOrdenable` — ya no se escribe (Agenda pasó a
    *  ser un botón más dentro de "botones", 2026-08-10). Se sigue leyendo
    *  solo dentro de `normalizarBotones()` para migrar tarjetas viejas. */

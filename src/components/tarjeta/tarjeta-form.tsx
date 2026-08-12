@@ -619,6 +619,12 @@ export function TarjetaForm({
     visualInicial?.ubicacionCentrada ?? false
   )
 
+  // Posición de "Contenido multimedia" — en su lugar de siempre (default) o
+  // al final de la tarjeta, después de Botones/Agenda.
+  const [multimediaAlFinal, setMultimediaAlFinal] = React.useState(
+    visualInicial?.multimediaAlFinal ?? false
+  )
+
   // Ícono del badge "@enlace" — opcional, con el mismo set curado que los
   // botones CTA (BOTON_ICONOS). Activo por defecto (compatibilidad: toda
   // tarjeta vieja se veía siempre con Sparkles puesto).
@@ -1922,6 +1928,7 @@ export function TarjetaForm({
           : undefined,
       colorTextoSecundario: colorTextoSecundario || undefined,
       ubicacionCentrada: ubicacionCentrada || undefined,
+      multimediaAlFinal: multimediaAlFinal || undefined,
       ordenContacto,
       tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
       tituloImagenUrl: tituloModo === "imagen" ? tituloImagenUrlFinal : undefined,
@@ -2168,6 +2175,7 @@ export function TarjetaForm({
         : undefined,
     colorTextoSecundario: colorTextoSecundario || undefined,
     ubicacionCentrada: ubicacionCentrada || undefined,
+    multimediaAlFinal: multimediaAlFinal || undefined,
     ordenContacto,
     tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
     tituloImagenUrl: tituloModo === "imagen" ? tituloImagenMostrada || undefined : undefined,
@@ -3514,6 +3522,36 @@ export function TarjetaForm({
       <p className="text-xs text-muted-foreground">
         Agrega videos (YouTube o Vimeo) o un slide horizontal de reels de Instagram.
       </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">Posición en la tarjeta</span>
+        <div className="inline-flex rounded-full border border-border p-0.5">
+          <button
+            type="button"
+            onClick={() => setMultimediaAlFinal(false)}
+            className={cn(
+              "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+              !multimediaAlFinal
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Donde está ahora
+          </button>
+          <button
+            type="button"
+            onClick={() => setMultimediaAlFinal(true)}
+            className={cn(
+              "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+              multimediaAlFinal
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Al final, después de los botones
+          </button>
+        </div>
+      </div>
 
       {multimedia.map((item, indice) => renderMultimediaFila(item, indice, multimedia.length))}
 

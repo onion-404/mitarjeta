@@ -54,14 +54,16 @@ export function resolverEmbedVideo(url?: string): EmbedVideo | null {
   return null
 }
 
-// Embed directo por iframe (https://www.instagram.com/reel/{codigo}/embed) en
-// vez del script oficial de Instagram (embed.js + <blockquote>) — a
-// propósito: evita cargar y ejecutar JS de terceros en la tarjeta pública
-// (superficie de seguridad/performance de más para lo que hace falta acá),
-// mismo criterio que YouTube/Vimeo, que también se resuelven a un iframe
-// simple. Contrapartida conocida: sin contador de likes/comentarios ni el
-// chrome visual completo de Instagram, solo el video.
-export function obtenerInstagramReelEmbedUrl(url?: string): string | null {
+// 🔴→✅ 2026-08-14: el iframe directo a `/embed` (sin el script oficial)
+// quedó descartado — Instagram lo sirve como una tarjeta ESTÁTICA con un
+// link que saca al visitante a instagram.com en vez de reproducir ahí
+// mismo (bug real reportado: "me redirige a Instagram"). El único embed
+// que reproduce de verdad es el widget oficial (`<blockquote
+// class="instagram-media"> + embed.js`, ver InstagramReelEmbed en
+// components/tarjeta/instagram-reel-embed.tsx) — ese widget necesita el
+// PERMALINK real del reel, no una URL de `/embed`, así que esta función
+// pasó de "armar una URL de embed" a "validar y normalizar el permalink".
+export function normalizarInstagramReelUrl(url?: string): string | null {
   if (!url?.trim()) return null
   let parsed: URL
   try {
@@ -73,7 +75,7 @@ export function obtenerInstagramReelEmbedUrl(url?: string): string | null {
   if (host !== "instagram.com") return null
   const match = parsed.pathname.match(/^\/(?:reel|reels|p)\/([^/]+)/)
   if (!match) return null
-  return `https://www.instagram.com/reel/${match[1]}/embed`
+  return `https://www.instagram.com/reel/${match[1]}/`
 }
 
 /** Migración en memoria (mismo criterio que `normalizarBotones()`,

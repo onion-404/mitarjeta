@@ -23,8 +23,8 @@ import {
 import { obtenerColorContraste } from "@/lib/contraste"
 import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import {
+  normalizarInstagramReelUrl,
   normalizarMultimedia,
-  obtenerInstagramReelEmbedUrl,
   resolverEmbedVideo,
 } from "@/lib/multimedia"
 import { DIVISORES_BANNER, ESTILOS_TIPOGRAFIA } from "@/lib/personalizacion"
@@ -48,6 +48,7 @@ import type {
 import { AvatarForma } from "@/components/tarjeta/avatar-forma"
 import { BotonCtaModal, ContenidoBotonCta, estiloTexturaBoton, type BotonVistaPrevia } from "@/components/tarjeta/boton-cta-modal"
 import { CatalogoItemModal } from "@/components/tarjeta/catalogo-item-modal"
+import { InstagramReelEmbed } from "@/components/tarjeta/instagram-reel-embed"
 import { ReservarServicio } from "@/components/tarjeta/reservar-servicio"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 
@@ -188,6 +189,7 @@ export function TarjetaCard({
     fondoTarjetaDireccionGrados,
     colorTextoSecundario,
     ubicacionCentrada,
+    multimediaAlFinal,
     ordenContacto,
     badgeIconoActivo,
     badgeIconoId,
@@ -829,9 +831,12 @@ export function TarjetaCard({
   // auto-detectado) y "reels" (slide horizontal de reels de Instagram).
   // El slide usa scroll-snap nativo de CSS, sin librería de carrusel —
   // mismo criterio de "sin dependencia nueva si CSS alcanza" que el resto
-  // del proyecto. Cada reel usa el embed directo por iframe de Instagram
-  // (obtenerInstagramReelEmbedUrl), no el script oficial embed.js — evita
-  // cargar/ejecutar JS de terceros en la tarjeta pública.
+  // del proyecto. Cada reel usa <InstagramReelEmbed> (widget oficial de
+  // Instagram, ver ese componente) — el iframe directo a `/embed` que
+  // tenía la primera versión de esta feature quedó descartado: sin el
+  // script oficial, Instagram lo sirve como una tarjeta estática que
+  // manda al visitante a instagram.com en vez de reproducir ahí mismo
+  // (bug real reportado).
   function renderMultimedia(): React.ReactNode {
     if (!multimediaNormalizada.length) return null
     return (
@@ -855,27 +860,21 @@ export function TarjetaCard({
               </div>
             )
           }
-          const embeds = item.urls
-            .map((url) => obtenerInstagramReelEmbedUrl(url))
+          const urls = item.urls
+            .map((url) => normalizarInstagramReelUrl(url))
             .filter((url): url is string => Boolean(url))
-          if (!embeds.length) return null
+          if (!urls.length) return null
           return (
             <div
               key={item.id}
               className="scrollbar-hide -mx-6 flex snap-x snap-mandatory gap-3 overflow-x-auto px-6 pb-1"
             >
-              {embeds.map((embedUrl, indice) => (
+              {urls.map((url, indice) => (
                 <div
                   key={indice}
-                  className="aspect-[9/16] w-[62%] shrink-0 snap-center overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] shadow-md dark:border-[rgba(255,255,255,0.1)] sm:w-[45%]"
+                  className="flex w-[280px] shrink-0 snap-center justify-center overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] shadow-md dark:border-[rgba(255,255,255,0.1)]"
                 >
-                  <iframe
-                    src={embedUrl}
-                    title={`Reel de Instagram ${indice + 1}`}
-                    className="size-full"
-                    allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-                    allowFullScreen
-                  />
+                  <InstagramReelEmbed url={url} />
                 </div>
               ))}
             </div>
@@ -1204,9 +1203,15 @@ export function TarjetaCard({
 
           {renderContactoYRedes()}
 
-          {renderMultimedia()}
+          {/* Posición elegible (2026-08-14): por default el contenido
+              multimedia va acá, antes de Botones — con
+              `multimediaAlFinal` se corre a después de Botones/Agenda,
+              como el último bloque de la tarjeta. */}
+          {!multimediaAlFinal && renderMultimedia()}
 
           {renderBotones()}
+
+          {multimediaAlFinal && renderMultimedia()}
         </div>
       </article>
 
