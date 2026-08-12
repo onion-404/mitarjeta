@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   FileText,
+  Images,
   Loader2,
   Moon,
   Move,
@@ -50,8 +51,8 @@ import { validarCupon } from "@/lib/cupones"
 import { estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import {
   MULTIMEDIA_TIPO_ETIQUETA,
+  TOPE_GALERIA_ITEMS,
   TOPE_MULTIMEDIA,
-  TOPE_REELS_POR_BLOQUE,
   normalizarMultimedia,
 } from "@/lib/multimedia"
 import {
@@ -62,7 +63,7 @@ import {
   type Plantilla,
 } from "@/lib/personalizacion"
 import { PLATAFORMAS, obtenerPlataforma } from "@/lib/redes"
-import { subirImagenCloudinary, validarImagen } from "@/lib/subir-imagen"
+import { subirImagenCloudinary, validarImagen, validarVideo } from "@/lib/subir-imagen"
 import { supabase } from "@/lib/supabase"
 import { getLimiteCambioSlug, type LimiteCambioSlug } from "@/lib/tarjetas"
 import { cn } from "@/lib/utils"
@@ -165,14 +166,24 @@ interface BotonFormState {
   expandido: boolean
 }
 
+/** Un archivo (imagen o video) de una "galería" — `file`/`preview` son
+ *  locales (todavía sin subir, mismo criterio que avatar/banner/ítems de
+ *  catálogo); `urlExistente` es lo que ya estaba guardado en Cloudinary. */
+interface GaleriaItemFormState {
+  file: File | null
+  preview: string
+  urlExistente: string
+  tipo: "imagen" | "video"
+}
+
 /** Estado de un ítem de "Contenido multimedia" en el editor — mismo
  *  criterio plano (no discriminado) que `BotonFormState`: `url` solo
- *  aplica a "video", `urls` solo a "reels". */
+ *  aplica a "video", `galeria` solo a "galeria". */
 interface MultimediaFormState {
   id: string
   tipo: MultimediaTipo
   url: string // "video"
-  urls: string[] // "reels" — hasta TOPE_REELS_POR_BLOQUE
+  galeria: GaleriaItemFormState[] // "galeria" — hasta TOPE_GALERIA_ITEMS
   expandido: boolean
 }
 
@@ -261,12 +272,51 @@ function adaptarBotonFormState(boton: Boton | BotonHijo, expandido: boolean): Bo
   }
 }
 
-/** Inversa de `adaptarMultimediaFormState` — arma el `MultimediaItem` final
- *  a partir del estado de edición, filtrando URLs de reels vacías (mismo
- *  criterio que el resto del editor: strings vacíos nunca se persisten). */
-function construirMultimediaFinal(item: MultimediaFormState): MultimediaItem {
-  if (item.tipo === "reels") {
-    return { id: item.id, tipo: "reels", urls: item.urls.map((u) => u.trim()).filter(Boolean) }
+/** Clave compuesta para direccionar la subida de UN archivo de galería —
+ *  mismo criterio que `claveItemCatalogo` (índice de multimedia + índice de
+ *  archivo dentro de esa galería, `multimedia` es una lista plana sin
+ *  anidar así que alcanza con 2 niveles). */
+function claveGaleriaItem(indiceMultimedia: number, indiceItem: number): string {
+  return `${indiceMultimedia}.${indiceItem}`
+}
+
+/** Vista previa en vivo (sin subir nada todavía) — usa el preview local
+ *  (`URL.createObjectURL`) o la URL ya existente de cada archivo de
+ *  galería, análoga a `construirBotonPreview`. */
+function construirMultimediaPreview(item: MultimediaFormState): MultimediaItem {
+  if (item.tipo === "galeria") {
+    return {
+      id: item.id,
+      tipo: "galeria",
+      items: item.galeria
+        .map((g) => ({ url: g.preview || g.urlExistente, tipo: g.tipo }))
+        .filter((g) => g.url),
+    }
+  }
+  return { id: item.id, tipo: "video", url: item.url.trim() }
+}
+
+/** Arma el `MultimediaItem` final para guardar — a diferencia de
+ *  `construirMultimediaPreview`, acá los archivos de galería ya se
+ *  subieron: `urlsGaleriaPorClave` (Map, ver `claveGaleriaItem`) trae las
+ *  URLs reales de Cloudinary, con la URL ya existente como fallback (el
+ *  dueño no tocó ese archivo en esta edición). */
+function construirMultimediaFinal(
+  item: MultimediaFormState,
+  indiceMultimedia: number,
+  urlsGaleriaPorClave: Map<string, string>
+): MultimediaItem {
+  if (item.tipo === "galeria") {
+    return {
+      id: item.id,
+      tipo: "galeria",
+      items: item.galeria
+        .map((g, indiceItem) => ({
+          url: urlsGaleriaPorClave.get(claveGaleriaItem(indiceMultimedia, indiceItem)) ?? g.urlExistente,
+          tipo: g.tipo,
+        }))
+        .filter((g) => g.url),
+    }
   }
   return { id: item.id, tipo: "video", url: item.url.trim() }
 }
@@ -276,7 +326,10 @@ function adaptarMultimediaFormState(item: MultimediaItem, expandido: boolean): M
     id: item.id,
     tipo: item.tipo,
     url: item.tipo === "video" ? item.url : "",
-    urls: item.tipo === "reels" ? item.urls : [],
+    galeria:
+      item.tipo === "galeria"
+        ? item.items.map((g) => ({ file: null, preview: "", urlExistente: g.url, tipo: g.tipo }))
+        : [],
     expandido,
   }
 }
@@ -1114,14 +1167,14 @@ export function TarjetaForm({
   }
   const archivoDisponible = featuresPersonalizacion.personalizacion_avanzada || hayArchivo(botones)
 
-  // --- Contenido multimedia — CRUD (video/reels), lista plana sin anidar --
+  // --- Contenido multimedia — CRUD (video/galería), lista plana sin anidar --
 
   function crearMultimediaNueva(tipo: MultimediaTipo): MultimediaFormState {
     return {
       id: crypto.randomUUID(),
       tipo,
       url: "",
-      urls: tipo === "reels" ? [""] : [],
+      galeria: [],
       expandido: true,
     }
   }
@@ -1144,31 +1197,57 @@ export function TarjetaForm({
   }
 
   function quitarMultimediaEn(indice: number) {
-    setMultimedia((prev) => prev.filter((_, i) => i !== indice))
+    setMultimedia((prev) => {
+      const actual = prev[indice]
+      if (actual) {
+        actual.galeria.forEach((g) => {
+          if (g.preview) URL.revokeObjectURL(g.preview)
+        })
+      }
+      return prev.filter((_, i) => i !== indice)
+    })
   }
 
-  function agregarReelUrl(indice: number) {
+  /** Agrega una imagen o un video a la galería de un ítem "galeria" —
+   *  mismo criterio de validación/preview local que avatar/banner/ítems de
+   *  catálogo (`validarImagen`/`validarVideo`, `URL.createObjectURL`), la
+   *  subida real a Cloudinary recién pasa al guardar. */
+  function agregarGaleriaArchivo(
+    indice: number,
+    event: React.ChangeEvent<HTMLInputElement>,
+    tipoArchivo: "imagen" | "video"
+  ) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const error = tipoArchivo === "video" ? validarVideo(file) : validarImagen(file)
+    if (error) {
+      mostrarErrorArchivo(error)
+      event.target.value = ""
+      return
+    }
     setMultimedia((prev) =>
       prev.map((item, i) => {
-        if (i !== indice || item.urls.length >= TOPE_REELS_POR_BLOQUE) return item
-        return { ...item, urls: [...item.urls, ""] }
+        if (i !== indice || item.galeria.length >= TOPE_GALERIA_ITEMS) return item
+        return {
+          ...item,
+          galeria: [
+            ...item.galeria,
+            { file, preview: URL.createObjectURL(file), urlExistente: "", tipo: tipoArchivo },
+          ],
+        }
       })
     )
+    event.target.value = ""
   }
 
-  function actualizarReelUrl(indice: number, indiceReel: number, valor: string) {
+  function quitarGaleriaItem(indice: number, indiceItem: number) {
     setMultimedia((prev) =>
-      prev.map((item, i) =>
-        i === indice ? { ...item, urls: item.urls.map((u, j) => (j === indiceReel ? valor : u)) } : item
-      )
-    )
-  }
-
-  function quitarReelUrl(indice: number, indiceReel: number) {
-    setMultimedia((prev) =>
-      prev.map((item, i) =>
-        i === indice ? { ...item, urls: item.urls.filter((_, j) => j !== indiceReel) } : item
-      )
+      prev.map((item, i) => {
+        if (i !== indice) return item
+        const archivo = item.galeria[indiceItem]
+        if (archivo?.preview) URL.revokeObjectURL(archivo.preview)
+        return { ...item, galeria: item.galeria.filter((_, j) => j !== indiceItem) }
+      })
     )
   }
 
@@ -1639,6 +1718,7 @@ export function TarjetaForm({
     const imagenesBotonPorRuta = new Map<string, string>()
     const archivosBotonPorRuta = new Map<string, string>()
     const imagenesCatalogoItemPorClave = new Map<string, string>()
+    const urlsGaleriaPorClave = new Map<string, string>()
 
     type TareaSubida =
       | { tipo: "avatar"; etiqueta: string; promesa: Promise<string | null> }
@@ -1650,6 +1730,13 @@ export function TarjetaForm({
       | {
           tipo: "catalogoItem"
           ruta: UbicacionBoton
+          indiceItem: number
+          etiqueta: string
+          promesa: Promise<string | null>
+        }
+      | {
+          tipo: "galeriaItem"
+          indiceMultimedia: number
           indiceItem: number
           etiqueta: string
           promesa: Promise<string | null>
@@ -1752,10 +1839,33 @@ export function TarjetaForm({
     }
     botones.forEach((boton, indice) => recolectarTareasBoton(boton, { indice }))
 
+    // Ítems de galería de "Contenido multimedia" — mismo criterio que los
+    // ítems de catálogo (clave compuesta índice de multimedia + índice de
+    // archivo), pero como `multimedia` es una lista plana no hace falta
+    // recorrer nada anidado.
+    multimedia.forEach((item, indiceMultimedia) => {
+      if (item.tipo !== "galeria") return
+      item.galeria.forEach((archivo, indiceItem) => {
+        if (!archivo.file) return
+        tareas.push({
+          tipo: "galeriaItem",
+          indiceMultimedia,
+          indiceItem,
+          etiqueta: `el ${archivo.tipo === "video" ? "video" : "imagen"} ${indiceItem + 1} de la galería`,
+          promesa: subirImagenCloudinary(
+            archivo.file,
+            "mitarjeta/multimedia",
+            undefined,
+            archivo.tipo === "video" ? "video" : "image"
+          ).catch(() => null),
+        })
+      })
+    })
+
     // Todas las subidas (avatar, banner, imagen de fondo y las de cada
-    // botón/ítem de catálogo/archivo) se disparan en paralelo en vez de
-    // esperarse una por una: en una conexión móvil esto reduce el tiempo de
-    // guardado a una fracción del secuencial.
+    // botón/ítem de catálogo/archivo/galería) se disparan en paralelo en
+    // vez de esperarse una por una: en una conexión móvil esto reduce el
+    // tiempo de guardado a una fracción del secuencial.
     const resultados =
       tareas.length > 0 ? await Promise.all(tareas.map((tarea) => tarea.promesa)) : []
 
@@ -1776,7 +1886,9 @@ export function TarjetaForm({
       else if (tarea.tipo === "tituloImagen") tituloImagenUrlFinal = url
       else if (tarea.tipo === "botonImagen") imagenesBotonPorRuta.set(claveBoton(tarea.ruta), url)
       else if (tarea.tipo === "botonArchivo") archivosBotonPorRuta.set(claveBoton(tarea.ruta), url)
-      else imagenesCatalogoItemPorClave.set(claveItemCatalogo(tarea.ruta, tarea.indiceItem), url)
+      else if (tarea.tipo === "catalogoItem")
+        imagenesCatalogoItemPorClave.set(claveItemCatalogo(tarea.ruta, tarea.indiceItem), url)
+      else urlsGaleriaPorClave.set(claveGaleriaItem(tarea.indiceMultimedia, tarea.indiceItem), url)
     })
 
     if (fallidas.length > 0) {
@@ -1869,8 +1981,11 @@ export function TarjetaForm({
       .map(({ boton, indice }) => construirBotonFinal(boton, { indice }))
 
     const multimediaFinal: MultimediaItem[] = multimedia
-      .filter((item) => (item.tipo === "video" ? item.url.trim() : item.urls.some((u) => u.trim())))
-      .map(construirMultimediaFinal)
+      .map((item, indice) => ({ item, indice }))
+      .filter(({ item }) =>
+        item.tipo === "video" ? item.url.trim() : item.galeria.some((g) => g.file || g.urlExistente)
+      )
+      .map(({ item, indice }) => construirMultimediaFinal(item, indice, urlsGaleriaPorClave))
 
     const datos_contacto: DatosContacto = {
       direccion: direccion.trim() || undefined,
@@ -2116,8 +2231,10 @@ export function TarjetaForm({
     .map((boton) => construirBotonPreview(boton))
 
   const multimediaActual: MultimediaItem[] = multimedia
-    .filter((item) => (item.tipo === "video" ? item.url.trim() : item.urls.some((u) => u.trim())))
-    .map(construirMultimediaFinal)
+    .filter((item) =>
+      item.tipo === "video" ? item.url.trim() : item.galeria.some((g) => g.preview || g.urlExistente)
+    )
+    .map(construirMultimediaPreview)
 
   const datosContactoActual: DatosContacto = {
     direccion,
@@ -3397,12 +3514,11 @@ export function TarjetaForm({
    *  mover ↑/↓ + eliminar + chevron expandir/colapsar), sin anidar (a
    *  diferencia de Botones, acá no hay hijos). */
   function renderMultimediaFila(item: MultimediaFormState, indice: number, total: number): React.ReactNode {
-    const Icono = item.tipo === "reels" ? SOCIAL_ICONS.instagram : Video
-    const reelsCargados = item.urls.filter((u) => u.trim()).length
+    const Icono = item.tipo === "galeria" ? Images : Video
     const tituloFila =
       item.tipo === "video"
         ? item.url.trim() || "Sin URL todavía"
-        : `${reelsCargados} reel${reelsCargados === 1 ? "" : "s"}`
+        : `${item.galeria.length} archivo${item.galeria.length === 1 ? "" : "s"}`
     return (
       <div key={item.id} className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/50 p-3">
         <div className="flex items-center gap-2">
@@ -3475,39 +3591,66 @@ export function TarjetaForm({
             ) : (
               <div className="flex flex-col gap-2">
                 <span className="text-xs text-muted-foreground">
-                  URLs de los reels (hasta {TOPE_REELS_POR_BLOQUE})
+                  Imágenes o videos (hasta {TOPE_GALERIA_ITEMS}) — se muestran en un slide
+                  horizontal
                 </span>
-                {item.urls.map((url, indiceReel) => (
-                  <div key={indiceReel} className="flex items-center gap-2">
-                    <input
-                      value={url}
-                      onChange={(e) => actualizarReelUrl(indice, indiceReel, e.target.value)}
-                      onFocus={() => scrollPreviewTo("video")}
-                      placeholder="https://www.instagram.com/reel/..."
-                      className={cn(inputClase, "flex-1")}
-                    />
-                    {item.urls.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => quitarReelUrl(indice, indiceReel)}
-                        aria-label="Quitar reel"
-                        className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
-                      >
-                        <X className="size-3.5" />
-                      </button>
-                    )}
+                {item.galeria.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {item.galeria.map((archivo, indiceItem) => {
+                      const mostrado = archivo.preview || archivo.urlExistente
+                      return (
+                        <div key={indiceItem} className="relative shrink-0">
+                          {archivo.tipo === "video" ? (
+                            <video
+                              src={mostrado}
+                              muted
+                              className="size-16 rounded-lg border border-border object-cover"
+                            />
+                          ) : (
+                            // eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary
+                            <img
+                              src={mostrado}
+                              alt=""
+                              className="size-16 rounded-lg border border-border object-cover"
+                            />
+                          )}
+                          <span className="absolute bottom-0.5 left-0.5 rounded bg-black/60 px-1 text-[9px] font-medium text-white">
+                            {archivo.tipo === "video" ? "Video" : "Foto"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => quitarGaleriaItem(indice, indiceItem)}
+                            aria-label="Quitar"
+                            className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
-                ))}
-                {item.urls.length < TOPE_REELS_POR_BLOQUE && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => agregarReelUrl(indice)}
-                    className="self-start"
-                  >
-                    <Plus className="size-3.5" /> Agregar reel
-                  </Button>
+                )}
+                {item.galeria.length < TOPE_GALERIA_ITEMS && (
+                  <div className="flex flex-wrap gap-2">
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted">
+                      <Plus className="size-3.5" /> Imagen
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => agregarGaleriaArchivo(indice, e, "imagen")}
+                      />
+                    </label>
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted">
+                      <Plus className="size-3.5" /> Video
+                      <input
+                        type="file"
+                        accept="video/*"
+                        className="hidden"
+                        onChange={(e) => agregarGaleriaArchivo(indice, e, "video")}
+                      />
+                    </label>
+                  </div>
                 )}
               </div>
             )}
@@ -3520,7 +3663,8 @@ export function TarjetaForm({
   const contenidoMultimedia = (
     <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
       <p className="text-xs text-muted-foreground">
-        Agrega videos (YouTube o Vimeo) o un slide horizontal de reels de Instagram.
+        Agrega videos (YouTube o Vimeo) o una galería de imágenes/videos propios en un slide
+        horizontal.
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -3566,10 +3710,10 @@ export function TarjetaForm({
           </button>
           <button
             type="button"
-            onClick={() => agregarMultimedia("reels")}
+            onClick={() => agregarMultimedia("galeria")}
             className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
           >
-            <Plus className="size-3.5" /> Reels de Instagram
+            <Plus className="size-3.5" /> Galería
           </button>
         </div>
       )}

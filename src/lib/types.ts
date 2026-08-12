@@ -238,11 +238,12 @@ export type Boton =
   | BotonArchivo
   | BotonAgenda
 
-/** 2 tipos de contenido multimedia (2026-08-13) — mismo patrón que `Boton`:
- *  el dueño arma una lista de ítems, cada uno con su propio shape según
- *  `tipo`. Ver `normalizarMultimedia()`/`resolverEmbedVideo()`/
- *  `obtenerInstagramReelEmbedUrl()` en lib/multimedia.ts. */
-export type MultimediaTipo = "video" | "reels"
+/** 2 tipos de contenido multimedia (2026-08-13, "reels" reemplazado por
+ *  "galeria" el 2026-08-15, ver esa fecha en CLAUDE.md) — mismo patrón que
+ *  `Boton`: el dueño arma una lista de ítems, cada uno con su propio shape
+ *  según `tipo`. Ver `normalizarMultimedia()`/`resolverEmbedVideo()` en
+ *  lib/multimedia.ts. */
+export type MultimediaTipo = "video" | "galeria"
 
 /** Un video embebido — YouTube o Vimeo (auto-detectado desde la URL por
  *  `resolverEmbedVideo()`, el dueño no elige el proveedor a mano). */
@@ -252,17 +253,31 @@ export interface MultimediaVideo {
   url: string
 }
 
-/** Hasta `TOPE_REELS_POR_BLOQUE` (lib/multimedia.ts) reels de Instagram en
- *  un slide horizontal — un solo ítem "reels" agrupa varias URLs, no un
- *  ítem por reel (a diferencia de Botones, acá no hace falta título/ícono/
- *  color por reel individual, son videos que se muestran tal cual). */
-export interface MultimediaReels {
-  id: string
-  tipo: "reels"
-  urls: string[]
+/** Una imagen o un video SUBIDO por el dueño (Cloudinary, carpeta
+ *  `mitarjeta/multimedia`) — a diferencia de `MultimediaVideo` (un link a
+ *  YouTube/Vimeo), acá el archivo vive en nuestro propio Cloudinary, así
+ *  que se reproduce con un `<video>` nativo sin marca ni "chrome" de
+ *  ningún tercero. */
+export interface GaleriaItem {
+  url: string
+  tipo: "imagen" | "video"
 }
 
-export type MultimediaItem = MultimediaVideo | MultimediaReels
+/** Hasta `TOPE_GALERIA_ITEMS` (lib/multimedia.ts) imágenes/videos en un
+ *  slide horizontal — un solo ítem "galeria" agrupa varios archivos, no un
+ *  ítem por archivo (a diferencia de Botones, acá no hace falta título/
+ *  ícono/color por archivo individual). Reemplaza a "reels de Instagram"
+ *  (2026-08-15): el widget oficial de Instagram no permite ocultar su
+ *  encabezado/pie (contenido de un iframe de otro origen) — una galería de
+ *  archivos propios da control total sobre cómo se ve, a cambio de que el
+ *  dueño suba el contenido en vez de solo pegar un link. */
+export interface MultimediaGaleria {
+  id: string
+  tipo: "galeria"
+  items: GaleriaItem[]
+}
+
+export type MultimediaItem = MultimediaVideo | MultimediaGaleria
 
 /** @deprecated Superado por la unificación de Agenda como `tipo: "agenda"`
  *  dentro de "Botones" (2026-08-10) — ya no queda más de un bloque

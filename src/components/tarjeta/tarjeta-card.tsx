@@ -22,11 +22,7 @@ import {
 } from "@/lib/boton-cta"
 import { obtenerColorContraste } from "@/lib/contraste"
 import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
-import {
-  normalizarInstagramReelUrl,
-  normalizarMultimedia,
-  resolverEmbedVideo,
-} from "@/lib/multimedia"
+import { normalizarMultimedia, resolverEmbedVideo } from "@/lib/multimedia"
 import { DIVISORES_BANNER, ESTILOS_TIPOGRAFIA } from "@/lib/personalizacion"
 import { obtenerPlataforma } from "@/lib/redes"
 import { registrarEvento, type TipoEventoCliente } from "@/lib/track-evento"
@@ -48,7 +44,6 @@ import type {
 import { AvatarForma } from "@/components/tarjeta/avatar-forma"
 import { BotonCtaModal, ContenidoBotonCta, estiloTexturaBoton, type BotonVistaPrevia } from "@/components/tarjeta/boton-cta-modal"
 import { CatalogoItemModal } from "@/components/tarjeta/catalogo-item-modal"
-import { InstagramReelEmbed } from "@/components/tarjeta/instagram-reel-embed"
 import { ReservarServicio } from "@/components/tarjeta/reservar-servicio"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 
@@ -826,17 +821,18 @@ export function TarjetaCard({
       ? (catalogoDelItemAbierto.items[itemCatalogoAbierto.indice] ?? null)
       : null
 
-  // "Contenido multimedia" (2026-08-13) — reemplaza el video único de
-  // YouTube de siempre: lista tipada de ítems "video" (YouTube o Vimeo,
-  // auto-detectado) y "reels" (slide horizontal de reels de Instagram).
-  // El slide usa scroll-snap nativo de CSS, sin librería de carrusel —
+  // "Contenido multimedia" (2026-08-13, "reels" reemplazado por "galeria"
+  // el 2026-08-15) — lista tipada de ítems "video" (YouTube o Vimeo,
+  // auto-detectado) y "galeria" (imágenes/videos SUBIDOS por el dueño a
+  // nuestro propio Cloudinary, no linkeados de otro lado). El slide de
+  // galería usa scroll-snap nativo de CSS, sin librería de carrusel —
   // mismo criterio de "sin dependencia nueva si CSS alcanza" que el resto
-  // del proyecto. Cada reel usa <InstagramReelEmbed> (widget oficial de
-  // Instagram, ver ese componente) — el iframe directo a `/embed` que
-  // tenía la primera versión de esta feature quedó descartado: sin el
-  // script oficial, Instagram lo sirve como una tarjeta estática que
-  // manda al visitante a instagram.com en vez de reproducir ahí mismo
-  // (bug real reportado).
+  // del proyecto. Los reels de Instagram (versión anterior de esta
+  // sección) se sacaron por completo: el widget oficial de Instagram no
+  // permite ocultar su encabezado/pie (contenido de un iframe de otro
+  // origen, ver CLAUDE.md) y el cliente no lo quiso así — un archivo
+  // propio con `<video>`/`<Image>` nativo da control total sobre cómo se
+  // ve, sin ninguna marca de terceros.
   function renderMultimedia(): React.ReactNode {
     if (!multimediaNormalizada.length) return null
     return (
@@ -860,21 +856,35 @@ export function TarjetaCard({
               </div>
             )
           }
-          const urls = item.urls
-            .map((url) => normalizarInstagramReelUrl(url))
-            .filter((url): url is string => Boolean(url))
-          if (!urls.length) return null
+          if (!item.items.length) return null
           return (
             <div
               key={item.id}
               className="scrollbar-hide -mx-6 flex snap-x snap-mandatory gap-3 overflow-x-auto px-6 pb-1"
             >
-              {urls.map((url, indice) => (
+              {item.items.map((archivo, indice) => (
                 <div
                   key={indice}
-                  className="flex w-[328px] shrink-0 snap-center justify-center overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] shadow-md dark:border-[rgba(255,255,255,0.1)]"
+                  className="relative aspect-square w-[220px] shrink-0 snap-center overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] shadow-md dark:border-[rgba(255,255,255,0.1)]"
                 >
-                  <InstagramReelEmbed url={url} />
+                  {archivo.tipo === "video" ? (
+                    <video
+                      src={archivo.url}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <Image
+                      src={archivo.url}
+                      alt=""
+                      fill
+                      sizes="220px"
+                      unoptimized={!esUrlOptimizable(archivo.url)}
+                      className="object-cover"
+                    />
+                  )}
                 </div>
               ))}
             </div>

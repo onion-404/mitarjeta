@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-08-14. Fuente de verdad para que una sesión nueva entienda el
+> Última actualización: 2026-08-15. Fuente de verdad para que una sesión nueva entienda el
 > estado real del proyecto sin releer el historial de chat. Actualizar cuando cambie algo de
 > lo que describe. **Para el detalle histórico de verificaciones, bugs encontrados en el
 > camino, capturas de pantalla y logs de sesiones anteriores, ver [HISTORIAL.md](HISTORIAL.md)
@@ -1562,10 +1562,54 @@ real desde esta sesión salvo que se indique lo contrario):
   `data-instgrm-captioned`, la variante más compacta que existe) — no hay forma de achicarlo
   más sin perder la reproducción inline. Se le presentaron 3 opciones al cliente (dejarlo así
   con la marca de Instagram visible / volver a una tarjeta propia sin marca pero que redirige
-  al tocar / sacar reels de la feature por ahora) — **eligió dejarlo así** (reproducción
-  inline real, con el chrome de Instagram que no se puede evitar). No volver a intentar
-  "limpiar" el embed en el futuro sin releer esto primero — es una limitación de la
-  plataforma, no una tarea pendiente.
+  al tocar / sacar reels de la feature por ahora) — 🔴→✅ **eligió dejarlo así en un primer
+  momento, pero al probarlo de verdad en `/limpio` no le gustó** (ver sección siguiente: se
+  terminó sacando por completo, reemplazado por una galería de archivos propios).
+
+## "Reels de Instagram" reemplazado por galería de imágenes/videos SUBIDOS (2026-08-15, mismo día)
+- **Decisión final del cliente, probando en vivo**: después de ver el widget oficial de
+  Instagram funcionando (reproduce, pero con su encabezado/pie de marca) dijo "no me gusta,
+  hay que quitarlo" — pidió reemplazarlo por una galería de imágenes/videos que el dueño SUBE
+  directo (no un link a otro lado). Esto resuelve de raíz el problema que perseguía toda la
+  sesión: al ser un archivo propio en nuestro Cloudinary, se reproduce con un `<video>`/
+  `<Image>` nativo — CERO marca de terceros, control total de tamaño/proporción, sin
+  depender de ningún widget externo.
+- **Tipo "reels" retirado por completo** (no quedó como `@deprecated` legacy — es una feature
+  de 2 días de vida, sin uso real fuera de una tarjeta de prueba): `MultimediaReels` →
+  `MultimediaGaleria` en `lib/types.ts` (`items: GaleriaItem[]`, cada uno
+  `{url, tipo: "imagen"|"video"}`). `normalizarMultimedia()` filtra defensivamente cualquier
+  ítem con un `tipo` desconocido (cubre el caso real de que `/limpio`, la tarjeta de prueba,
+  todavía tuviera ítems `tipo: "reels"` guardados de la versión anterior — no rompe, solo deja
+  de mostrarlos). `src/components/tarjeta/instagram-reel-embed.tsx` se borró (sin caller).
+- **Subida real a Cloudinary** (mismo patrón que avatar/banner/ítems de catálogo —
+  `subirImagenCloudinary()`, ya existente): carpeta nueva `mitarjeta/multimedia` (whitelisteada
+  en `cloudinary-sign/route.ts`). `subirImagenCloudinary()` ganó un 3er `resourceType` posible
+  (`"video"`, antes solo `"image"|"raw"`) — no hizo falta tocar la firma (`firmarSubidaCloudinary()`
+  solo firma `folder`+`timestamp`, `resource_type` es parte de la URL de Cloudinary, no un
+  parámetro firmado). `lib/subir-imagen.ts` ganó `validarVideo()` (mismo criterio que
+  `validarImagen()`/`validarPdf()`) — **límite 30MB, supuesto tomado por Claude Code, no un
+  número pedido explícitamente** (bien por encima del límite de 5MB de imágenes: un clip corto
+  ya pesa varios MB); ajustar si en la práctica queda corto o largo.
+- **Editor**: cada ítem "galeria" tiene 2 botones de subida (Imagen/Video, inputs de archivo
+  ocultos tipo `<label>`) + grilla de miniaturas (`size-16`, con badge "Foto"/"Video" y botón
+  quitar) — mismo patrón visual que ítems de catálogo. Tope `TOPE_GALERIA_ITEMS = 8`
+  (reemplaza `TOPE_REELS_POR_BLOQUE = 5` — más alto porque una galería de fotos propias
+  razonablemente tiene más ítems que una curaduría de reels ajenos, supuesto tomado por
+  Claude Code). Subida orquestada junto con el resto (`TareaSubida` ganó el caso
+  `"galeriaItem"`, direccionado por `claveGaleriaItem(indiceMultimedia, indiceItem)` — mismo
+  criterio de clave compuesta que `claveItemCatalogo`). `construirMultimediaFinal()` (para
+  guardar, usa las URLs recién subidas) y `construirMultimediaPreview()` (para la vista previa
+  en vivo, usa el preview local `URL.createObjectURL`) quedaron separadas — mismo criterio que
+  `construirBotonFinal`/`construirBotonPreview`.
+- **Render público**: mismo slide horizontal con scroll-snap de antes, ahora con cards
+  `aspect-square` de 220px — imágenes vía `next/image` (mismo criterio `esUrlOptimizable` que
+  el resto de imágenes de Cloudinary de la tarjeta), videos vía `<video controls playsInline
+  preload="metadata">` nativo, sin autoplay (el dueño/visitante lo reproduce con el control
+  real del navegador, "tal cual lo haría un video" — pedido explícito).
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 No verificado
+  todavía en navegador real — pendiente probar: subir una imagen y un video reales a una
+  galería, confirmar que el video reproduce con los controles nativos (sin ninguna marca de
+  terceros) y que el límite de 8 ítems/30MB por video se siente razonable en la práctica.
 
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
@@ -1581,12 +1625,13 @@ real desde esta sesión salvo que se indique lo contrario):
 - 🔴 Contenido multimedia como lista tipada (video/reels) y fix de altura del chip de catálogo
   en vista Lista (2026-08-13) — solo verificado con `tsc`/`eslint`/`build`, sin probar en
   navegador real todavía (ver esa sección para el detalle completo).
-- 🔴 Fix de reproducción de reels de Instagram (widget oficial en vez de iframe directo),
-  posición elegible de "Contenido multimedia" y fix de ancho mínimo del widget (328px real,
-  el cliente probó y confirmó que el problema era el ancho, no la reproducción — ver esa
-  sección para el detalle completo, incluye la decisión del cliente de aceptar el
-  encabezado/pie de Instagram, no se puede quitar) — solo verificado con `tsc`/`eslint`/
-  `build`, falta confirmación final del cliente en `/limpio` con el fix de ancho aplicado.
+- 🔴 Posición elegible de "Contenido multimedia" (2026-08-14) — solo verificado con
+  `tsc`/`eslint`/`build`, sin confirmar en navegador real.
+- 🔴 Reels de Instagram retirado por completo, reemplazado por galería de imágenes/videos
+  SUBIDOS (Cloudinary propio, sin marca de terceros — 2026-08-15, decisión final del cliente
+  después de probar el widget oficial de Instagram y no querer su chrome de marca) — solo
+  verificado con `tsc`/`eslint`/`build`, sin probar subir un archivo real todavía (ver esa
+  sección para el detalle completo).
 - 🔴 Agenda como calendario único (duración+colchón por servicio, sin "paso" configurable,
   2026-08-10) — migración APLICADA y confirmada por consulta real desde esta sesión, código
   listo para deploy; falta la prueba en navegador con servicios reales de distinta

@@ -4,16 +4,16 @@ import type { DatosContacto, MultimediaItem, MultimediaTipo } from "@/lib/types"
 // ============================================================================
 // "Contenido multimedia" (2026-08-13) — mismo patrón que la unificación de
 // Botones (lib/boton-cta.ts): un solo `videoUrl` de YouTube pasa a ser una
-// lista tipada de ítems (video/reels), con migración en memoria desde el
+// lista tipada de ítems (video/galería), con migración en memoria desde el
 // campo legacy — nunca se escribe hasta el próximo "Guardar".
 // ============================================================================
 
 export const TOPE_MULTIMEDIA = 4
-export const TOPE_REELS_POR_BLOQUE = 5
+export const TOPE_GALERIA_ITEMS = 8
 
 export const MULTIMEDIA_TIPO_ETIQUETA: Record<MultimediaTipo, string> = {
   video: "Video",
-  reels: "Reels de Instagram",
+  galeria: "Galería",
 }
 
 export type ProveedorVideo = "youtube" | "vimeo"
@@ -54,39 +54,26 @@ export function resolverEmbedVideo(url?: string): EmbedVideo | null {
   return null
 }
 
-// 🔴→✅ 2026-08-14: el iframe directo a `/embed` (sin el script oficial)
-// quedó descartado — Instagram lo sirve como una tarjeta ESTÁTICA con un
-// link que saca al visitante a instagram.com en vez de reproducir ahí
-// mismo (bug real reportado: "me redirige a Instagram"). El único embed
-// que reproduce de verdad es el widget oficial (`<blockquote
-// class="instagram-media"> + embed.js`, ver InstagramReelEmbed en
-// components/tarjeta/instagram-reel-embed.tsx) — ese widget necesita el
-// PERMALINK real del reel, no una URL de `/embed`, así que esta función
-// pasó de "armar una URL de embed" a "validar y normalizar el permalink".
-export function normalizarInstagramReelUrl(url?: string): string | null {
-  if (!url?.trim()) return null
-  let parsed: URL
-  try {
-    parsed = new URL(url.trim())
-  } catch {
-    return null
-  }
-  const host = parsed.hostname.replace(/^www\./, "")
-  if (host !== "instagram.com") return null
-  const match = parsed.pathname.match(/^\/(?:reel|reels|p)\/([^/]+)/)
-  if (!match) return null
-  return `https://www.instagram.com/reel/${match[1]}/`
-}
+// Tipos válidos hoy — usado por `normalizarMultimedia()` para descartar
+// cualquier ítem con un `tipo` desconocido (defensivo: cubre el caso real
+// de una tarjeta que ya tenía ítems `tipo: "reels"` guardados de la feature
+// vieja, retirada por completo el 2026-08-15, ver CLAUDE.md — sin esto,
+// esos ítems viejos quedarían huérfanos en el render público en vez de
+// simplemente no mostrarse).
+const TIPOS_VALIDOS = new Set<MultimediaTipo>(["video", "galeria"])
 
 /** Migración en memoria (mismo criterio que `normalizarBotones()`,
  *  lib/boton-cta.ts): si `datosContacto.multimedia` ya existe (aunque sea
  *  `[]` — la tarjeta ya pasó por el editor nuevo, incluso si borró todo),
- *  se usa tal cual. Solo se sintetiza un ítem "video" desde el `videoUrl`
- *  legacy cuando `multimedia` es `undefined` (tarjeta nunca regrabada desde
- *  este cambio). ID determinístico (nunca `crypto.randomUUID()`, ver
+ *  se usa tal cual (filtrando tipos desconocidos, ver `TIPOS_VALIDOS`).
+ *  Solo se sintetiza un ítem "video" desde el `videoUrl` legacy cuando
+ *  `multimedia` es `undefined` (tarjeta nunca regrabada desde este
+ *  cambio). ID determinístico (nunca `crypto.randomUUID()`, ver
  *  CLAUDE.md) para no romper memoización entre renders. Nunca escribe. */
 export function normalizarMultimedia(datosContacto: DatosContacto): MultimediaItem[] {
-  if (datosContacto.multimedia) return datosContacto.multimedia
+  if (datosContacto.multimedia) {
+    return datosContacto.multimedia.filter((item) => TIPOS_VALIDOS.has(item.tipo))
+  }
   if (datosContacto.videoUrl?.trim()) {
     return [{ id: "migrado-video", tipo: "video", url: datosContacto.videoUrl }]
   }

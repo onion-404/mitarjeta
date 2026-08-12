@@ -12,11 +12,30 @@ export function validarImagen(file: File): string | null {
   return null
 }
 
+// Límite bien más alto que el de imágenes/PDF a propósito — un clip corto
+// de pocos segundos ya pesa varios MB. 30MB es un límite razonable (no un
+// número exigido por el cliente) para que la tarjeta pública siga cargando
+// rápido; ajustar si en la práctica queda corto.
+const TAMANO_MAXIMO_VIDEO_MB = 30
+const TAMANO_MAXIMO_VIDEO = TAMANO_MAXIMO_VIDEO_MB * 1024 * 1024
+
+/** Valida tipo y peso antes de aceptar un video (galería de "Contenido
+ *  multimedia"). */
+export function validarVideo(file: File): string | null {
+  if (!file.type.startsWith("video/")) {
+    return `"${file.name}" no es un video válido.`
+  }
+  if (file.size > TAMANO_MAXIMO_VIDEO) {
+    return `"${file.name}" pesa más de ${TAMANO_MAXIMO_VIDEO_MB}MB. Elige un video más liviano.`
+  }
+  return null
+}
+
 export async function subirImagenCloudinary(
   file: File,
   folder: string,
   signal?: AbortSignal,
-  resourceType: "image" | "raw" = "image"
+  resourceType: "image" | "video" | "raw" = "image"
 ): Promise<string | null> {
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
   if (!cloudName) return null
