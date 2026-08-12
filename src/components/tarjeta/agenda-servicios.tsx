@@ -252,7 +252,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
       precio: 0,
     })
     if (err) {
-      setError("No pudimos crear el servicio. Probá de nuevo.")
+      setError("No pudimos crear el servicio. Prueba de nuevo.")
       setServicios((prev) => prev.filter((s) => s.id !== id))
     }
   }
@@ -263,7 +263,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
 
   async function persistirServicio(id: string, cambios: Partial<ServicioAgendable>) {
     const { error: err } = await supabase.from("servicios_agendables").update(cambios).eq("id", id)
-    if (err) setError("No pudimos guardar el cambio. Probá de nuevo.")
+    if (err) setError("No pudimos guardar el cambio. Prueba de nuevo.")
   }
 
   async function borrarServicio(id: string) {
@@ -271,7 +271,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
     setServicios((prev) => prev.filter((s) => s.id !== id))
     const { error: err } = await supabase.from("servicios_agendables").delete().eq("id", id)
     if (err) {
-      setError("No pudimos borrar el servicio. Probá de nuevo.")
+      setError("No pudimos borrar el servicio. Prueba de nuevo.")
       setServicios(anterior)
     }
   }
@@ -296,7 +296,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
         .from("disponibilidad_semanal")
         .insert({ id, tarjeta_id: tarjetaId, dia_semana: dia, hora_inicio: "09:00", hora_fin: "18:00" })
       if (err) {
-        setError("No pudimos abrir ese día. Probá de nuevo.")
+        setError("No pudimos abrir ese día. Prueba de nuevo.")
         setSemanal((prev) => prev.filter((s) => s.id !== id))
       }
       return
@@ -306,7 +306,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
     setSemanal((prev) => prev.filter((s) => s.dia_semana !== dia))
     const { error: err } = await supabase.from("disponibilidad_semanal").delete().in("id", idsDelDia)
     if (err) {
-      setError("No pudimos cerrar ese día. Probá de nuevo.")
+      setError("No pudimos cerrar ese día. Prueba de nuevo.")
       setSemanal(anterior)
     }
   }
@@ -327,7 +327,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
       .from("disponibilidad_semanal")
       .insert({ id, tarjeta_id: tarjetaId, dia_semana: dia, hora_inicio: "09:00", hora_fin: "13:00" })
     if (err) {
-      setError("No pudimos agregar el rango. Probá de nuevo.")
+      setError("No pudimos agregar el rango. Prueba de nuevo.")
       setSemanal((prev) => prev.filter((s) => s.id !== id))
     }
   }
@@ -338,7 +338,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
 
   async function persistirRango(id: string, cambios: Partial<DisponibilidadSemanal>) {
     const { error: err } = await supabase.from("disponibilidad_semanal").update(cambios).eq("id", id)
-    if (err) setError("No pudimos guardar el horario. Probá de nuevo.")
+    if (err) setError("No pudimos guardar el horario. Prueba de nuevo.")
   }
 
   async function borrarRango(id: string) {
@@ -346,7 +346,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
     setSemanal((prev) => prev.filter((s) => s.id !== id))
     const { error: err } = await supabase.from("disponibilidad_semanal").delete().eq("id", id)
     if (err) {
-      setError("No pudimos borrar el rango. Probá de nuevo.")
+      setError("No pudimos borrar el rango. Prueba de nuevo.")
       setSemanal(anterior)
     }
   }
@@ -372,7 +372,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
 
     const { error: err } = await supabase.from("disponibilidad_excepciones").insert({ id, ...payload })
     if (err) {
-      setError("No pudimos crear la excepción. Probá de nuevo.")
+      setError("No pudimos crear la excepción. Prueba de nuevo.")
       setExcepciones((prev) => prev.filter((e) => e.id !== id))
     }
   }
@@ -386,7 +386,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
       .from("disponibilidad_excepciones")
       .update(cambios)
       .eq("id", id)
-    if (err) setError("No pudimos guardar la excepción. Probá de nuevo.")
+    if (err) setError("No pudimos guardar la excepción. Prueba de nuevo.")
   }
 
   async function borrarExcepcion(id: string) {
@@ -394,7 +394,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
     setExcepciones((prev) => prev.filter((e) => e.id !== id))
     const { error: err } = await supabase.from("disponibilidad_excepciones").delete().eq("id", id)
     if (err) {
-      setError("No pudimos borrar la excepción. Probá de nuevo.")
+      setError("No pudimos borrar la excepción. Prueba de nuevo.")
       setExcepciones(anterior)
     }
   }
@@ -405,7 +405,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
   if (!planId) {
     return (
       <p className="rounded-xl bg-amber-50 px-3 py-2.5 text-sm text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-        Necesitás un plan activo para usar la agenda de servicios. Suscribite a un plan
+        Necesitas un plan activo para usar la agenda de servicios. Suscríbete a un plan
         para habilitarla.
       </p>
     )
@@ -514,7 +514,7 @@ export function AgendaServicios({ tarjetaId, planId, onServiciosChange }: Agenda
                   <span>
                     Este servicio ({servicio.duracion_minutos} min) no entra en{" "}
                     {problemas.length === 1 ? "esta ventana" : "estas ventanas"}: {problemas.join(", ")}.
-                    Nunca vas a poder agendarlo ahí — agrandá el rango o subí la duración.
+                    Nunca vas a poder agendarlo ahí — agranda el rango o sube la duración.
                   </span>
                 </p>
               )

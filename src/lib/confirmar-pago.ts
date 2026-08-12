@@ -2,6 +2,7 @@ import "server-only"
 
 import { registrarEventoServidor } from "@/lib/eventos"
 import { verificarPago } from "@/lib/mercadopago"
+import { notificarNuevaCita } from "@/lib/notificaciones-agenda"
 import { getSupabaseAdmin } from "@/lib/supabase-admin"
 import type { EstadoPago } from "@/lib/types"
 
@@ -194,6 +195,9 @@ async function confirmarPagoCita(citaId: string, pago: PagoVerificado): Promise<
       tipoEvento: "agenda_completada",
       metadata: { servicio_id: cita.servicio_id, origen: "pago_confirmado" },
     })
+    // Recién acá se sabe que la cita con pago quedó de verdad confirmada —
+    // sin pago, el disparo equivalente vive en /api/citas/route.ts.
+    await notificarNuevaCita(citaId)
   }
 }
 

@@ -32,8 +32,8 @@ export function PlantillasGaleria({
   return (
     <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
       <p className="text-xs text-muted-foreground">
-        Elegí una plantilla como punto de partida y seguí personalizando, o empezá de cero.
-        Podés probar cualquiera aunque tenga algo bloqueado para tu plan — se aplica en la
+        Elige una plantilla como punto de partida y sigue personalizando, o empieza de cero.
+        Puedes probar cualquiera aunque tenga algo bloqueado para tu plan — se aplica en la
         vista previa igual, solo el guardado queda condicionado.
       </p>
 

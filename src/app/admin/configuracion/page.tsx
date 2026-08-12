@@ -95,7 +95,7 @@ export default function AdminConfiguracionPage() {
       <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-zinc-900">
         <h2 className="text-lg font-semibold text-foreground">Precios de planes</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Un cambio acá solo afecta a suscripciones nuevas — las ya activas conservan el
+          Un cambio aquí solo afecta a suscripciones nuevas — las ya activas conservan el
           precio con el que se crearon.
         </p>
         <div className="mt-4 flex flex-col gap-4">

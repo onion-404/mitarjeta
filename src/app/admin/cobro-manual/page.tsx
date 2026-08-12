@@ -28,7 +28,7 @@ export default function CobroManualPage() {
     const { data } = await supabase.auth.getSession()
     const accessToken = data.session?.access_token
     if (!accessToken) {
-      setError("Tu sesión expiró, volvé a iniciar sesión.")
+      setError("Tu sesión expiró, vuelve a iniciar sesión.")
       return
     }
 

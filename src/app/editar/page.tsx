@@ -41,7 +41,7 @@ export default function EditarTarjetasPage() {
       {session === null && (
         <div className="w-full max-w-sm text-left">
           <p className="mb-4 text-center text-sm text-muted-foreground">
-            Iniciá sesión con la cuenta que usaste al crear tu tarjeta.
+            Inicia sesión con la cuenta que usaste al crear tu tarjeta.
           </p>
           <AuthMethods redirectTo="/editar" />
         </div>
@@ -54,7 +54,7 @@ export default function EditarTarjetasPage() {
       {session && tarjetas && tarjetas.length === 0 && (
         <>
           <p className="text-sm text-muted-foreground">
-            Todavía no tenés ninguna tarjeta creada con esta cuenta.
+            Todavía no tienes ninguna tarjeta creada con esta cuenta.
           </p>
           <Link href="/crear" className={buttonVariants({ size: "lg" })}>
             Crear mi tarjeta

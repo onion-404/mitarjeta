@@ -22,7 +22,7 @@ function sumarDiasISO(fecha: string, dias: number): string {
 export async function GET(request: Request) {
   if (excedeLimite(`disponibilidad:${obtenerIpCliente(request)}`, LIMITE_DISPONIBILIDAD)) {
     return Response.json(
-      { error: "Demasiadas solicitudes. Esperá un momento y volvé a intentar." },
+      { error: "Demasiadas solicitudes. Espera un momento e intenta de nuevo." },
       { status: 429 }
     )
   }

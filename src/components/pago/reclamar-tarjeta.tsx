@@ -46,7 +46,7 @@ export function ReclamarTarjeta() {
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-2">
       <p className="text-center text-sm text-muted-foreground">
-        Iniciá sesión para proteger el acceso de edición a tu tarjeta.
+        Inicia sesión para proteger el acceso de edición a tu tarjeta.
       </p>
       <AuthMethods redirectTo={pathname} />
     </div>

@@ -36,7 +36,7 @@ export function AuthMethods({ redirectTo }: AuthMethodsProps) {
   async function handleEmailSubmit(event: React.SubmitEvent) {
     event.preventDefault()
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput)) {
-      setError("Ingresá un correo válido.")
+      setError("Ingresa un correo válido.")
       return
     }
 

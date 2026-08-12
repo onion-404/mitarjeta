@@ -29,12 +29,12 @@ function calcularFechaRenovacion(fechaPago: Date, periodicidad: PeriodicidadSusc
 export async function POST(request: Request) {
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
   if (!token) {
-    return Response.json({ error: "Iniciá sesión para continuar." }, { status: 401 })
+    return Response.json({ error: "Inicia sesión para continuar." }, { status: 401 })
   }
 
   const { data: userData, error: userErr } = await supabase.auth.getUser(token)
   if (userErr || userData.user?.email !== ADMIN_EMAIL) {
-    return Response.json({ error: "No tenés permiso para hacer esto." }, { status: 403 })
+    return Response.json({ error: "No tienes permiso para hacer esto." }, { status: 403 })
   }
 
   const body = (await request.json().catch(() => null)) as BodyActivarManual | null
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error:
-          "Esta tarjeta ya tiene una suscripción activa. Cancelala primero si querés reemplazarla.",
+          "Esta tarjeta ya tiene una suscripción activa. Cancélala primero si quieres reemplazarla.",
       },
       { status: 409 }
     )

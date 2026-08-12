@@ -155,9 +155,10 @@ export const DIVISORES_BANNER: DivisorBannerMeta[] = [
 // "basica" (requieren personalizacion_libre, igual que las formas básicas de
 // avatar) — "moderna" nunca muestra candado en la práctica porque es el
 // default de cualquier tarjeta nueva (nunca difiere de lo guardado). Las 2
-// últimas ("display"/"manuscrita") son tier "avanzada" (Poder exclusivo) —
-// fuentes de mucho carácter, pensadas como upsell, no defaults razonables
-// para cualquier tarjeta. Fuentes cargadas vía next/font/google en
+// últimas ("display"/"manuscrita") son tier "avanzada" (cualquier plan
+// activo desde 2026-08-11) — fuentes de mucho carácter, pensadas como
+// upsell frente a una tarjeta sin plan, no defaults razonables para
+// cualquier tarjeta. Fuentes cargadas vía next/font/google en
 // layout.tsx, expuestas como CSS var — "mono" reusa el estilo "mono sans"
 // pedido explícitamente (Space Mono), sin chocar con --font-geist-mono
 // (fuente de UI del propio producto, sin relación).
@@ -299,15 +300,21 @@ export interface PlanFeaturesPersonalizacion {
 }
 
 export interface Bloqueo {
-  plan: "alcance" | "poder"
+  plan: "connect" | "growth"
 }
 
 function featureDeTier(tier: TierPersonalizacion): "personalizacion_libre" | "personalizacion_avanzada" {
   return tier === "basica" ? "personalizacion_libre" : "personalizacion_avanzada"
 }
 
-function planDeTier(tier: TierPersonalizacion): "alcance" | "poder" {
-  return tier === "basica" ? "alcance" : "poder"
+// Connect y Growth otorgan personalizacion_libre/avanzada por igual desde
+// 2026-08-11 (la única diferencia real entre planes es métricas) — este
+// mapeo queda solo como fallback de copy para el caso en que ninguno de los
+// dos features esté activo todavía (tarjeta sin plan): "basica" apunta al
+// plan de entrada (Connect), "avanzada" al de arriba (Growth), aunque
+// cualquiera de los dos alcanza en la práctica.
+function planDeTier(tier: TierPersonalizacion): "connect" | "growth" {
+  return tier === "basica" ? "connect" : "growth"
 }
 
 export function estaBloqueada(
@@ -442,10 +449,10 @@ export function calcularBloqueos(
 }
 
 /** El bloqueo más restrictivo entre una lista — para decidir qué candado
- *  (Alcance o Poder) mostrar en una card de plantilla que tiene varios
+ *  (Connect o Growth) mostrar en una card de plantilla que tiene varios
  *  ingredientes bloqueados a la vez. */
 export function bloqueoMasRestrictivo(bloqueos: BloqueoCampo[]): Bloqueo | null {
-  if (bloqueos.some((b) => b.plan === "poder")) return { plan: "poder" }
-  if (bloqueos.some((b) => b.plan === "alcance")) return { plan: "alcance" }
+  if (bloqueos.some((b) => b.plan === "growth")) return { plan: "growth" }
+  if (bloqueos.some((b) => b.plan === "connect")) return { plan: "connect" }
   return null
 }

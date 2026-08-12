@@ -146,7 +146,7 @@ export function AccionesTarjeta({ slug, titulo, datosContacto, className }: Acci
             </Dialog.Close>
             <Dialog.Title className="sr-only">Escaneá para ver la tarjeta</Dialog.Title>
             <Dialog.Description className="sr-only">
-              Apuntá la cámara del celular al código.
+              Apunta la cámara del celular al código.
             </Dialog.Description>
             <TarjetaQr slug={slug} variant="inline" />
           </Dialog.Popup>

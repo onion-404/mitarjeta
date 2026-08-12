@@ -219,6 +219,11 @@ export function EstadisticasTarjeta({ tarjetaId, planId }: EstadisticasTarjetaPr
     }
   }, [planId])
 
+  // Desde la migración de 2 planes (2026-08-11): Connect no incluye
+  // estadísticas en absoluto (ni los tiles básicos), Growth las incluye
+  // completas — `metricas_activas` es el gate de entrada a toda la sección;
+  // los 3 flags de abajo solo importan una vez que ya se pasó ese gate.
+  const tieneMetricas = Boolean(plan?.features?.metricas_activas)
   const tieneDesglose = Boolean(plan?.features?.metricas_desglose)
   const tieneRangoCustom = Boolean(plan?.features?.metricas_rango_custom)
   const tieneExportacion = Boolean(plan?.features?.metricas_exportacion)
@@ -231,7 +236,7 @@ export function EstadisticasTarjeta({ tarjetaId, planId }: EstadisticasTarjetaPr
   React.useEffect(() => {
     let cancelado = false
     async function cargarDatos() {
-      if (!planId) {
+      if (!planId || !tieneMetricas) {
         if (!cancelado) setCargandoDatos(false)
         return
       }
@@ -254,7 +259,7 @@ export function EstadisticasTarjeta({ tarjetaId, planId }: EstadisticasTarjetaPr
     return () => {
       cancelado = true
     }
-  }, [tarjetaId, planId, desde, hasta, tieneDesglose])
+  }, [tarjetaId, planId, desde, hasta, tieneMetricas, tieneDesglose])
 
   const serieCompleta = React.useMemo(
     () => rellenarSerie(serie, desde, hasta),
@@ -327,8 +332,22 @@ export function EstadisticasTarjeta({ tarjetaId, planId }: EstadisticasTarjetaPr
   if (!planId) {
     return (
       <p className="rounded-xl bg-amber-50 px-3 py-2.5 text-sm text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-        Necesitás un plan activo para ver las estadísticas de tu tarjeta. Suscribite a un
+        Necesitas un plan activo para ver las estadísticas de tu tarjeta. Suscríbete a un
         plan para habilitarlas.
+      </p>
+    )
+  }
+
+  // Con plan pero sin metricas_activas (plan Connect): a diferencia de
+  // Agenda, esto no es "sin plan" — el plan existe y funciona, solo no
+  // incluye estadísticas. Mismo criterio de bloquear la sección entera, sin
+  // mostrar ni los tiles básicos (decisión explícita: Growth es el único
+  // plan con estadísticas, Connect no tiene ninguna).
+  if (!tieneMetricas) {
+    return (
+      <p className="rounded-xl bg-amber-50 px-3 py-2.5 text-sm text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+        Tu plan actual no incluye estadísticas. Pasate al plan Growth para ver vistas,
+        clicks, agendamientos, productos con más interés y más.
       </p>
     )
   }
@@ -657,10 +676,13 @@ export function EstadisticasTarjeta({ tarjetaId, planId }: EstadisticasTarjetaPr
               </div>
             </div>
           ) : (
+            // En la práctica inalcanzable hoy (metricas_desglose siempre
+            // acompaña a metricas_activas en Growth, el único plan que pasa
+            // el gate de arriba) — se deja como fallback defensivo si algún
+            // día un plan separa ambos flags.
             <p className="rounded-xl bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
-              El plan Presencia muestra totales. Pasate a Alcance o Poder para ver el
-              desglose por enlace, servicios más agendados, productos con más interés y
-              visitantes únicos vs. recurrentes.
+              Tu plan no incluye el desglose por enlace, servicios más agendados, productos
+              con más interés y visitantes únicos vs. recurrentes.
             </p>
           )}
         </>

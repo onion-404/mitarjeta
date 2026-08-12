@@ -38,14 +38,14 @@ const MONTO_MINIMO_MXN = 10
 export async function POST(request: Request) {
   if (excedeLimite(`stripe-checkout:${obtenerIpCliente(request)}`, LIMITE_SUSCRIPCIONES)) {
     return Response.json(
-      { error: "Demasiadas solicitudes. Esperá un momento y volvé a intentar." },
+      { error: "Demasiadas solicitudes. Espera un momento e intenta de nuevo." },
       { status: 429 }
     )
   }
 
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
   if (!token) {
-    return Response.json({ error: "Iniciá sesión para continuar." }, { status: 401 })
+    return Response.json({ error: "Inicia sesión para continuar." }, { status: 401 })
   }
 
   const { data: userData, error: userErr } = await supabase.auth.getUser(token)
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       )
     }
     return Response.json(
-      { error: "No encontramos esa tarjeta o no tenés permiso para suscribirla." },
+      { error: "No encontramos esa tarjeta o no tienes permiso para suscribirla." },
       { status: 403 }
     )
   }
@@ -151,7 +151,7 @@ export async function POST(request: Request) {
   if (precioFinal > 0 && precioFinal < MONTO_MINIMO_MXN) {
     return Response.json(
       {
-        error: `El descuento deja el precio en $${precioFinal.toLocaleString("es-MX")} MXN, por debajo del mínimo de $${MONTO_MINIMO_MXN} MXN que acepta Stripe. Probá con un cupón de menor porcentaje.`,
+        error: `El descuento deja el precio en $${precioFinal.toLocaleString("es-MX")} MXN, por debajo del mínimo de $${MONTO_MINIMO_MXN} MXN que acepta Stripe. Prueba con un cupón de menor porcentaje.`,
       },
       { status: 400 }
     )
@@ -224,7 +224,7 @@ export async function POST(request: Request) {
       )
     }
     return Response.json(
-      { error: "No pudimos crear la suscripción. Probá de nuevo." },
+      { error: "No pudimos crear la suscripción. Prueba de nuevo." },
       { status: 500 }
     )
   }

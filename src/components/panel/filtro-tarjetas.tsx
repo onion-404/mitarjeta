@@ -30,7 +30,7 @@ const selectClase =
 
 interface FiltroTarjetasProps {
   tarjetas: TarjetaConPlan[]
-  /** Filtro de plan específico (Presencia/Alcance/Poder) — solo tiene
+  /** Filtro de plan específico (Connect/Growth) — solo tiene
    *  sentido en el admin, donde hay tarjetas de todos los planes a la vez.
    *  En /mi-cuenta/tarjetas queda oculto (un usuario ve pocas tarjetas, no
    *  necesita ese nivel de filtro). */

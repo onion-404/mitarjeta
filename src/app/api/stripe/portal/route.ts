@@ -18,14 +18,14 @@ interface BodyPortal {
 export async function POST(request: Request) {
   if (excedeLimite(`stripe-portal:${obtenerIpCliente(request)}`, LIMITE_PORTAL)) {
     return Response.json(
-      { error: "Demasiadas solicitudes. Esperá un momento y volvé a intentar." },
+      { error: "Demasiadas solicitudes. Espera un momento e intenta de nuevo." },
       { status: 429 }
     )
   }
 
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
   if (!token) {
-    return Response.json({ error: "Iniciá sesión para continuar." }, { status: 401 })
+    return Response.json({ error: "Inicia sesión para continuar." }, { status: 401 })
   }
 
   const { data: userData, error: userErr } = await supabase.auth.getUser(token)
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
 
   if (!tarjeta || tarjeta.user_id !== userId) {
     return Response.json(
-      { error: "No encontramos esa tarjeta o no tenés permiso sobre ella." },
+      { error: "No encontramos esa tarjeta o no tienes permiso sobre ella." },
       { status: 403 }
     )
   }
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
 
   if (!portalUrl) {
     return Response.json(
-      { error: "No pudimos abrir el portal de pago. Probá de nuevo en un momento." },
+      { error: "No pudimos abrir el portal de pago. Prueba de nuevo en un momento." },
       { status: 502 }
     )
   }

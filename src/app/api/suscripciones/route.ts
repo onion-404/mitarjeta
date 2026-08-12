@@ -24,14 +24,14 @@ const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export async function POST(request: Request) {
   if (excedeLimite(`suscripciones:${obtenerIpCliente(request)}`, LIMITE_SUSCRIPCIONES)) {
     return Response.json(
-      { error: "Demasiadas solicitudes. Esperá un momento y volvé a intentar." },
+      { error: "Demasiadas solicitudes. Espera un momento e intenta de nuevo." },
       { status: 429 }
     )
   }
 
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
   if (!token) {
-    return Response.json({ error: "Iniciá sesión para continuar." }, { status: 401 })
+    return Response.json({ error: "Inicia sesión para continuar." }, { status: 401 })
   }
 
   const { data: userData, error: userErr } = await supabase.auth.getUser(token)
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   // e-mail no coincide con el de la suscripción" cuando difieren).
   if (!payerEmail || !REGEX_EMAIL.test(payerEmail)) {
     return Response.json(
-      { error: "Ingresá un correo válido para tu suscripción." },
+      { error: "Ingresa un correo válido para tu suscripción." },
       { status: 400 }
     )
   }
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
       )
     }
     return Response.json(
-      { error: "No encontramos esa tarjeta o no tenés permiso para suscribirla." },
+      { error: "No encontramos esa tarjeta o no tienes permiso para suscribirla." },
       { status: 403 }
     )
   }
@@ -167,7 +167,7 @@ export async function POST(request: Request) {
       )
     }
     return Response.json(
-      { error: "No pudimos crear la suscripción. Probá de nuevo." },
+      { error: "No pudimos crear la suscripción. Prueba de nuevo." },
       { status: 500 }
     )
   }

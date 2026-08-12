@@ -75,7 +75,7 @@ export default function EditarTarjetaPage({ params }: EditarTarjetaPageProps) {
     contenido = (
       <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-4 px-4 py-16 text-center">
         <p className="text-sm text-muted-foreground">
-          Iniciá sesión para editar esta tarjeta.
+          Inicia sesión para editar esta tarjeta.
         </p>
         <AuthMethods redirectTo={`/editar/${id}`} />
       </div>
@@ -84,7 +84,7 @@ export default function EditarTarjetaPage({ params }: EditarTarjetaPageProps) {
     contenido = (
       <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 px-4 py-16 text-center">
         <p className="text-sm text-muted-foreground">
-          No encontramos esa tarjeta o no tenés permiso para editarla.
+          No encontramos esa tarjeta o no tienes permiso para editarla.
         </p>
         <Link href="/editar" className="text-sm underline underline-offset-2">
           Volver a mis tarjetas

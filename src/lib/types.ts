@@ -34,10 +34,12 @@ export type AvatarForma =
   | "blob"
   | "corazon"
   | "estrella"
-// 9 estilos (2026-08-01, ampliado desde los 3 originales) — 7 disponibles
-// con personalizacion_libre (Alcance+), 2 exclusivos de personalizacion_avanzada
-// (Poder): "display" y "manuscrita". Ver ESTILOS_TIPOGRAFIA en
-// lib/personalizacion.ts para el tier y la fuente de cada uno.
+// 9 estilos (2026-08-01, ampliado desde los 3 originales) — 7 disponibles con
+// personalizacion_libre, 2 con personalizacion_avanzada ("display" y
+// "manuscrita"). Desde 2026-08-11 ambos planes reales (Connect/Growth)
+// otorgan las dos features por igual, así que en la práctica cualquier plan
+// activo desbloquea las 9 — el tier queda solo como mecanismo de gating
+// genérico (ver ESTILOS_TIPOGRAFIA en lib/personalizacion.ts).
 export type EstiloTipografia =
   | "moderna"
   | "elegante"
@@ -67,8 +69,9 @@ export interface Producto {
 /** Una sección de "Servicios" — mismos 5 campos por ítem que Producto (se
  *  reusa el tipo). Reemplaza al modelo viejo (Servicio[] + descripcionServicios
  *  + identidad_visual.tituloServicios, una sola lista sin precio/imagen/
- *  enlace). Tope de secciones por tarjeta: 1/2/3 según
- *  planes.features.secciones_servicios_max (presencia/alcance/poder). */
+ *  enlace). Tope de secciones por tarjeta según
+ *  planes.features.secciones_servicios_max (mismo tope en Connect y Growth
+ *  desde 2026-08-11). */
 export interface SeccionServicios {
   titulo: string
   items: Producto[]
@@ -152,10 +155,10 @@ export interface BotonWhatsapp extends BotonBase {
 }
 
 /** Archivo descargable (reemplaza al folleto PDF suelto que colgaba de la
- *  sección [0] de Servicios) — exclusivo del plan Poder (gating vía
- *  `planes.features.personalizacion_avanzada`, reusa el flag que ya existe
- *  en vez de sumar uno nuevo). Solo PDF, mismo criterio que `validarPdf`
- *  ya usaba para el folleto. */
+ *  sección [0] de Servicios) — gating vía `planes.features.
+ *  personalizacion_avanzada` (reusa el flag que ya existe en vez de sumar
+ *  uno nuevo; disponible en cualquier plan activo desde 2026-08-11). Solo
+ *  PDF, mismo criterio que `validarPdf` ya usaba para el folleto. */
 export interface BotonArchivo extends BotonBase {
   tipo: "archivo"
   archivoUrl: string
@@ -420,7 +423,7 @@ export interface IdentidadVisual {
    *  diferencia del avatar, esta imagen NO se recorta a ninguna forma, se
    *  muestra con su proporción natural (ancho libre, alto fijo) "como si
    *  fuera texto". `undefined`/`"texto"` = comportamiento de siempre.
-   *  Gating: personalizacion_avanzada (Poder exclusivo). */
+   *  Gating: personalizacion_avanzada (cualquier plan activo). */
   tituloModo?: "texto" | "imagen"
   tituloImagenUrl?: string
   /** Alto del logo en px — rango sugerido en el editor 24-80, default 32. */
@@ -607,7 +610,7 @@ export interface Testimonio {
   created_at: string
 }
 
-export type PlanSlug = "presencia" | "alcance" | "poder"
+export type PlanSlug = "connect" | "growth"
 
 export interface Plan {
   id: string

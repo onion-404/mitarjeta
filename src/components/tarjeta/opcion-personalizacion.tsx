@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 
 interface OpcionPersonalizacionProps {
   seleccionada: boolean
-  bloqueada?: { plan: "alcance" | "poder" } | null
+  bloqueada?: { plan: "connect" | "growth" } | null
   etiqueta: string
   onClick: () => void
   children: ReactNode

@@ -51,7 +51,7 @@ export default function MiCuentaLayout({ children }: { children: React.ReactNode
       {session === null && (
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 px-4 py-16 text-center">
           <h1 className="text-2xl font-semibold text-foreground">Mi cuenta</h1>
-          <p className="text-sm text-muted-foreground">Iniciá sesión para ver tu cuenta.</p>
+          <p className="text-sm text-muted-foreground">Inicia sesión para ver tu cuenta.</p>
           <div className="w-full text-left">
             <AuthMethods redirectTo="/mi-cuenta" />
           </div>

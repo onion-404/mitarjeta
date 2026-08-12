@@ -91,7 +91,7 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
 
     const costo = Number(costoManual)
     if (!planIdManual) {
-      setMensaje({ tipo: "error", texto: "Elegí un plan." })
+      setMensaje({ tipo: "error", texto: "Elige un plan." })
       return
     }
     if (!costoManual || !Number.isFinite(costo) || costo < 0) {
@@ -99,7 +99,7 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
       return
     }
     if (!fechaPagoManual) {
-      setMensaje({ tipo: "error", texto: "Elegí la fecha de pago." })
+      setMensaje({ tipo: "error", texto: "Elige la fecha de pago." })
       return
     }
 
@@ -135,7 +135,7 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
     setMensaje(null)
 
     if (!emailReasignar.trim()) {
-      setMensaje({ tipo: "error", texto: "Ingresá el email de la cuenta destino." })
+      setMensaje({ tipo: "error", texto: "Ingresa el email de la cuenta destino." })
       return
     }
     if (
@@ -240,7 +240,7 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
           {tieneSuscripcionActivaNoPendiente ? (
             <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
               Esta tarjeta ya tiene una suscripción {suscripcion?.estado} (
-              {suscripcion?.proveedor}). Cancelala primero si querés reemplazarla por una manual.
+              {suscripcion?.proveedor}). Cancélala primero si quieres reemplazarla por una manual.
             </p>
           ) : (
             <form onSubmit={handleActivarManual} className="mt-4 flex flex-col gap-3">
@@ -251,7 +251,7 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
                   onChange={(e) => setPlanIdManual(e.target.value)}
                   className={inputClase}
                 >
-                  <option value="">Elegí un plan</option>
+                  <option value="">Elige un plan</option>
                   {planesActivos.map((plan) => (
                     <option key={plan.id} value={plan.id}>
                       {plan.nombre_display}

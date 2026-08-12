@@ -3,23 +3,23 @@ import { Zap } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface CandadoPlanProps {
-  plan: "alcance" | "poder"
+  plan: "connect" | "growth"
   className?: string
 }
 
 const ETIQUETA: Record<CandadoPlanProps["plan"], string> = {
-  alcance: "Alcance",
-  poder: "Poder",
+  connect: "Connect",
+  growth: "Growth",
 }
 
-// Ámbar para "Alcance", violeta para "Poder" — distingue visualmente los 2
+// Ámbar para "Connect", violeta para "Growth" — distingue visualmente los 2
 // niveles de upsell en vez de un candado genérico igual para todo. A
 // propósito NO atenúa ni deshabilita lo que envuelve: la opción sigue
 // completamente clickeable y se ve con toda su fidelidad visual (se puede
 // probar en vivo, ver CLAUDE.md) — el badge es la única señal de bloqueo.
 const CLASE_PLAN: Record<CandadoPlanProps["plan"], string> = {
-  alcance: "bg-amber-500 text-white",
-  poder: "bg-violet-600 text-white",
+  connect: "bg-amber-500 text-white",
+  growth: "bg-violet-600 text-white",
 }
 
 export function CandadoPlan({ plan, className }: CandadoPlanProps) {

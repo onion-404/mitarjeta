@@ -19,11 +19,11 @@ export default async function PlanesPage({ searchParams }: PlanesPageProps) {
       <HeaderGlobal />
       <div className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col items-center gap-3 px-4 py-16 sm:px-6">
         <h1 className="text-center text-3xl font-semibold text-balance text-foreground sm:text-4xl">
-          Elegí el plan para tu tarjeta
+          Elige el plan para tu Linkard
         </h1>
         <p className="max-w-lg text-center text-muted-foreground">
-          Cada tarjeta tiene su propio plan y su propia suscripción — podés elegir uno
-          distinto para cada una.
+          Cada Linkard tiene su propio plan y su propia suscripción — puedes elegir uno
+          distinto para cada uno.
         </p>
         {cupon && (
           <p className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">

@@ -28,7 +28,7 @@ function ContenidoQr({ url }: { url: string }) {
   return (
     <div className="flex flex-col items-center text-center">
       <p className="text-base font-semibold text-foreground">Escaneá para ver la tarjeta</p>
-      <p className="mt-1 text-sm text-muted-foreground">Apuntá la cámara del celular al código.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Apunta la cámara del celular al código.</p>
       <div className="mt-4 flex items-center justify-center">
         {dataUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- data URL generada en el cliente
@@ -80,7 +80,7 @@ export function TarjetaQr({ slug, variant = "flotante", className }: TarjetaQrPr
 
           <Dialog.Title className="sr-only">Escaneá para ver la tarjeta</Dialog.Title>
           <Dialog.Description className="sr-only">
-            Apuntá la cámara del celular al código.
+            Apunta la cámara del celular al código.
           </Dialog.Description>
 
           <ContenidoQr url={url} />

@@ -160,18 +160,33 @@ export default function MiCuentaEstadisticasPage() {
     [planes]
   )
 
-  const todasLasTarjetaIds = React.useMemo(() => (tarjetas ?? []).map((t) => t.id), [tarjetas])
-
-  const tarjetasConDesglose = React.useMemo(
+  // Desde la migración de 2 planes (2026-08-11): Connect no incluye
+  // estadísticas en absoluto, Growth las incluye completas —
+  // `metricas_activas` es el gate de entrada; una tarjeta que no lo cumple
+  // no suma NADA acá (ni siquiera a los totales agregados), a diferencia
+  // del modelo anterior donde toda tarjeta con plan sumaba totales básicos.
+  const tarjetasConMetricas = React.useMemo(
     () =>
       (tarjetas ?? []).filter(
-        (t) => t.plan_id && Boolean(planesPorId.get(t.plan_id)?.features?.metricas_desglose)
+        (t) => t.plan_id && Boolean(planesPorId.get(t.plan_id)?.features?.metricas_activas)
       ),
     [tarjetas, planesPorId]
   )
+  const tarjetaIdsConMetricas = React.useMemo(
+    () => tarjetasConMetricas.map((t) => t.id),
+    [tarjetasConMetricas]
+  )
+
+  // Subconjunto con desglose (top enlaces/servicios/productos, únicos vs.
+  // recurrentes) — hoy coincide 1:1 con tarjetaIdsConMetricas (Growth otorga
+  // ambos flags juntos), pero se calcula aparte por si algún día un plan
+  // separa "tiene estadísticas" de "tiene desglose".
   const tarjetaIdsConDesglose = React.useMemo(
-    () => tarjetasConDesglose.map((t) => t.id),
-    [tarjetasConDesglose]
+    () =>
+      tarjetasConMetricas
+        .filter((t) => Boolean(planesPorId.get(t.plan_id!)?.features?.metricas_desglose))
+        .map((t) => t.id),
+    [tarjetasConMetricas, planesPorId]
   )
 
   const { desde, hasta } = React.useMemo(() => calcularRango(periodo), [periodo])
@@ -182,8 +197,8 @@ export default function MiCuentaEstadisticasPage() {
     async function cargarDatos() {
       setCargandoDatos(true)
       const [totalesActuales, serieDiaria, detalle] = await Promise.all([
-        getTotalesPorPeriodoUsuario(todasLasTarjetaIds, desde, hasta),
-        getSerieDiariaUsuario(todasLasTarjetaIds, desde, hasta),
+        getTotalesPorPeriodoUsuario(tarjetaIdsConMetricas, desde, hasta),
+        getSerieDiariaUsuario(tarjetaIdsConMetricas, desde, hasta),
         getEventosDetalleUsuario(tarjetaIdsConDesglose, desde, hasta),
       ])
       if (cancelado) return
@@ -196,7 +211,7 @@ export default function MiCuentaEstadisticasPage() {
     return () => {
       cancelado = true
     }
-  }, [tarjetas, todasLasTarjetaIds, tarjetaIdsConDesglose, desde, hasta])
+  }, [tarjetas, tarjetaIdsConMetricas, tarjetaIdsConDesglose, desde, hasta])
 
   const serieCompleta = React.useMemo(
     () => rellenarSerie(serie, desde, hasta),
@@ -273,7 +288,25 @@ export default function MiCuentaEstadisticasPage() {
       <div>
         <h1 className="text-2xl font-semibold text-foreground">Estadísticas</h1>
         <p className="mt-4 rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-          Todavía no tenés ninguna tarjeta para mostrar estadísticas.
+          Todavía no tienes ninguna tarjeta para mostrar estadísticas.
+        </p>
+      </div>
+    )
+  }
+
+  // Ninguna tarjeta en un plan con estadísticas (todas en Connect, o sin
+  // plan) — bloqueo total, mismo criterio que EstadisticasTarjeta (la
+  // versión por tarjeta dentro del editor): no se muestra ni un tile en
+  // cero, evita la falsa impresión de "no hay actividad" cuando en
+  // realidad el plan no incluye la función.
+  if (tarjetaIdsConMetricas.length === 0) {
+    return (
+      <div>
+        <h1 className="text-2xl font-semibold text-foreground">Estadísticas</h1>
+        <p className="mt-4 rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          Ninguna de tus tarjetas está en el plan Growth todavía. Pasate a Growth en la
+          tarjeta que quieras medir para ver vistas, clicks, agendamientos, productos con
+          más interés y visitantes únicos vs. recurrentes.
         </p>
       </div>
     )
@@ -291,7 +324,9 @@ export default function MiCuentaEstadisticasPage() {
       <div>
         <h1 className="text-2xl font-semibold text-foreground">Estadísticas</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Vista agregada de tus {tarjetas.length} tarjeta{tarjetas.length === 1 ? "" : "s"}.
+          {tarjetaIdsConMetricas.length === tarjetas.length
+            ? `Vista agregada de tus ${tarjetas.length} tarjeta${tarjetas.length === 1 ? "" : "s"}.`
+            : `Vista agregada de ${tarjetaIdsConMetricas.length} de tus ${tarjetas.length} tarjetas — las que están en el plan Growth.`}
         </p>
       </div>
 
@@ -392,11 +427,15 @@ export default function MiCuentaEstadisticasPage() {
 
           {tarjetaIdsConDesglose.length > 0 ? (
             <>
-              {tarjetaIdsConDesglose.length < tarjetas.length && (
+              {/* Nota separada de la del header: esta compara contra las
+                  tarjetas CON métricas, no contra el total — hoy siempre
+                  coinciden (Growth otorga desglose junto con metricas_activas)
+                  pero se deja el chequeo por si algún plan futuro los separa. */}
+              {tarjetaIdsConDesglose.length < tarjetaIdsConMetricas.length && (
                 <p className="rounded-xl bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
                   Desglose disponible para {tarjetaIdsConDesglose.length} de tus{" "}
-                  {tarjetas.length} tarjetas — las que están en un plan con esa función.
-                  Las demás solo suman en los totales de arriba.
+                  {tarjetaIdsConMetricas.length} tarjetas con estadísticas. Las demás solo
+                  suman en los totales de arriba.
                 </p>
               )}
               <div className="grid gap-4 lg:grid-cols-2">
@@ -463,11 +502,12 @@ export default function MiCuentaEstadisticasPage() {
               </div>
             </>
           ) : (
+            // Inalcanzable hoy (ver comentario sobre tarjetaIdsConDesglose más
+            // arriba: si llegamos hasta acá ya hay al menos una tarjeta con
+            // metricas_activas, y Growth otorga desglose junto con ese flag).
             <p className="rounded-xl bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
-              Ninguna de tus tarjetas está en un plan con desglose (Alcance o Poder)
-              todavía. Pasate a uno de esos planes para ver enlaces más clickeados,
-              servicios más agendados, productos con más interés y visitantes únicos vs.
-              recurrentes.
+              Tus tarjetas con estadísticas no incluyen desglose por enlace, servicios más
+              agendados, productos con más interés ni visitantes únicos vs. recurrentes.
             </p>
           )}
         </>

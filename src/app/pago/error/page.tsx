@@ -19,10 +19,10 @@ export default async function PagoErrorPage({ searchParams }: PagoErrorPageProps
   const titulo = tipo === "cita" ? "No pudimos procesar el pago de tu cita" : "No pudimos procesar tu pago"
   const descripcion =
     tipo === "cita"
-      ? "El horario quedó liberado. Podés volver a agendar cuando quieras."
+      ? "El horario quedó liberado. Puedes volver a agendar cuando quieras."
       : tipo === "cobro_manual"
-        ? "Podés pedir que te compartan el link de pago de nuevo."
-        : "Tu tarjeta quedó guardada, pero sin activar. Podés intentar de nuevo con otro medio de pago desde el editor."
+        ? "Puedes pedir que te compartan el link de pago de nuevo."
+        : "Tu tarjeta quedó guardada, pero sin activar. Puedes intentar de nuevo con otro medio de pago desde el editor."
 
   return (
     <div className="relative flex w-full flex-1 flex-col items-center justify-center gap-6 overflow-hidden bg-zinc-50 px-4 py-16 text-center dark:bg-black">

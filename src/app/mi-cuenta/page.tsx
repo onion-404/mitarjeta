@@ -87,7 +87,7 @@ export default function MiCuentaPage() {
 
         {tarjetas.length === 0 ? (
           <p className="mt-4 rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            Todavía no tenés ninguna tarjeta creada con esta cuenta.
+            Todavía no tienes ninguna tarjeta creada con esta cuenta.
           </p>
         ) : (
           <div className="mt-4 flex flex-col gap-2.5">

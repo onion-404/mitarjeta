@@ -8,7 +8,7 @@ const LIMITE_CHECKOUT = { maximo: 10, ventanaMs: 60_000 }
 export async function POST(request: Request) {
   if (excedeLimite(`checkout:${obtenerIpCliente(request)}`, LIMITE_CHECKOUT)) {
     return Response.json(
-      { error: "Demasiadas solicitudes. Esperá un momento y volvé a intentar." },
+      { error: "Demasiadas solicitudes. Espera un momento e intenta de nuevo." },
       { status: 429 }
     )
   }

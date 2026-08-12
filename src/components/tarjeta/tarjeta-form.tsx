@@ -297,7 +297,7 @@ interface OpcionTipoBoton {
   /** Plan que desbloquea esta opción — solo se muestra el candado si
    *  `!disponible`. Ausente = sin restricción de plan (enlace/whatsapp/
    *  opciones). */
-  plan?: "alcance" | "poder"
+  plan?: "connect" | "growth"
 }
 
 /** Fila de pills para elegir el tipo al agregar un botón — reusada tanto
@@ -371,7 +371,7 @@ function validarPdf(file: File): string | null {
     return `"${file.name}" debe ser un PDF.`
   }
   if (file.size > TAMANO_MAXIMO_ARCHIVO) {
-    return `"${file.name}" pesa más de ${TAMANO_MAXIMO_ARCHIVO_MB}MB. Elegí un PDF más liviano.`
+    return `"${file.name}" pesa más de ${TAMANO_MAXIMO_ARCHIVO_MB}MB. Elige un PDF más liviano.`
   }
   return null
 }
@@ -385,9 +385,9 @@ function validarPdf(file: File): string | null {
  *  valida esto antes de intentar guardar (ver slugLimiteAlcanzado). */
 function mensajeErrorGuardadoSlug(error: { message?: string } | null): string {
   if (error?.message?.includes("limite_cambio_slug_alcanzado")) {
-    return "Alcanzaste el límite de 2 cambios de enlace cada 14 días. Probá de nuevo más tarde."
+    return "Alcanzaste el límite de 2 cambios de enlace cada 14 días. Prueba de nuevo más tarde."
   }
-  return "No pudimos guardar los cambios. Probá de nuevo en unos segundos."
+  return "No pudimos guardar los cambios. Prueba de nuevo en unos segundos."
 }
 
 interface TarjetaFormProps {
@@ -502,8 +502,9 @@ export function TarjetaForm({
   const [colorTitulo, setColorTitulo] = React.useState(visualInicial?.colorTitulo ?? "")
   const [tituloTamano, setTituloTamano] = React.useState(visualInicial?.tituloTamano ?? 20)
   const [tituloPeso, setTituloPeso] = React.useState(visualInicial?.tituloPeso ?? 600)
-  // Título como logo (Poder exclusivo) — reemplaza el <h1> de texto por una
-  // imagen, sin recorte a ninguna forma (a diferencia del avatar). Mismo
+  // Título como logo (personalizacion_avanzada, cualquier plan activo) —
+  // reemplaza el <h1> de texto por una imagen, sin recorte a ninguna forma
+  // (a diferencia del avatar). Mismo
   // patrón de subida diferida que banner/fondoImagen (File + preview local +
   // URL existente), sin ancla de reposicionamiento (no aplica: se muestra
   // completa, "como si fuera texto").
@@ -853,7 +854,7 @@ export function TarjetaForm({
           "¡Listo! Estamos confirmando tu suscripción — puede tardar unos segundos en reflejarse."
         )
       } else if (resultado === "cancelado") {
-        mostrarToast("advertencia", "Cancelaste el pago. Podés intentarlo de nuevo cuando quieras.")
+        mostrarToast("advertencia", "Cancelaste el pago. Puedes intentarlo de nuevo cuando quieras.")
       }
     }, 0)
   }, [esEdicion])
@@ -996,14 +997,16 @@ export function TarjetaForm({
   const catalogosActuales = contarCatalogos(botones)
   const catalogoMaxPlan = Math.max(Number(featuresGating?.secciones_servicios_max) || 1, catalogosActuales)
   const catalogoBloqueado = catalogosActuales >= catalogoMaxPlan
-  // Mismo criterio que usaba el "Agregar otra sección de servicios" de
-  // antes: bloqueado con 1 ya guardado pide Alcance, con 2 pide Poder.
-  const catalogoPlanNecesario: "alcance" | "poder" = catalogosActuales <= 1 ? "alcance" : "poder"
+  // Connect y Growth comparten el mismo tope (secciones_servicios_max: 3,
+  // ver migración 20260811) — sin un plan más alto al que apuntar, el
+  // candado siempre sugiere Growth cuando se llega al tope real.
+  const catalogoPlanNecesario: "connect" | "growth" = "growth"
 
-  // "Archivo" es exclusivo del plan Poder (reusa el flag ya existente de
-  // personalización avanzada en vez de sumar uno nuevo) — mismo criterio
-  // fail-open sobre lo ya guardado: bajar de plan nunca oculta/rompe un
-  // botón archivo ya guardado, solo bloquea AGREGAR uno nuevo.
+  // "Archivo" está disponible en cualquier plan activo desde 2026-08-11
+  // (reusa el flag ya existente de personalización avanzada en vez de sumar
+  // uno nuevo) — mismo criterio fail-open sobre lo ya guardado: bajar de
+  // plan nunca oculta/rompe un botón archivo ya guardado, solo bloquea
+  // AGREGAR uno nuevo sin ningún plan.
   function hayArchivo(lista: BotonFormState[]): boolean {
     return lista.some(
       (boton) => boton.tipo === "archivo" || (boton.tipo === "opciones" && hayArchivo(boton.hijos))
@@ -1424,7 +1427,7 @@ export function TarjetaForm({
   async function handleGuardar(event: React.SubmitEvent) {
     event.preventDefault()
     if (!nombre.trim()) {
-      setSaveError("Ingresá un título para continuar.")
+      setSaveError("Ingresa un título para continuar.")
       return
     }
 
@@ -1434,7 +1437,7 @@ export function TarjetaForm({
     {
       const slugElegido = slugPersonalizado.trim()
       if (!slugElegido) {
-        setSaveError("Elegí un enlace personalizado para continuar.")
+        setSaveError("Elige un enlace personalizado para continuar.")
         return
       }
       if (slugElegido.length < 4) {
@@ -1443,13 +1446,13 @@ export function TarjetaForm({
       }
       if (esEdicion && slugCambio) {
         if (slugDisponible === false) {
-          setSaveError("Ese enlace ya está en uso. Elegí otro para continuar.")
+          setSaveError("Ese enlace ya está en uso. Elige otro para continuar.")
           return
         }
         if (slugLimiteAlcanzado) {
           setSaveError(
             limiteSlug?.proximaLiberacion
-              ? `Alcanzaste el límite de 2 cambios de enlace cada 14 días. Podés volver a cambiarlo el ${new Date(
+              ? `Alcanzaste el límite de 2 cambios de enlace cada 14 días. Puedes volver a cambiarlo el ${new Date(
                   limiteSlug.proximaLiberacion
                 ).toLocaleDateString("es-MX", { day: "numeric", month: "long" })}.`
               : "Alcanzaste el límite de 2 cambios de enlace cada 14 días."
@@ -1614,8 +1617,8 @@ export function TarjetaForm({
     if (fallidas.length > 0) {
       setSaveError(
         fallidas.length === 1
-          ? `No pudimos subir ${fallidas[0]}. Probá de nuevo.`
-          : `No pudimos subir ${fallidas.length} archivos (${fallidas.join(", ")}). Probá de nuevo.`
+          ? `No pudimos subir ${fallidas[0]}. Prueba de nuevo.`
+          : `No pudimos subir ${fallidas.length} archivos (${fallidas.join(", ")}). Prueba de nuevo.`
       )
       setSaving(false)
       return
@@ -1763,7 +1766,7 @@ export function TarjetaForm({
 
     if (bloqueosGuardado.length > 0) {
       setSaveError(
-        "Hay cambios que requieren un plan superior — revertilos o actualizá tu plan para guardar."
+        "Hay cambios que requieren un plan superior — revierte esos cambios o actualiza tu plan para guardar."
       )
       setSaving(false)
       return
@@ -1798,7 +1801,7 @@ export function TarjetaForm({
     }
 
     if (!plan) {
-      setSaveError("Falta el plan seleccionado. Volvé a /planes e intentá de nuevo.")
+      setSaveError("Falta el plan seleccionado. Vuelve a /planes e intenta de nuevo.")
       setSaving(false)
       return
     }
@@ -1809,7 +1812,7 @@ export function TarjetaForm({
     const { data: sessionData } = await supabase.auth.getSession()
     const session = sessionData.session
     if (!session) {
-      setSaveError("Tu sesión expiró. Recargá la página e iniciá sesión de nuevo.")
+      setSaveError("Tu sesión expiró. Recarga la página e inicia sesión de nuevo.")
       setSaving(false)
       return
     }
@@ -1853,7 +1856,7 @@ export function TarjetaForm({
       // cupón inválido, que tampoco es genérico.
       setSaveError(
         suscripcionData.error ??
-          "Tu tarjeta se guardó, pero no pudimos iniciar la suscripción con Stripe. Volvé a intentar desde el editor."
+          "Tu tarjeta se guardó, pero no pudimos iniciar la suscripción con Stripe. Vuelve a intentar desde el editor."
       )
       setSaving(false)
     }
@@ -1895,7 +1898,7 @@ export function TarjetaForm({
     const slugElegido = slugPersonalizado.trim()
 
     if (slugDisponible === false) {
-      setSaveError("Ese enlace ya está en uso. Elegí otro para continuar.")
+      setSaveError("Ese enlace ya está en uso. Elige otro para continuar.")
       setSaving(false)
       return
     }
@@ -1916,12 +1919,12 @@ export function TarjetaForm({
       // chequeo en vivo y este guardado. Se lo marcamos como no disponible
       // para que la etiqueta bajo el input quede consistente con el toast.
       setResultadoSlug({ slug: slugElegido, disponible: false })
-      mostrarToast("error", "Justo tomaron ese enlace. Elegí otro y volvé a guardar.")
+      mostrarToast("error", "Justo tomaron ese enlace. Elige otro y vuelve a guardar.")
       setSaving(false)
       return
     }
 
-    setSaveError("No pudimos guardar tu tarjeta. Probá de nuevo en unos segundos.")
+    setSaveError("No pudimos guardar tu tarjeta. Prueba de nuevo en unos segundos.")
     setSaving(false)
   }
 
@@ -2086,9 +2089,9 @@ export function TarjetaForm({
   // son grillas discretas de opciones — el candado se muestra de forma
   // estática mientras el plan no tenga personalizacion_libre, sin comparar
   // contra lo guardado (a diferencia de las grillas, acá alcanza con avisar
-  // que la sección entera requiere Alcance).
+  // que la sección entera requiere un plan activo).
   const bloqueoColoresSimple = !featuresPersonalizacion.personalizacion_libre
-    ? ({ plan: "alcance" } as const)
+    ? ({ plan: "connect" } as const)
     : null
 
   const bloqueoGlassmorfismo = estaBloqueada(
@@ -2099,7 +2102,8 @@ export function TarjetaForm({
   )
 
   // Fondo de la tarjeta: mismo criterio que "Colores" de arriba — simple
-  // requiere Alcance, avanzado (2 colores + degradado) requiere Poder.
+  // requiere personalizacion_libre, avanzado (2 colores + degradado)
+  // requiere personalizacion_avanzada (ambas en cualquier plan activo).
   const bloqueoFondoTarjetaSimple = bloqueoColoresSimple
   const bloqueoFondoTarjetaAvanzado = estaBloqueada(
     "avanzada",
@@ -2108,9 +2112,9 @@ export function TarjetaForm({
     featuresPersonalizacion
   )
 
-  // Imagen de fondo de toda la tarjeta: Poder únicamente (la feature
-  // visualmente más transformadora de las 6 nuevas, mismo nivel que
-  // divisores exóticos/glassmorfismo/modos avanzados).
+  // Imagen de fondo de toda la tarjeta: personalizacion_avanzada, cualquier
+  // plan activo (la feature visualmente más transformadora de las 6 nuevas,
+  // mismo nivel que divisores exóticos/glassmorfismo/modos avanzados).
   const bloqueoFondoImagen = estaBloqueada(
     "avanzada",
     true,
@@ -2118,7 +2122,7 @@ export function TarjetaForm({
     featuresPersonalizacion
   )
 
-  // Título como logo: Poder únicamente, mismo criterio que fondoImagen.
+  // Título como logo: personalizacion_avanzada, mismo criterio que fondoImagen.
   const bloqueoTituloImagen = estaBloqueada(
     "avanzada",
     true,
@@ -2398,7 +2402,7 @@ export function TarjetaForm({
           onFocus={() => scrollPreviewTo("bio")}
           maxLength={160}
           rows={3}
-          placeholder="Contá en pocas palabras quién sos o qué hacés."
+          placeholder="Cuéntanos en pocas palabras quién eres o qué haces."
           className={cn(inputClase, "resize-none")}
         />
       </label>
@@ -2422,7 +2426,7 @@ export function TarjetaForm({
 
         {/* Título como texto (de siempre) o como imagen de logo — reemplaza
             el <h1> entero, sin recortar a ninguna forma (a diferencia del
-            avatar). Poder exclusivo. */}
+            avatar). Gating: personalizacion_avanzada (cualquier plan activo). */}
         <div className="flex items-center gap-2">
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             Título como
@@ -2672,7 +2676,7 @@ export function TarjetaForm({
               <>
                 <X className="size-3" /> Alcanzaste el límite de cambios de enlace.{" "}
                 {limiteSlug.proximaLiberacion &&
-                  `Podés volver a cambiarlo el ${new Date(
+                  `Puedes volver a cambiarlo el ${new Date(
                     limiteSlug.proximaLiberacion
                   ).toLocaleDateString("es-MX", { day: "numeric", month: "long" })}.`}
               </>
@@ -2790,7 +2794,7 @@ export function TarjetaForm({
           ))}
         </div>
         <span className="text-xs text-muted-foreground">
-          o subí tu propia imagen
+          o sube tu propia imagen
         </span>
         <div className="flex items-center gap-3">
           {bannerMostrado && (
@@ -3650,7 +3654,7 @@ export function TarjetaForm({
                           disponible: !catalogoBloqueado,
                           plan: catalogoPlanNecesario,
                         },
-                        { tipo: "archivo", etiqueta: "Archivo", disponible: archivoDisponible, plan: "poder" },
+                        { tipo: "archivo", etiqueta: "Archivo", disponible: archivoDisponible, plan: "growth" },
                       ]}
                       onElegir={(tipoHijo) =>
                         agregarBotonHijo(ubicacion.indice, tipoHijo as Exclude<BotonTipo, "opciones" | "agenda">)
@@ -3821,7 +3825,7 @@ export function TarjetaForm({
   const contenidoBotones = (
     <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
       <p className="text-xs text-muted-foreground">
-        Elegí el tipo de botón: enlace directo, WhatsApp, un menú de opciones, un catálogo de
+        Elige el tipo de botón: enlace directo, WhatsApp, un menú de opciones, un catálogo de
         productos o servicios, o un archivo descargable.
       </p>
 
@@ -3839,7 +3843,7 @@ export function TarjetaForm({
               disponible: !catalogoBloqueado,
               plan: catalogoPlanNecesario,
             },
-            { tipo: "archivo", etiqueta: "Archivo", disponible: archivoDisponible, plan: "poder" },
+            { tipo: "archivo", etiqueta: "Archivo", disponible: archivoDisponible, plan: "growth" },
           ]}
           onElegir={agregarBoton}
         />
@@ -4037,10 +4041,10 @@ export function TarjetaForm({
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {esEdicion
-            ? "Modificá tus datos y guardá los cambios cuando quieras."
+            ? "Modifica tus datos y guarda los cambios cuando quieras."
             : plan
-              ? `Completá tus datos y mirá la vista previa en tiempo real. Plan ${plan.nombre_display} (${periodicidad === "anual" ? "anual" : "mensual"}).`
-              : "Completá tus datos y mirá la vista previa en tiempo real."}
+              ? `Completa tus datos y mira la vista previa en tiempo real. Plan ${plan.nombre_display} (${periodicidad === "anual" ? "anual" : "mensual"}).`
+              : "Completa tus datos y mira la vista previa en tiempo real."}
         </p>
 
         {guardadoOk && tarjeta && (

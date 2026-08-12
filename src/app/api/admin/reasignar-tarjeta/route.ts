@@ -16,12 +16,12 @@ interface BodyReasignarTarjeta {
 export async function POST(request: Request) {
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
   if (!token) {
-    return Response.json({ error: "Iniciá sesión para continuar." }, { status: 401 })
+    return Response.json({ error: "Inicia sesión para continuar." }, { status: 401 })
   }
 
   const { data: userData, error: userErr } = await supabase.auth.getUser(token)
   if (userErr || userData.user?.email !== ADMIN_EMAIL) {
-    return Response.json({ error: "No tenés permiso para hacer esto." }, { status: 403 })
+    return Response.json({ error: "No tienes permiso para hacer esto." }, { status: 403 })
   }
 
   const body = (await request.json().catch(() => null)) as BodyReasignarTarjeta | null
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
   )
 
   if (!busquedaRes.ok) {
-    return Response.json({ error: "No pudimos buscar esa cuenta. Probá de nuevo." }, { status: 500 })
+    return Response.json({ error: "No pudimos buscar esa cuenta. Prueba de nuevo." }, { status: 500 })
   }
 
   const busquedaData = (await busquedaRes.json()) as { users?: { id: string; email?: string }[] }

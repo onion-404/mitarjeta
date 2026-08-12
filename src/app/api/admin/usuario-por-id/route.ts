@@ -9,12 +9,12 @@ import { supabase } from "@/lib/supabase"
 export async function GET(request: Request) {
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
   if (!token) {
-    return Response.json({ error: "Iniciá sesión para continuar." }, { status: 401 })
+    return Response.json({ error: "Inicia sesión para continuar." }, { status: 401 })
   }
 
   const { data: userData, error: userErr } = await supabase.auth.getUser(token)
   if (userErr || userData.user?.email !== ADMIN_EMAIL) {
-    return Response.json({ error: "No tenés permiso para hacer esto." }, { status: 403 })
+    return Response.json({ error: "No tienes permiso para hacer esto." }, { status: 403 })
   }
 
   const userId = new URL(request.url).searchParams.get("userId")

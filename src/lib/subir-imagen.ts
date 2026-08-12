@@ -7,7 +7,7 @@ export function validarImagen(file: File): string | null {
     return `"${file.name}" no es una imagen válida.`
   }
   if (file.size > TAMANO_MAXIMO_ARCHIVO) {
-    return `"${file.name}" pesa más de ${TAMANO_MAXIMO_ARCHIVO_MB}MB. Elegí una imagen más liviana.`
+    return `"${file.name}" pesa más de ${TAMANO_MAXIMO_ARCHIVO_MB}MB. Elige una imagen más liviana.`
   }
   return null
 }

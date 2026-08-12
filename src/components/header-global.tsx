@@ -153,7 +153,7 @@ export function HeaderGlobal({
                 <X className="size-4" />
               </Dialog.Close>
               <Dialog.Title className="text-lg font-semibold text-foreground">
-                Iniciá sesión
+                Inicia sesión
               </Dialog.Title>
               <Dialog.Description className="mt-1 mb-5 text-sm text-muted-foreground">
                 Para crear o editar tu tarjeta digital.

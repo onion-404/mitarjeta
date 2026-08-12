@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-08-10. Fuente de verdad para que una sesión nueva entienda el
+> Última actualización: 2026-08-11. Fuente de verdad para que una sesión nueva entienda el
 > estado real del proyecto sin releer el historial de chat. Actualizar cuando cambie algo de
 > lo que describe. **Para el detalle histórico de verificaciones, bugs encontrados en el
 > camino, capturas de pantalla y logs de sesiones anteriores, ver [HISTORIAL.md](HISTORIAL.md)
@@ -41,8 +41,45 @@
 - Link-in-bio + agenda de servicios + venta de productos.
 - El plan vive en la TARJETA, no en el usuario — un usuario puede tener varias tarjetas, cada
   una con su plan/suscripción independiente.
-- 3 planes de pago en tabla `planes`: `presencia`, `alcance`, `poder` (slugs sin acentos) — no
-  hay tier gratuito. Precios: placeholder, pendiente ajustar.
+- **2 planes de pago en tabla `planes` (2026-08-11, reemplaza el modelo anterior de 3
+  tiers)**: `connect` ("Linkard Connect") y `growth` ("Linkard Growth") — no hay tier
+  gratuito. Ya no es una escalera de tiers (más caro = más funciones): **ambos planes
+  otorgan exactamente las mismas features/límites de personalización y funciones del
+  editor** (`personalizacion_libre`, `personalizacion_avanzada`, `secciones_servicios_max`,
+  `servicios_agendables_max`, `marca_plataforma_oculta`, `comision_venta_pct` — todos
+  idénticos en ambos) — **la única diferencia real es que Growth incluye estadísticas
+  (`metricas_activas`+desglose+rango custom+exportación, las 4 juntas) y Connect no incluye
+  ninguna** (ni siquiera los tiles básicos — bloqueo total, no parcial). Los 2 planes están
+  pensados para audiencias distintas, no para niveles de un mismo escalón: Connect
+  (servicios profesionales, salud/belleza/bienestar, comercios locales) vs. Growth
+  (creadores/influencers, empresas/agencias, e-commerce con pauta paga) — copy de marketing
+  completo en `src/lib/planes-copy.ts` (`COPY_PLAN`, usado por `ComparativaPlanes` en
+  `/planes` y por el teaser `PreciosDestacados` del home).
+  - Migración `20260811000000_planes_connect_growth.sql` — **APLICADA en producción** (el
+    usuario la corrió y esta sesión confirmó por consulta real: `planes` tiene exactamente
+    `connect`/`growth` con las features esperadas). Verificado antes de escribirla que
+    `presencia`/`alcance` no tenían ninguna tarjeta ni suscripción real apuntándoles — se
+    reutilizaron los `id` de `alcance`→`connect` y `poder`→`growth` (rename in-place, cero
+    impacto en FKs) y se borró `presencia`; las 4 suscripciones reales que ya existían
+    (estado `autorizada`, proveedor `manual`, todas en `poder`) quedaron mapeadas a `growth`
+    sin tocar ninguna fila de `tarjetas`/`suscripciones`. Precios: se conservaron los que ya
+    estaban vigentes en Alcance/Poder (no fue un pedido de este cambio ajustar precios) —
+    editables en `/admin/configuracion`.
+  - `recordatorios_automaticos` se sacó del comparador público (`comparativa-planes.tsx`):
+    no es una feature construida todavía (ver "Diferido a fase posterior" más abajo,
+    confirmación por WhatsApp vía Make) — mostrarla habría sido una promesa falsa a
+    cualquiera de los 2 planes.
+  - El sistema de gating por tier (`TierPersonalizacion` "basica"/"avanzada",
+    `calcularBloqueos`/`estaBloqueada` en `lib/personalizacion.ts`, `<CandadoPlan>`) se
+    mantuvo sin refactor grande — solo se renombraron los literales `"alcance"|"poder"` a
+    `"connect"|"growth"` donde aparecían (tipos, labels, comentarios). Como ambos planes
+    reales otorgan `personalizacion_libre`/`personalizacion_avanzada` por igual, el candado
+    ya NUNCA se dispara para una tarjeta con cualquiera de los 2 planes activos — sigue
+    disparándose solo para una tarjeta SIN plan (antes de suscribirse). Queda como deuda
+    técnica identificada (no resuelta a propósito, fuera de alcance de este cambio): el
+    sistema de 2 tiers "basica"/"avanzada" ya no tiene sentido real con solo 2 planes que
+    valen lo mismo en este eje — un refactor futuro podría colapsarlo a un solo gate binario
+    "¿tiene plan activo o no?".
 - Descuento para tarjetas adicionales del mismo usuario:
   `configuracion.descuento_tarjeta_adicional_pct`, aplicado vía
   `posicion_tarjeta_para_usuario()`.
@@ -52,6 +89,90 @@
   `reclamo.ts` (reclamar tarjeta de invitado por `localStorage`) sigue existiendo solo para
   tarjetas viejas con `user_id null` creadas antes de este cambio — no conectado al flujo
   nuevo. `<ReclamarTarjeta>` sigue en `/pago/exito`/`/pago/pendiente` por lo mismo.
+
+## Copy de marketing de planes: "Lo que incluye" + ahorro en pesos (2026-08-11)
+- `src/lib/planes-copy.ts` (`COPY_PLAN`) ganó `incluye: ItemIncluye[]` — lista curada a mano
+  por el cliente (no auto-generada desde `planes.features`, a diferencia del comparador
+  anterior) con lo que muestra cada plan en `/planes` (`ComparativaPlanes`, reemplaza la vieja
+  tabla genérica de `plan.features`) y en el teaser del home (`PreciosDestacados`, mismo
+  contenido, estilo oscuro). `comision_venta_pct`/`marca_plataforma_oculta` (0%/oculta en
+  ambos planes) ya no se muestran en ningún comparador — el cliente dio una lista cerrada de
+  ítems y no pidió sumar esos dos, se dejaron fuera a propósito.
+- **Ahorro anual mostrado en pesos, no en %** (pedido explícito, "más atractivo visualmente"):
+  `Math.round(plan.precio_mensual * 12 - plan.precio_anual)` en vez del cálculo de porcentaje
+  de antes, en los 2 lugares (`ComparativaPlanes` con toggle mensual/anual, `PreciosDestacados`
+  siempre contra el anual).
+- **Verificación real de cada ítem contra el código antes de publicarlo** (pedido explícito
+  del cliente) — de los 17 ítems totales (7 Connect + 10 Growth) se encontraron **7 que no
+  tienen código real detrás todavía**. Decisión del cliente, con el riesgo asumido
+  conscientemente: publicarlos igual, tal cual, sin marca de "Próximamente". Quedan
+  documentados acá como los próximos ítems a construir, por orden de aparición en el copy:
+  - ✅ **Reales y verificados hoy**: visitas/clics ilimitados (sin tope de plan), QR dinámico
+    (apunta a la URL de la tarjeta, no a contenido fijo — igual ver caveat abajo), cobro de
+    citas online (Mercado Pago Checkout Pro), personalización avanzada (ambos planes desde la
+    migración de 2 planes), desglose de clics por enlace/botón, rango de fechas
+    personalizado y tasa de conversión de agenda (estos 2 solo existen en `EstadisticasTarjeta`
+    — la vista POR TARJETA del editor — no en el dashboard agregado `/mi-cuenta/estadisticas`,
+    que no tiene selector de rango custom ni calcula conversión; no es un ítem falso, es un
+    ítem real con alcance más angosto de lo que un lector podría asumir), exportación CSV
+    (mismo caveat: solo en la vista por tarjeta, no en el agregado).
+  - 🔴 **Publicados sin tener código real — pendiente construir "en el próximo paso" (mandato
+    explícito del cliente, no un olvido)**:
+    1. **Sincronización de agenda con Google Calendar** (Connect) — cero referencias en el
+       código a la API de Google Calendar. Ver también "Diferido a fase posterior" más abajo,
+       donde ya estaba anotado como candidato a feature futura.
+    2. **Fuentes de tráfico y canales de procedencia** (Growth) — requiere capturar
+       UTM/referrer al momento de `vista_tarjeta` (`lib/eventos.ts`) y agregarlo por canal.
+    3. **Analítica geográfica y de dispositivos** (Growth) — requiere geoIP (por IP del
+       request) + parseo de User-Agent, ninguno de los dos existe hoy.
+    4. **Integración de píxeles de seguimiento** (Meta Pixel, Google Tag Manager, TikTok
+       Pixel) (Growth) — requiere que el dueño pueda pegar sus propios IDs de píxel (campo
+       nuevo en `IdentidadVisual` o similar) + inyectar los scripts correspondientes en
+       `[slug]/page.tsx`.
+    5. **Reporte mensual automatizado a tu correo** (Growth) — requiere un proveedor de envío
+       de emails (no hay ninguno integrado hoy, ni Resend ni SMTP ni similar) + un cron/job
+       mensual que arme y envíe el resumen.
+    6. **Parámetros UTM personalizados** (Growth) — requiere que el dueño pueda definir UTMs
+       propios por enlace/botón y que el click los preserve hacia la URL de destino.
+  - **Recordatorio programado por WhatsApp** ("Cero ausencias", Connect) es un caso intermedio,
+    no está en la lista de 6 arriba porque SÍ hay código real funcionando — pero es una
+    confirmación al momento de agendar, no un recordatorio programado antes de la cita (ver
+    detalle completo en "Confirmación de agenda por WhatsApp vía Make" más abajo).
+
+## Voseo → tuteo (español de México), barrido completo del sitio (2026-08-11)
+- **Hallazgo real**: parte del copy (marketing y producto) se había escrito en voseo
+  rioplatense ("tenés", "podés", "elegí", "vos", "sos", "Iniciá sesión", "Cancelala",
+  "Probá", etc.) en vez de tú/español de México — reportado por el cliente encontrando un
+  caso puntual en el home (`precios-destacados.tsx`, "elegí el que se ajuste a vos hoy").
+  Al auditar para corregir ESE caso se confirmó que el patrón era transversal a todo el
+  sitio, no solo el home — decisión del cliente: corregirlo en todos lados, no solo ahí.
+- **Método**: grep iterativo con distintas familias de patrones de voseo (pronombre `vos`/
+  `sos`, presente indicativo 2ª persona `-és`/`-ís` de verbos irregulares como
+  tener/poder/querer/saber, imperativo con tilde en la última sílaba `-á`/-é`/`-í` tanto en
+  minúscula media-frase como con mayúscula inicial de oración, imperativo reflexivo con
+  enclítico tipo "Cancelala"/"Suscribite") — cada ronda de grep encontraba instancias nuevas
+  que la ronda anterior no cubría (los verbos irregulares no siguen un patrón de sufijo
+  único), así que se repitió hasta 2 rondas consecutivas sin hallazgos nuevos. Falsos
+  positivos descartados a mano en cada ronda (palabras que terminan en -ás/-és/-ís sin ser
+  verbos: "después", "detrás", "través", "además", "demás", "Café").
+  También se corrigió 1 caso de "acá" (regionalismo, no error gramatical) en
+  `admin/configuracion/page.tsx` → "aquí" — el resto de las ~45 apariciones de "acá" en el
+  código son comentarios de desarrollo (no visibles al usuario), no se tocaron.
+- **Alcance real corregido**: ~47 strings de cara al usuario en 32 archivos — mensajes de
+  error de rutas API (`/api/citas`, `/api/stripe/*`, `/api/suscripciones`, `/api/admin/*`,
+  `/api/checkout`, `/api/eventos`, `/api/cloudinary-sign`), páginas completas
+  (`/mi-cuenta/*`, `/editar/*`, `/admin/tarjetas/[id]`, `/crear`, `/pago/error`, `/planes`),
+  y el editor de tarjeta (`tarjeta-form.tsx`, `agenda-servicios.tsx`, `reservar-servicio.tsx`,
+  `plantillas-galeria.tsx`, `recortar-avatar.tsx`, `estadisticas-tarjeta.tsx`, etc.).
+  Criterio de traducción: verbos irregulares con la conjugación correcta de tú (no un
+  simple cambio de sufijo — "podés"→"puedes", "querés"→"quieres", no "podes"/"queres").
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios tras el barrido
+  completo — sin cambios de lógica, solo texto literal dentro de strings/JSX existentes.
+- 🔴 **No es una garantía absoluta de cero voseo restante** — el barrido fue exhaustivo
+  (múltiples rondas de grep con patrones distintos hasta agotar hallazgos) pero manual sobre
+  ~47 instancias reales; contenido dinámico de la DB (testimonios, nombres de cupones,
+  texto libre que un dueño de tarjeta escriba en su propia Bio/servicios) queda
+  deliberadamente fuera de este alcance — no es código de la plataforma.
 
 ## Pagos — dos flujos separados, nunca mezclar
 - **Checkout Pro** (`lib/mercadopago.ts`): pagos ÚNICOS — venta de productos, pago opcional de
@@ -239,14 +360,33 @@
     gestión de certificados/credenciales como secrets.
   - Recomendación dada al cliente: arrancar por Apple (sin trámite externo) y dejar Google
     Wallet para después / en paralelo si se quiere iniciar ya el trámite de aprobación.
-- **Confirmación de agenda por WhatsApp vía Make** (pedido 2026-08-10, "en otro paso" — todavía
-  sin diseñar ni construir): agregar un número de WhatsApp para la agenda (¿el mismo de "Canales
-  de contacto" o uno propio de la agenda, a confirmar?) + integración con Make (webhook saliente
-  al crear una cita) para que se envíe un mensaje de confirmación automático tanto al cliente que
-  agendó como al dueño de la tarjeta, avisándole de la nueva cita. Sin explorar todavía: si Make
-  dispara el mensaje él mismo (vía su propio conector de WhatsApp Business API) y este proyecto
-  solo necesita pegarle un webhook con los datos de la cita (`POST` server-side desde
-  `/api/citas` al confirmar), o si hace falta algo más de nuestro lado.
+- **🔴→✅ Confirmación de agenda por WhatsApp vía Make — YA CONSTRUIDA (2026-08-11), pendiente
+  de commitear.** Lo que decía esta sección hasta la sesión anterior ("en otro paso, sin
+  diseñar ni construir") quedó desactualizado — hay código real funcionando en el working
+  tree (`src/lib/notificaciones-agenda.ts`, nuevo, sin trackear en git + cambios sin commitear
+  en `src/app/api/citas/route.ts`, `src/lib/confirmar-pago.ts`, `src/components/tarjeta/
+  reservar-servicio.tsx`). `notificarNuevaCita(citaId)` dispara un `POST` server-side a
+  `MAKE_WEBHOOK_AGENDA_URL` (seteada en `.env.local` con una URL real) con los datos de la
+  cita (tarjeta, cliente, cita) — Make arma los 2 mensajes (uno al cliente, uno al dueño) del
+  lado de su propio conector de WhatsApp Business API, este proyecto no sabe nada de
+  templates/Meta. Se llama desde 2 puntos (mismo criterio que `agenda_completada` en
+  `eventos_metricas`): `/api/citas/route.ts` cuando la cita queda `'confirmada'` sin pago
+  inmediato, `confirmar-pago.ts` cuando el pago se confirma y queda `'pagada'` — nunca antes de
+  que la cita esté de verdad confirmada. Tolerante a fallos a propósito (si Make está caído o
+  la env var no está seteada, solo loguea y sigue, nunca rompe el flujo real de agendar/pagar).
+  El campo de contacto del cliente en `reservar-servicio.tsx` pasó de "Teléfono o email" a
+  exigir teléfono (`TELEFONO_REGEX`, validación liviana) — Make necesita un número real, un
+  email ya no alcanza.
+  - **Es una CONFIRMACIÓN al momento de agendar, no un recordatorio programado antes de la
+    cita** — importante para el copy de marketing: "Recordatorios y notificaciones... Cero
+    ausencias" (ver `lib/planes-copy.ts`) describe una función de reducción de no-shows más
+    amplia (recordatorio la víspera/el día de la cita) que todavía no existe — hoy es un solo
+    mensaje disparado en el momento de la reserva/pago. Publicado igual en el comparador por
+    decisión explícita del cliente (2026-08-11) — 🔴 pendiente real: construir el recordatorio
+    programado (no solo la confirmación) para que el copy sea 100% preciso.
+  - 🔴 **Pendiente**: commitear estos 4 archivos (hoy sin commit). Sin explorar todavía: si
+    Make dispara el mensaje él mismo o hace falta algo más de nuestro lado — parece que no,
+    ya está funcionando end-to-end con la URL real configurada.
 
 ## Estado de la base de datos (producción, sin ambiente de staging)
 Todas las migraciones siguientes están **APLICADAS** en producción (confirmadas por consulta
@@ -294,6 +434,10 @@ real desde esta sesión salvo que se indique lo contrario):
   `servicios_agendables.colchon_minutos`, `existe_solapamiento_cita()` actualizada con
   `p_colchon_minutos`. Confirmada aplicada por consulta real desde esta sesión (columnas +
   RPC responden sin error).
+- `20260811000000_planes_connect_growth.sql` — 3 planes → 2 (`connect`/`growth`, ver "Modelo
+  de negocio" arriba). **APLICADA en producción**, corrida por el usuario y confirmada por
+  consulta real desde esta sesión (`planes` devuelve exactamente esas 2 filas con las
+  features esperadas).
 
 ## Dashboards de métricas
 - **Instrumentación**: `POST /api/eventos` (sin auth, rate-limit 60/min por IP,
@@ -308,15 +452,22 @@ real desde esta sesión salvo que se indique lo contrario):
   conversión. Sigue en el CHECK constraint y en la UI (listo para conectar el día que exista
   checkout de productos propio) — decisión explícita del cliente, no un olvido.
 - **Dashboard del dueño** (`/mi-cuenta/estadisticas`, sección "Estadísticas" de `TarjetaForm`
-  en modo edición): `src/lib/metricas.ts` — `getTotalesPorPeriodo`/`getSerieDiaria` (todos los
-  planes, desde `metricas_diarias`), `getEventosDetalle` (solo si
-  `plan.features.metricas_desglose`, desde `eventos_metricas` crudo). Gating por
-  `planes.features`: `metricas_desglose` (alcance+poder, desglose top 5 por enlace/servicio/
-  producto + donut único/recurrente vía `visitante_hash`), `metricas_rango_custom` (poder,
-  rango de fechas custom), `metricas_exportacion` (poder, CSV client-side). Presencia ve 4
-  tiles + tendencia + comparativa vs. período anterior. Variantes multi-tarjeta
+  en modo edición): `src/lib/metricas.ts` — `getTotalesPorPeriodo`/`getSerieDiaria` (desde
+  `metricas_diarias`), `getEventosDetalle` (solo si `plan.features.metricas_desglose`, desde
+  `eventos_metricas` crudo). **Gating de 2 niveles desde 2026-08-11**:
+  `planes.features.metricas_activas` es el gate de ENTRADA a toda la sección — con Connect
+  (`false`) el bloqueo es total, ni los 4 tiles básicos ni la tendencia se muestran (mismo
+  criterio que Agenda sin plan: sección entera bloqueada, no datos vacíos). Con Growth
+  (`true`) se ven además `metricas_desglose` (top 5 por enlace/servicio/producto + donut
+  único/recurrente vía `visitante_hash`), `metricas_rango_custom` (rango de fechas custom) y
+  `metricas_exportacion` (CSV client-side) — las 4 features de Growth están todas en `true`
+  a la vez, así que en la práctica todo-o-nada. Variantes multi-tarjeta
   (`getTotalesPorPeriodoUsuario` etc.) para la vista agregada de todas las tarjetas del
-  usuario, con aviso si hay tarjetas mixtas de plan.
+  usuario aplican el mismo gate por tarjeta ANTES de sumar a los totales (una tarjeta en
+  Connect no aporta ni un solo evento al agregado, a diferencia del modelo de 3 tiers
+  anterior donde toda tarjeta con plan sumaba a los totales básicos) — aviso en pantalla si
+  hay tarjetas mixtas de plan (algunas Growth, otras Connect/sin plan), bloqueo total de la
+  página si NINGUNA tarjeta está en Growth.
 - **Dashboard admin** (`/admin/tarjetas`, `/admin/suscripciones`): `src/lib/admin-metricas.ts`
   — `getSuscripcionesAutorizadas()`, `getTarjetaIdsConAgendaActiva()`,
   `getSuscripcionesHistorial()`, `calcularChurn(historial, desde, hasta)` (función pura,
@@ -1220,6 +1371,15 @@ real desde esta sesión salvo que se indique lo contrario):
   servicios sigue funcionando igual dentro de su panel expandido.
 
 ## Pendiente técnico sin resolver (consolidado)
+- 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
+  planes" arriba para el detalle completo de cada uno, decisión consciente del cliente de
+  publicar antes de construir): sincronización con Google Calendar (Connect); fuentes de
+  tráfico/canales, analítica geográfica y de dispositivos, píxeles de seguimiento (Meta/GTM/
+  TikTok), reporte mensual por correo y parámetros UTM personalizados (los 5, Growth). "Cero
+  ausencias" por WhatsApp (Connect) es un caso aparte: el código real es una confirmación al
+  agendar, no el recordatorio programado antes de la cita que el copy sugiere.
+- 🔴 Commitear `src/lib/notificaciones-agenda.ts` + los 3 archivos modificados relacionados
+  (confirmación de agenda por WhatsApp vía Make) — funcionando en el working tree, sin commit.
 - 🔴 Agenda como calendario único (duración+colchón por servicio, sin "paso" configurable,
   2026-08-10) — migración APLICADA y confirmada por consulta real desde esta sesión, código
   listo para deploy; falta la prueba en navegador con servicios reales de distinta
@@ -1255,6 +1415,12 @@ real desde esta sesión salvo que se indique lo contrario):
 - `reclamo.ts` y `admin/dashboard/page.tsx` escriben directo a `tarjetas` desde rol
   `authenticated` — deuda técnica identificada, impide GRANT/REVOKE más estricto sobre esa
   tabla.
+- El sistema de gating por tier (`TierPersonalizacion` "basica"/"avanzada" en
+  `lib/personalizacion.ts`, `<CandadoPlan>`) quedó sin refactor tras pasar a 2 planes
+  (2026-08-11) — ambos otorgan `personalizacion_libre`/`personalizacion_avanzada` por
+  igual, así que el candado ya nunca se dispara con un plan activo (solo sin plan). Deuda
+  técnica identificada, no resuelta a propósito (fuera de alcance de ese cambio); un
+  refactor futuro podría colapsarlo a un gate binario "¿tiene plan o no?".
 - `existe_solapamiento_cita()` no previene condición de carrera entre inserts simultáneos del
   mismo horario (doble booking posible). Hardening futuro: EXCLUDE constraint con
   `btree_gist`. Riesgo aceptado para el volumen inicial.

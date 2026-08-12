@@ -22,7 +22,7 @@ interface BodyRegistrarEvento {
 export async function POST(request: Request) {
   if (excedeLimite(`eventos:${obtenerIpCliente(request)}`, LIMITE_EVENTOS)) {
     return Response.json(
-      { error: "Demasiadas solicitudes. Esperá un momento y volvé a intentar." },
+      { error: "Demasiadas solicitudes. Espera un momento e intenta de nuevo." },
       { status: 429 }
     )
   }

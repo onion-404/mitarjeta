@@ -79,7 +79,7 @@ export default function MiCuentaSuscripcionPage() {
     const { data } = await supabase.auth.getSession()
     const accessToken = data.session?.access_token
     if (!accessToken) {
-      setError("Tu sesión expiró, volvé a iniciar sesión.")
+      setError("Tu sesión expiró, vuelve a iniciar sesión.")
       setAbriendoPortalId(null)
       return
     }
@@ -112,7 +112,7 @@ export default function MiCuentaSuscripcionPage() {
       <div>
         <h1 className="text-2xl font-semibold text-foreground">Suscripción y Pago</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Administrá el método de pago y la facturación de cada tarjeta.
+          Administra el método de pago y la facturación de cada tarjeta.
         </p>
       </div>
 
@@ -120,7 +120,7 @@ export default function MiCuentaSuscripcionPage() {
 
       {tarjetas.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-          Todavía no tenés ninguna tarjeta.
+          Todavía no tienes ninguna tarjeta.
         </p>
       ) : (
         <div className="flex flex-col gap-3">

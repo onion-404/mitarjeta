@@ -1,5 +1,6 @@
 import { estaDentroDeDisponibilidad } from "@/lib/agenda"
 import { crearPreferenciaPago } from "@/lib/mercadopago"
+import { notificarNuevaCita } from "@/lib/notificaciones-agenda"
 import { excedeLimite, obtenerIpCliente } from "@/lib/rate-limit"
 import { getSupabaseAdmin } from "@/lib/supabase-admin"
 
@@ -21,7 +22,7 @@ interface BodyCrearCita {
 export async function POST(request: Request) {
   if (excedeLimite(`citas:${obtenerIpCliente(request)}`, LIMITE_CITAS)) {
     return Response.json(
-      { error: "Demasiadas solicitudes. Esperá un momento y volvé a intentar." },
+      { error: "Demasiadas solicitudes. Espera un momento e intenta de nuevo." },
       { status: 429 }
     )
   }
@@ -86,12 +87,12 @@ export async function POST(request: Request) {
 
   if (errorSolape) {
     return Response.json(
-      { error: "No pudimos validar la disponibilidad, intentá de nuevo." },
+      { error: "No pudimos validar la disponibilidad, intenta de nuevo." },
       { status: 500 }
     )
   }
   if (solapa) {
-    return Response.json({ error: "Ese horario ya no está disponible, elegí otro." }, { status: 409 })
+    return Response.json({ error: "Ese horario ya no está disponible, elige otro." }, { status: 409 })
   }
 
   const estadoInicial = servicio.requiere_pago_inmediato ? "pendiente_pago" : "confirmada"
@@ -112,10 +113,14 @@ export async function POST(request: Request) {
     .single()
 
   if (errorInsert || !cita) {
-    return Response.json({ error: "No pudimos crear la cita, intentá de nuevo." }, { status: 500 })
+    return Response.json({ error: "No pudimos crear la cita, intenta de nuevo." }, { status: 500 })
   }
 
   if (!servicio.requiere_pago_inmediato) {
+    // Sin pago de por medio, la cita queda 'confirmada' de una — recién acá
+    // se sabe que es de verdad (con pago, la notificación se dispara en
+    // confirmar-pago.ts cuando Mercado Pago confirma, no antes).
+    await notificarNuevaCita(cita.id)
     return Response.json({ citaId: cita.id, estado: estadoInicial, requierePago: false })
   }
 

@@ -35,6 +35,17 @@ function hoyISO() {
   return new Date().toISOString().slice(0, 10)
 }
 
+// El campo pasó de "Teléfono o email" a exigir teléfono (2026-08-10): la
+// confirmación de la cita se manda por WhatsApp (ver integración con Make),
+// que necesita un número real, no un email. Validación liviana (dígitos +
+// signos comunes de un teléfono), no un parser de números internacional
+// completo — alcanza para evitar que alguien tipee texto libre/un email acá.
+const TELEFONO_REGEX = /^[+\d][\d\s()-]{6,}$/
+
+function esTelefonoValido(valor: string): boolean {
+  return TELEFONO_REGEX.test(valor.trim())
+}
+
 export function ReservarServicio({ tarjetaId, zonaHoraria, servicio }: ReservarServicioProps) {
   const [open, setOpen] = React.useState(false)
   const [paso, setPaso] = React.useState<Paso>({ tipo: "horario" })
@@ -43,6 +54,7 @@ export function ReservarServicio({ tarjetaId, zonaHoraria, servicio }: ReservarS
   const [errorSlots, setErrorSlots] = React.useState(false)
   const [nombre, setNombre] = React.useState("")
   const [contacto, setContacto] = React.useState("")
+  const [errorContacto, setErrorContacto] = React.useState<string | null>(null)
   const [enviando, setEnviando] = React.useState(false)
   const [redirigiendo, setRedirigiendo] = React.useState(false)
 
@@ -83,6 +95,7 @@ export function ReservarServicio({ tarjetaId, zonaHoraria, servicio }: ReservarS
     setErrorSlots(false)
     setNombre("")
     setContacto("")
+    setErrorContacto(null)
     setEnviando(false)
     setRedirigiendo(false)
   }
@@ -144,7 +157,12 @@ export function ReservarServicio({ tarjetaId, zonaHoraria, servicio }: ReservarS
 
   function handleSubmitDatos(event: React.FormEvent, slot: Slot) {
     event.preventDefault()
-    if (!nombre.trim() || !contacto.trim()) return
+    if (!nombre.trim()) return
+    if (!esTelefonoValido(contacto)) {
+      setErrorContacto("Ingresa un teléfono válido (lo necesitamos para confirmarte por WhatsApp).")
+      return
+    }
+    setErrorContacto(null)
     void handleConfirmar(slot)
   }
 
@@ -195,7 +213,7 @@ export function ReservarServicio({ tarjetaId, zonaHoraria, servicio }: ReservarS
             {paso.tipo === "horario" && (
               <div className="flex flex-col gap-3">
                 <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-foreground">Elegí una fecha</span>
+                  <span className="font-medium text-foreground">Elige una fecha</span>
                   <input
                     type="date"
                     min={hoyISO()}
@@ -211,7 +229,7 @@ export function ReservarServicio({ tarjetaId, zonaHoraria, servicio }: ReservarS
                   </div>
                 ) : errorSlots ? (
                   <p className="py-4 text-center text-sm text-destructive">
-                    No pudimos cargar los horarios. Probá de nuevo.
+                    No pudimos cargar los horarios. Prueba de nuevo.
                   </p>
                 ) : slots.length > 0 ? (
                   <div className="grid grid-cols-3 gap-2">
@@ -228,7 +246,7 @@ export function ReservarServicio({ tarjetaId, zonaHoraria, servicio }: ReservarS
                   </div>
                 ) : (
                   <p className="py-4 text-center text-sm text-muted-foreground">
-                    No hay horarios disponibles para esta fecha. Probá con otra.
+                    No hay horarios disponibles para esta fecha. Prueba con otra.
                   </p>
                 )}
               </div>
@@ -249,14 +267,20 @@ export function ReservarServicio({ tarjetaId, zonaHoraria, servicio }: ReservarS
                   />
                 </label>
                 <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="font-medium text-foreground">Teléfono o email</span>
+                  <span className="font-medium text-foreground">Tu teléfono (WhatsApp)</span>
                   <input
                     required
+                    type="tel"
+                    inputMode="tel"
                     value={contacto}
-                    onChange={(e) => setContacto(e.target.value)}
-                    placeholder="Para confirmarte la cita"
+                    onChange={(e) => {
+                      setContacto(e.target.value)
+                      if (errorContacto) setErrorContacto(null)
+                    }}
+                    placeholder="Para confirmarte la cita por WhatsApp"
                     className={inputClase}
                   />
+                  {errorContacto && <span className="text-xs text-destructive">{errorContacto}</span>}
                 </label>
                 <div className="mt-1 flex items-center gap-2">
                   <Button
@@ -301,7 +325,7 @@ export function ReservarServicio({ tarjetaId, zonaHoraria, servicio }: ReservarS
                 </span>
                 <p className="font-medium text-foreground">Ese horario ya no está disponible</p>
                 <p className="text-sm text-muted-foreground">
-                  Alguien más lo tomó justo antes. Elegí otro horario.
+                  Alguien más lo tomó justo antes. Elige otro horario.
                 </p>
                 <Button size="sm" className="mt-2" onClick={volverAHorarios}>
                   Elegir otro horario

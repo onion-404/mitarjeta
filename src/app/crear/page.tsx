@@ -75,11 +75,11 @@ export default function CrearTarjetaPage({ searchParams }: CrearTarjetaPageProps
     contenido = (
       <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-4 px-4 py-16 text-center">
         <h1 className="text-2xl font-semibold text-foreground">
-          Iniciá sesión para continuar
+          Inicia sesión para continuar
         </h1>
         <p className="text-sm text-muted-foreground">
           Elegiste el plan <strong>{plan.nombre_display}</strong> (
-          {periodicidad === "anual" ? "anual" : "mensual"}). Iniciá sesión para crear tu
+          {periodicidad === "anual" ? "anual" : "mensual"}). Inicia sesión para crear tu
           tarjeta y activarlo.
         </p>
         <AuthMethods redirectTo={redirectTo} />

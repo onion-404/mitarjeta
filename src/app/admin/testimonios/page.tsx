@@ -247,7 +247,7 @@ export default function AdminTestimoniosPage() {
       avatarUrl = await subirImagenCloudinary(nuevoArchivo, "mitarjeta/testimonios")
       if (!avatarUrl) {
         setCreando(false)
-        setErrorCreacion("No pudimos subir la foto. Probá de nuevo.")
+        setErrorCreacion("No pudimos subir la foto. Prueba de nuevo.")
         return
       }
     }

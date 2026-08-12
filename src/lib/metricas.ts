@@ -176,8 +176,8 @@ export interface EventoDetalle {
 }
 
 // Filas crudas de eventos_metricas — solo para planes con `metricas_desglose`
-// (Alcance/Poder): desglose por enlace/servicio/producto, único vs.
-// recurrente, y export CSV, todo se deriva de esto en el componente.
+// (Growth): desglose por enlace/servicio/producto, único vs. recurrente, y
+// export CSV, todo se deriva de esto en el componente.
 export async function getEventosDetalle(
   tarjetaId: string,
   desde: string,
