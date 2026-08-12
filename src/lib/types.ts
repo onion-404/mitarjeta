@@ -56,6 +56,11 @@ export type DivisorBanner = "recta" | "onda" | "diagonal" | "zigzag"
 
 export interface Producto {
   titulo: string
+  /** Admite **negrita** y *cursiva* (o _cursiva_) como marcadores de texto
+   *  — NUNCA HTML real, ver `lib/texto-enriquecido.tsx` (interpretado solo
+   *  al renderizar, el dato guardado sigue siendo un string plano). Texto
+   *  sin marcadores (todo lo guardado antes de esta feature) se ve
+   *  idéntico a como se veía siempre. */
   descripcion?: string
   imagenUrl?: string
   /** Ancla de reposicionamiento de `imagenUrl` (mismo mecanismo que avatar/
@@ -134,6 +139,21 @@ interface BotonBase {
   /** Sin valor: auto-contraste contra el fondo (mismo criterio que el resto
    *  de los colores de texto de la tarjeta). */
   colorTexto?: string
+  /** Fuente del título del botón — sin valor: hereda (nunca cae directo al
+   *  default de la tarjeta salvo que también sea el primer botón). Un hijo
+   *  de "opciones" hereda la fuente EFECTIVA de su botón padre; un botón
+   *  top-level que no sea el primero de la lista hereda la del primero;
+   *  el primer botón top-level, sin valor propio, usa la tipografía
+   *  general de la tarjeta (`estiloTipografia`). Ver `resolverTipografiaBoton`
+   *  en lib/boton-cta.ts (única fuente de esta regla, reusada por el editor
+   *  y el render público). Sin gating de plan a propósito — mismo criterio
+   *  que el resto de los campos de `BotonBase` (color/textura), que tampoco
+   *  lo tienen. */
+  fuenteBoton?: EstiloTipografia
+  /** Peso del título del botón (400-800, paso 50) — misma regla de
+   *  herencia que `fuenteBoton`, default efectivo 600 (el mismo peso fijo
+   *  que tenían todos los botones antes de esta feature). */
+  pesoBoton?: number
 }
 
 /** El botón de ancho completo de siempre — mismo comportamiento que
@@ -363,8 +383,9 @@ export interface IdentidadVisual {
   fondoImagenPosicion?: PosicionImagen
   /** true = la imagen se muestra a 100% de ancho (alto proporcional) y se
    *  repite verticalmente para llenar la pantalla, en vez de recortarse con
-   *  object-fit:cover. `fondoImagenPosicion` se ignora en este modo (no hay
-   *  "posición" que anclar: siempre arranca arriba, ancho completo). */
+   *  object-fit:cover. `fondoImagenPosicion` SÍ aplica en este modo
+   *  (2026-08-12) — se reinterpreta como background-position/
+   *  background-size en vez de object-position/transform, ver TarjetaCard. */
   fondoImagenRepetir?: boolean
   /** Fondo del panel de contenido (blanco/oscuro por defecto según
    *  temaModo) — separado a propósito del fondo del banner (colorPrimario/
@@ -410,6 +431,12 @@ export interface IdentidadVisual {
    *  secundaria bajo el título) — mismo criterio que `colorTitulo`: default
    *  auto-contraste si no está seteado. Gating: personalizacion_libre. */
   colorTextoSecundario?: string
+  /** true = centra el bloque de dirección/horario (ícono+texto de cada
+   *  línea) — por default queda alineado a la izquierda (comportamiento de
+   *  siempre). Sin gating de plan: es organización visual, mismo criterio
+   *  que el resto de los campos de "solo alineación/orden" del editor
+   *  (ordenContacto, orden de botones). */
+  ubicacionCentrada?: boolean
   /** @deprecated Ver `SeccionOrdenable` — ya no se escribe (Agenda pasó a
    *  ser un botón más dentro de "botones", 2026-08-10). Se sigue leyendo
    *  solo dentro de `normalizarBotones()` para migrar tarjetas viejas. */

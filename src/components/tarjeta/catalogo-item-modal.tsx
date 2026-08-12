@@ -6,6 +6,7 @@ import Image from "next/image"
 import type { CSSProperties } from "react"
 
 import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
+import { renderizarTextoEnriquecido } from "@/lib/texto-enriquecido"
 import { cn } from "@/lib/utils"
 import type { Producto } from "@/lib/types"
 
@@ -76,7 +77,9 @@ export function CatalogoItemModal({ item, open, onOpenChange, estiloCta, onAbrir
                 <p className="mt-1 text-sm font-semibold text-foreground">${item.precio}</p>
               )}
               {item.descripcion?.trim() && (
-                <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">{item.descripcion}</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {renderizarTextoEnriquecido(item.descripcion)}
+                </p>
               )}
               {item.enlaceUrl?.trim() && (
                 <a

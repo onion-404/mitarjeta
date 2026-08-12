@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-08-11. Fuente de verdad para que una sesión nueva entienda el
+> Última actualización: 2026-08-12. Fuente de verdad para que una sesión nueva entienda el
 > estado real del proyecto sin releer el historial de chat. Actualizar cuando cambie algo de
 > lo que describe. **Para el detalle histórico de verificaciones, bugs encontrados en el
 > camino, capturas de pantalla y logs de sesiones anteriores, ver [HISTORIAL.md](HISTORIAL.md)
@@ -1370,6 +1370,81 @@ real desde esta sesión salvo que se indique lo contrario):
   apareciendo automático, se puede reordenar/personalizar, y que el editor de horarios/
   servicios sigue funcionando igual dentro de su panel expandido.
 
+## Texto enriquecido en catálogo, tipografía por botón con herencia, WhatsApp dinámico en ítems, ubicación centrable y fondo repetido reposicionable (2026-08-12)
+- **Descripción de ítem de catálogo — "texto enriquecido" sin HTML real**
+  (`src/lib/texto-enriquecido.tsx`): `Producto.descripcion` sigue siendo un string plano (cero
+  migración) — admite `**negrita**` y `*cursiva*`/`_cursiva_` como marcadores, interpretados
+  SOLO al renderizar (`renderizarTextoEnriquecido()`, usado en `catalogo-item-modal.tsx`).
+  Decisión explícita: se descartó contentEditable + `dangerouslySetInnerHTML` + sanitizador de
+  HTML (superficie de XSS real, ver contexto: `cupon_usos`/`descripcion` la escribe el DUEÑO de
+  la tarjeta con su propia sesión vía RLS, así que un HTML mal sanitizado sería XSS contra los
+  VISITANTES de esa tarjeta) — en vez de eso, un parser propio, sin ninguna API de DOM (isomorfo
+  server+cliente), que nunca acepta HTML, solo 2 marcadores de texto. `EditorTextoEnriquecido`
+  (`components/tarjeta/editor-texto-enriquecido.tsx`): textarea + 2 botones que envuelven la
+  selección (`envolverSeleccion()`, toggle si ya está envuelta) — sin `document.execCommand`.
+  **Supuesto tomado, no pedido palabra por palabra**: se acotó a negrita/cursiva (sin listas ni
+  links) por ser una "descripción CORTA" — ajustar si el cliente pide más.
+- **Fuente y peso por botón, con herencia** (`lib/boton-cta.ts` →
+  `resolverTipografiaBoton()`/`TipografiaBoton`, única función recursiva reusada TAL CUAL por el
+  editor —`resolverTipografiaBotonForm()`, gemela sobre `BotonFormState`— y el render público):
+  `BotonBase` gana `fuenteBoton?`/`pesoBoton?` (sin valor = hereda). Regla de herencia
+  (pedida explícita): un hijo de "opciones" hereda la EFECTIVA de su botón padre; un botón
+  top-level que no es el primero de la lista hereda la del primero; sin nada de qué colgarse
+  (el primer botón top-level, o un padre/primero sin valor propio), cae a la tipografía general
+  de la tarjeta (`estiloTipografia`) y peso 600 (el mismo fijo que tenían TODOS los botones
+  antes de esta feature — cero regresión visual para tarjetas que nunca toquen esto).
+  - **Sin gating de plan a propósito**: los demás campos de `BotonBase` (color/textura) tampoco
+    lo tienen — se le pasa a `SelectorTipografia` (reusado tal cual, mismo dropdown con cada
+    opción en su propia fuente) un `features` fijo en `{true, true}` para que nunca muestre
+    `CandadoPlan`, en vez de replicar su lógica de gating (pensada para `IdentidadVisual`, no
+    para botones).
+  - `fontFamily` se aplica al CONTENEDOR entero del botón (cascada también al subtítulo, deseado);
+    `fontWeight` se aplica SOLO al título (`BotonVistaPrevia.estiloTitulo`, nuevo prop) — el
+    subtítulo mantiene su peso liviano de siempre, mismo alcance que tenía la clase
+    `font-semibold` hardcodeada que este cambio reemplaza. `estiloDeBoton()` (tarjeta-card.tsx)
+    ahora devuelve `{contenedor, titulo}` en vez de un solo `CSSProperties` — los 2 call sites
+    (`renderBotonSimple`, `renderCabeceraToggle`) y sus llamadores (`renderBotonOpciones`,
+    `renderBotonCatalogo`) se actualizaron para pasar/reenviar el `padre` cuando corresponde.
+- **Link de WhatsApp dinámico en ítems de catálogo** (pedido explícito, mismo criterio que ya
+  tenía `BotonCta` antes de la unificación de tipos de botón): helper "Crear link de WhatsApp"
+  debajo del campo Enlace de cada ítem — número (con atajo "usar el mismo de Canales de
+  contacto") + mensaje (default `"Hola, quiero más información sobre {título del ítem}"`,
+  editable) → `construirUrlWhatsapp()` arma el link en vivo y lo vuelca a `enlaceUrl`. 100%
+  efímero (`waAbierto`/`waNumero`/`waMensaje` en `ProductoFormState`, nunca en `Producto`/DB) —
+  el campo real que se persiste sigue siendo `enlaceUrl`, un string común y corriente.
+- **Ubicación/horario centrable** (`IdentidadVisual.ubicacionCentrada?: boolean`, default
+  `false` = izquierda, sin cambios): switch nuevo en "Ubicación y negocio". Sin gating de plan
+  (organización visual, mismo criterio que `ordenContacto`).
+- **Fondo de imagen repetido — ahora reposicionable/redimensionable** (antes el botón
+  "Reposicionar" se ocultaba por completo en modo "Repetir fondo"): `fondoImagenPosicion`
+  (mismo campo `{x, y, escala}` de siempre) ahora también se usa en modo repetido,
+  reinterpretado como `background-position`/`background-size` en vez de `object-position`/
+  `transform` (`escala` ensancha el ancho más allá del 100%, simulando el mismo "acercar" que
+  ya hacía el modo sin repetir). **Nota real**: el modal `ReposicionarImagen` sigue mostrando
+  una vista previa tipo "cover" (recorte único) en vez de una vista previa tileada — los
+  valores que produce SÍ afectan bien el resultado final repetido, pero la vista previa DEL
+  MODAL no es 1:1 con el resultado tileado real (decisión consciente de no duplicar el modal
+  con un segundo modo de preview, desproporcionado para esta combinación de features) — el
+  dueño puede ajustar y mirar la vista previa real de la tarjeta (que si renderiza el tileado
+  correcto) para calibrar. **Cambio de default menor, no pedido**: el punto de partida de
+  "Repetir fondo" sin tocar nunca la posición pasó de arriba-centro (`top center` hardcodeado)
+  a centro (`50% 50%`, el default que ya tenía `fondoImagenPosicion` para el modo normal, ahora
+  compartido) — impacto bajo, la feature en sí "no se verificó visualmente" todavía según la
+  sesión anterior.
+- **Fix — fondo del título de ítem de catálogo en vista "Lista" se veía como un subrayado, no
+  un chip** (bug real reportado): `line-clamp-2` fuerza `display: -webkit-box` (modo de caja
+  legacy) en el mismo elemento que tenía el `background-color` — ese modo no siempre respeta
+  `flex-1`/ancho completo, así que el fondo quedaba encogido al ancho real del texto en vez de
+  llenar la fila. Fix: el fondo/color pasó a un `<div>` contenedor normal (que si respeta
+  `flex-1`), con el `<p className="line-clamp-2">` (sin fondo propio) adentro — mismo criterio
+  en vista "Grid".
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios en cada paso. 🔴 No
+  verificado todavía en navegador real (ninguno de los 5 ítems de esta sesión) — pendiente
+  probar: negrita/cursiva en una descripción real, herencia de tipografía padre→hijo y
+  primero→subsecuentes con una tarjeta de varios botones, el link de WhatsApp generándose bien
+  con caracteres especiales en el título, centrado de ubicación/horario, y el fondo repetido
+  con zoom/posición custom.
+
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
   planes" arriba para el detalle completo de cada uno, decisión consciente del cliente de
@@ -1380,6 +1455,9 @@ real desde esta sesión salvo que se indique lo contrario):
   agendar, no el recordatorio programado antes de la cita que el copy sugiere.
 - 🔴 Commitear `src/lib/notificaciones-agenda.ts` + los 3 archivos modificados relacionados
   (confirmación de agenda por WhatsApp vía Make) — funcionando en el working tree, sin commit.
+- 🔴 Texto enriquecido en catálogo, tipografía por botón, WhatsApp dinámico en ítems, ubicación
+  centrable y fondo repetido reposicionable (2026-08-12) — solo verificado con `tsc`/`eslint`/
+  `build`, sin probar en navegador real todavía (ver esa sección para el detalle completo).
 - 🔴 Agenda como calendario único (duración+colchón por servicio, sin "paso" configurable,
   2026-08-10) — migración APLICADA y confirmada por consulta real desde esta sesión, código
   listo para deploy; falta la prueba en navegador con servicios reales de distinta

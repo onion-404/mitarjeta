@@ -147,7 +147,7 @@ export function ReposicionarImagen({
             Reposicionar imagen
           </Dialog.Title>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Move className="size-3.5 shrink-0" /> Arrastrá la imagen para ajustar qué parte se ve.
+            <Move className="size-3.5 shrink-0" /> Arrastra la imagen para ajustar qué parte se ve.
           </p>
           <div
             ref={containerRef}

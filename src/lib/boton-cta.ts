@@ -61,8 +61,11 @@ import type {
   BotonArchivo,
   BotonCatalogo,
   BotonCta,
+  BotonHijo,
+  BotonOpciones,
   ContactoOrdenable,
   DatosContacto,
+  EstiloTipografia,
   IdentidadVisual,
   SeccionOrdenable,
 } from "@/lib/types"
@@ -239,6 +242,53 @@ export function construirUrlWhatsapp(numero: string, mensaje: string): string {
   const digitos = soloDigitos(numero)
   const texto = mensaje.trim()
   return texto ? `https://wa.me/${digitos}?text=${encodeURIComponent(texto)}` : `https://wa.me/${digitos}`
+}
+
+// ============================================================================
+// Tipografía por botón (2026-08-12) — `fuenteBoton`/`pesoBoton` en
+// `BotonBase` son opcionales y se resuelven con herencia: un hijo de
+// "opciones" hereda la EFECTIVA de su padre (que a su vez puede heredar del
+// primer botón top-level), y un botón top-level que no es el primero hereda
+// la del primero. Sin cadena de la que colgarse (el primer botón top-level,
+// o un padre/primero sin valor propio), cae al default de la tarjeta. Una
+// sola función recursiva para fuente y peso a la vez (no 2 funciones
+// separadas): ambos siguen exactamente la misma regla de herencia, separarlas
+// solo duplicaría la lógica de recorrido. Reusada TAL CUAL por el editor
+// (sobre la vista previa en memoria, `construirBotonPreview`) y el render
+// público (sobre los botones ya normalizados) — un solo lugar para esta
+// regla de negocio, mismo criterio que `normalizarBotones()`.
+// ============================================================================
+export interface TipografiaBoton {
+  fuente: EstiloTipografia
+  peso: number
+}
+
+export function resolverTipografiaBoton(
+  boton: Boton | BotonHijo,
+  contexto: {
+    /** Presente solo al resolver un hijo de "opciones". */
+    padre?: BotonOpciones
+    /** El primer botón top-level de la lista — ausente/irrelevante para un
+     *  hijo (los hijos nunca heredan directo del primero, siempre a través
+     *  de su padre). */
+    primero?: Boton
+    fuenteCard: EstiloTipografia
+    pesoCard: number
+  }
+): TipografiaBoton {
+  const heredado: TipografiaBoton = contexto.padre
+    ? resolverTipografiaBoton(contexto.padre, {
+        primero: contexto.primero,
+        fuenteCard: contexto.fuenteCard,
+        pesoCard: contexto.pesoCard,
+      })
+    : contexto.primero && contexto.primero.id !== boton.id
+      ? resolverTipografiaBoton(contexto.primero, { fuenteCard: contexto.fuenteCard, pesoCard: contexto.pesoCard })
+      : { fuente: contexto.fuenteCard, peso: contexto.pesoCard }
+  return {
+    fuente: boton.fuenteBoton ?? heredado.fuente,
+    peso: boton.pesoBoton ?? heredado.peso,
+  }
 }
 
 // ============================================================================

@@ -28,6 +28,7 @@ import { Switch } from "@/components/ui/switch"
 import { CandadoPlan } from "@/components/tarjeta/candado-plan"
 import { ColorPicker } from "@/components/tarjeta/color-picker"
 import { CompartirTarjeta } from "@/components/tarjeta/compartir-tarjeta"
+import { EditorTextoEnriquecido } from "@/components/tarjeta/editor-texto-enriquecido"
 import { OpcionPersonalizacion, SwatchDivisor, SwatchForma } from "@/components/tarjeta/opcion-personalizacion"
 import { PlantillasGaleria } from "@/components/tarjeta/plantillas-galeria"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
@@ -40,6 +41,7 @@ import {
   BOTON_ICONOS,
   BOTON_TEXTURAS,
   CONTACTO_ORDENABLES,
+  construirUrlWhatsapp,
   normalizarBotones,
   ordenContactoNormalizado,
 } from "@/lib/boton-cta"
@@ -93,6 +95,14 @@ interface ProductoFormState {
    *  contenedor (object-fit:cover) y se puede reencuadrar sin volver a
    *  subir el archivo. */
   imagenPosicion: PosicionImagen
+  /** Helper "Crear link de WhatsApp" (mismo criterio que ya tenía BotonCta
+   *  antes de la unificación de tipos de botón, ver CLAUDE.md) — 100%
+   *  efímero, NUNCA se guarda: solo arma `enlaceUrl` con
+   *  `construirUrlWhatsapp()` cada vez que número/mensaje cambian. Producto
+   *  no gana ningún campo nuevo en lib/types.ts por esto. */
+  waAbierto: boolean
+  waNumero: string
+  waMensaje: string
 }
 
 /** Estado de un botón en el editor — unifica Botones/Servicios/Productos/
@@ -130,6 +140,13 @@ interface BotonFormState {
   colorBorde: string
   colorTextoActivo: boolean
   colorTexto: string
+  /** Fuente/peso del título — sin activar, hereda (ver
+   *  resolverTipografiaBotonForm, dentro del componente, y su explicación
+   *  gemela resolverTipografiaBoton en lib/boton-cta.ts). */
+  fuenteBotonActiva: boolean
+  fuenteBoton: EstiloTipografia
+  pesoBotonActivo: boolean
+  pesoBoton: number
   hijos: BotonFormState[] // "opciones"
   vista: CatalogoVista // "catalogo"
   items: ProductoFormState[] // "catalogo" — reusa ProductoFormState tal cual
@@ -198,6 +215,10 @@ function adaptarBotonFormState(boton: Boton | BotonHijo, expandido: boolean): Bo
     colorBorde: boton.colorBorde ?? "#18181b",
     colorTextoActivo: Boolean(boton.colorTexto),
     colorTexto: boton.colorTexto ?? "#ffffff",
+    fuenteBotonActiva: Boolean(boton.fuenteBoton),
+    fuenteBoton: boton.fuenteBoton ?? "moderna",
+    pesoBotonActivo: Boolean(boton.pesoBoton),
+    pesoBoton: boton.pesoBoton ?? 600,
     hijos: boton.tipo === "opciones" ? boton.hijos.map((hijo) => adaptarBotonFormState(hijo, false)) : [],
     vista: boton.tipo === "catalogo" ? boton.vista : "grid2",
     items:
@@ -211,6 +232,9 @@ function adaptarBotonFormState(boton: Boton | BotonHijo, expandido: boolean): Bo
             imagenPreview: "",
             imagenUrlExistente: item.imagenUrl ?? "",
             imagenPosicion: item.imagenPosicion ?? { x: 50, y: 50 },
+            waAbierto: false,
+            waNumero: "",
+            waMensaje: "",
           }))
         : [],
     expandido,
@@ -235,6 +259,8 @@ function construirBotonPreview(boton: BotonFormState): Boton {
     textura: boton.textura !== "ninguna" ? boton.textura : undefined,
     colorBorde: boton.colorBordeActivo ? boton.colorBorde : undefined,
     colorTexto: boton.colorTextoActivo ? boton.colorTexto : undefined,
+    fuenteBoton: boton.fuenteBotonActiva ? boton.fuenteBoton : undefined,
+    pesoBoton: boton.pesoBotonActivo ? boton.pesoBoton : undefined,
   }
   if (boton.tipo === "enlace") return { ...base, tipo: "enlace", url: boton.url }
   if (boton.tipo === "whatsapp")
@@ -265,6 +291,18 @@ function construirBotonPreview(boton: BotonFormState): Boton {
   }
 }
 
+/** Mensaje default del helper "Crear link de WhatsApp" de un ítem de
+ *  catálogo — incluye el título del ítem para que el cliente no tenga que
+ *  escribir a qué producto/servicio se refiere (pedido explícito: "que se
+ *  genere dinámicamente"). Se materializa una sola vez, al abrir el helper
+ *  (ver contenidoWhatsappItemCatalogo) — no se recalcula solo si después se
+ *  edita el título, mismo criterio que el resto de los defaults de este
+ *  editor (se puede editar libremente una vez generado). */
+function mensajeWaPorDefecto(titulo: string): string {
+  const nombre = titulo.trim()
+  return nombre ? `Hola, quiero más información sobre ${nombre}` : "Hola, quiero más información"
+}
+
 function moverEnArray<T>(lista: T[], index: number, direccion: -1 | 1): T[] {
   const destino = index + direccion
   if (destino < 0 || destino >= lista.length) return lista
@@ -272,6 +310,14 @@ function moverEnArray<T>(lista: T[], index: number, direccion: -1 | 1): T[] {
   ;[copia[index], copia[destino]] = [copia[destino], copia[index]]
   return copia
 }
+
+// Tipografía de botón siempre "desbloqueada": los campos de BotonBase
+// (color/textura) tampoco tienen candado de plan, mismo criterio (ver
+// CLAUDE.md, "Tipografía por botón") — se le pasa a SelectorTipografia un
+// `features` fijo en true para que nunca muestre CandadoPlan, reusando su UI
+// (cada opción en su propia fuente) sin heredar su lógica de gating,
+// pensada para IdentidadVisual, no para botones.
+const FEATURES_TIPOGRAFIA_BOTON = { personalizacion_libre: true, personalizacion_avanzada: true }
 
 const TOPE_BOTONES = 8
 const TOPE_HIJOS_OPCIONES = 6
@@ -523,6 +569,12 @@ export function TarjetaForm({
   // colorTitulo: vacío = auto-contraste.
   const [colorTextoSecundario, setColorTextoSecundario] = React.useState(
     visualInicial?.colorTextoSecundario ?? ""
+  )
+
+  // Alineación del bloque de dirección/horario — izquierda (default, sin
+  // cambios para tarjetas existentes) o centrado.
+  const [ubicacionCentrada, setUbicacionCentrada] = React.useState(
+    visualInicial?.ubicacionCentrada ?? false
   )
 
   // Ícono del badge "@enlace" — opcional, con el mismo set curado que los
@@ -1045,6 +1097,10 @@ export function TarjetaForm({
       colorBorde: "#18181b",
       colorTextoActivo: false,
       colorTexto: "#ffffff",
+      fuenteBotonActiva: false,
+      fuenteBoton: "moderna",
+      pesoBotonActivo: false,
+      pesoBoton: 600,
       hijos: [],
       vista: "grid2",
       items: [],
@@ -1215,6 +1271,9 @@ export function TarjetaForm({
               imagenPreview: "",
               imagenUrlExistente: "",
               imagenPosicion: { x: 50, y: 50 },
+              waAbierto: false,
+              waNumero: "",
+              waMensaje: "",
             },
           ],
         }
@@ -1646,6 +1705,8 @@ export function TarjetaForm({
         textura: boton.textura !== "ninguna" ? boton.textura : undefined,
         colorBorde: boton.colorBordeActivo ? boton.colorBorde : undefined,
         colorTexto: boton.colorTextoActivo ? boton.colorTexto : undefined,
+        fuenteBoton: boton.fuenteBotonActiva ? boton.fuenteBoton : undefined,
+        pesoBoton: boton.pesoBotonActivo ? boton.pesoBoton : undefined,
       }
       if (boton.tipo === "enlace") return { ...base, tipo: "enlace", url: boton.url.trim() }
       if (boton.tipo === "whatsapp")
@@ -1756,6 +1817,7 @@ export function TarjetaForm({
           ? fondoTarjetaDireccionGrados
           : undefined,
       colorTextoSecundario: colorTextoSecundario || undefined,
+      ubicacionCentrada: ubicacionCentrada || undefined,
       ordenContacto,
       tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
       tituloImagenUrl: tituloModo === "imagen" ? tituloImagenUrlFinal : undefined,
@@ -1997,6 +2059,7 @@ export function TarjetaForm({
         ? fondoTarjetaDireccionGrados
         : undefined,
     colorTextoSecundario: colorTextoSecundario || undefined,
+    ubicacionCentrada: ubicacionCentrada || undefined,
     ordenContacto,
     tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
     tituloImagenUrl: tituloModo === "imagen" ? tituloImagenMostrada || undefined : undefined,
@@ -2874,8 +2937,8 @@ export function TarjetaForm({
                     ? {
                         backgroundImage: `url(${fondoImagenMostrado})`,
                         backgroundRepeat: "repeat-y",
-                        backgroundSize: "100% auto",
-                        backgroundPosition: "top center",
+                        backgroundSize: `${100 * (fondoImagenPosicion.escala ?? 1)}% auto`,
+                        backgroundPosition: `${fondoImagenPosicion.x}% ${fondoImagenPosicion.y}%`,
                       }
                     : {
                         backgroundImage: `url(${fondoImagenMostrado})`,
@@ -2912,7 +2975,7 @@ export function TarjetaForm({
             <Switch checked={fondoImagenRepetir} onCheckedChange={setFondoImagenRepetir} />
           </label>
         )}
-        {fondoImagenMostrado && !fondoImagenRepetir && (
+        {fondoImagenMostrado && (
           <button
             type="button"
             onClick={() => setReposicionandoFondoImagen(true)}
@@ -3204,6 +3267,12 @@ export function TarjetaForm({
           className={cn(inputClase, "resize-none")}
         />
       </label>
+      <label className="flex items-center justify-between gap-3">
+        <span className="text-xs text-muted-foreground">
+          Centrar dirección y horario (por defecto quedan a la izquierda)
+        </span>
+        <Switch checked={ubicacionCentrada} onCheckedChange={setUbicacionCentrada} />
+      </label>
     </div>
   )
 
@@ -3222,11 +3291,132 @@ export function TarjetaForm({
     </div>
   )
 
-  /** Ícono/imagen a la izquierda + color de fondo/borde/textura — común a
-   *  enlace/whatsapp/archivo/opciones (NO a catálogo: su tile público no
-   *  usa ninguno de estos campos, ver renderBotonCatalogo en
-   *  tarjeta-card.tsx, así que no tiene sentido ofrecerlos acá). Extraído
-   *  para no repetir este bloque 4 veces dentro de renderBotonFila. */
+  /** Helper "Crear link de WhatsApp" de un ítem de catálogo (pedido
+   *  explícito, 2026-08-12) — mismo look sutil (texto subrayado, no un
+   *  botón grande) que ya tenía BotonCta antes de la unificación de tipos
+   *  de botón (ver CLAUDE.md). 100% efímero: número/mensaje NUNCA se
+   *  guardan, solo arman `enlaceUrl` en vivo con `construirUrlWhatsapp()` —
+   *  el campo Enlace de arriba sigue siendo el dato real que se persiste. */
+  function contenidoWhatsappItemCatalogo(
+    ubicacion: UbicacionBoton,
+    indiceItem: number,
+    item: ProductoFormState
+  ) {
+    if (!item.waAbierto) {
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            const mensaje = mensajeWaPorDefecto(item.titulo)
+            const numero = whatsapp || ""
+            actualizarItemCatalogo(ubicacion, indiceItem, "waMensaje", mensaje)
+            actualizarItemCatalogo(ubicacion, indiceItem, "waNumero", numero)
+            actualizarItemCatalogo(ubicacion, indiceItem, "waAbierto", true)
+            if (numero) {
+              actualizarItemCatalogo(ubicacion, indiceItem, "enlaceUrl", construirUrlWhatsapp(numero, mensaje))
+            }
+          }}
+          className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        >
+          Crear link de WhatsApp
+        </button>
+      )
+    }
+    return (
+      <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-background/40 p-2.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-foreground">Link de WhatsApp</span>
+          <button
+            type="button"
+            onClick={() => actualizarItemCatalogo(ubicacion, indiceItem, "waAbierto", false)}
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Ocultar
+          </button>
+        </div>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground">Número de WhatsApp</span>
+          <input
+            value={item.waNumero}
+            onChange={(e) => {
+              actualizarItemCatalogo(ubicacion, indiceItem, "waNumero", e.target.value)
+              actualizarItemCatalogo(
+                ubicacion,
+                indiceItem,
+                "enlaceUrl",
+                construirUrlWhatsapp(e.target.value, item.waMensaje)
+              )
+            }}
+            placeholder="Ej. 5215512345678"
+            className={inputClase}
+          />
+        </label>
+        {whatsapp && whatsapp !== item.waNumero && (
+          <button
+            type="button"
+            onClick={() => {
+              actualizarItemCatalogo(ubicacion, indiceItem, "waNumero", whatsapp)
+              actualizarItemCatalogo(
+                ubicacion,
+                indiceItem,
+                "enlaceUrl",
+                construirUrlWhatsapp(whatsapp, item.waMensaje)
+              )
+            }}
+            className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Usar el mismo de &ldquo;Canales de contacto&rdquo; ({whatsapp})
+          </button>
+        )}
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground">Mensaje</span>
+          <textarea
+            value={item.waMensaje}
+            onChange={(e) => {
+              actualizarItemCatalogo(ubicacion, indiceItem, "waMensaje", e.target.value)
+              actualizarItemCatalogo(
+                ubicacion,
+                indiceItem,
+                "enlaceUrl",
+                construirUrlWhatsapp(item.waNumero, e.target.value)
+              )
+            }}
+            rows={2}
+            className={cn(inputClase, "resize-none")}
+          />
+        </label>
+        <p className="text-[11px] text-muted-foreground">
+          El enlace de arriba se actualiza automáticamente con estos datos.
+        </p>
+      </div>
+    )
+  }
+
+  /** Fuente/peso EFECTIVOS de un botón del editor (con herencia
+   *  padre/primero) — gemela de `resolverTipografiaBoton` (lib/boton-cta.ts,
+   *  reusada por el render público) pero sobre `BotonFormState` en vez de
+   *  `Boton`, y sobre los flags "Activa"/"Activo" en vez de undefined/
+   *  valor. Cae al mismo default (la tipografía general de la tarjeta,
+   *  peso 600) que usa TarjetaCard cuando nada está seteado — mismo
+   *  resultado visual en la vista previa que en la tarjeta real. */
+  function resolverTipografiaBotonForm(
+    boton: BotonFormState,
+    opts: { padre?: BotonFormState; primero?: BotonFormState }
+  ): { fuente: EstiloTipografia; peso: number } {
+    const heredado = opts.padre
+      ? resolverTipografiaBotonForm(opts.padre, { primero: opts.primero })
+      : opts.primero && opts.primero.id !== boton.id
+        ? resolverTipografiaBotonForm(opts.primero, {})
+        : { fuente: estiloTipografia, peso: 600 }
+    return {
+      fuente: boton.fuenteBotonActiva ? boton.fuenteBoton : heredado.fuente,
+      peso: boton.pesoBotonActivo ? boton.pesoBoton : heredado.peso,
+    }
+  }
+
+  /** Ícono/imagen a la izquierda + color de fondo/borde/textura/tipografía
+   *  — común a enlace/whatsapp/archivo/opciones/catálogo/agenda. Extraído
+   *  para no repetir este bloque varias veces dentro de renderBotonFila. */
   function contenidoIconoYColorBoton(boton: BotonFormState, ubicacion: UbicacionBoton) {
     const imagenMostrada = boton.imagenPreview || boton.imagenUrlExistente
     return (
@@ -3390,6 +3580,65 @@ export function TarjetaForm({
             ))}
           </select>
         </label>
+
+        {(() => {
+          const padre = ubicacion.indiceHijo !== undefined ? botones[ubicacion.indice] : undefined
+          const primero = botones[0]
+          const efectiva = resolverTipografiaBotonForm(boton, { padre, primero })
+          return (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="flex items-center justify-between text-xs text-muted-foreground">
+                  Fuente del botón
+                  {boton.fuenteBotonActiva && (
+                    <button
+                      type="button"
+                      onClick={() => actualizarBotonEn(ubicacion, "fuenteBotonActiva", false)}
+                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    >
+                      Automático
+                    </button>
+                  )}
+                </span>
+                <SelectorTipografia
+                  value={boton.fuenteBotonActiva ? boton.fuenteBoton : efectiva.fuente}
+                  onChange={(id) => {
+                    actualizarBotonEn(ubicacion, "fuenteBoton", id)
+                    actualizarBotonEn(ubicacion, "fuenteBotonActiva", true)
+                  }}
+                  valorGuardado={efectiva.fuente}
+                  features={FEATURES_TIPOGRAFIA_BOTON}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="flex items-center justify-between text-xs text-muted-foreground">
+                  Peso ({boton.pesoBotonActivo ? boton.pesoBoton : efectiva.peso})
+                  {boton.pesoBotonActivo && (
+                    <button
+                      type="button"
+                      onClick={() => actualizarBotonEn(ubicacion, "pesoBotonActivo", false)}
+                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    >
+                      Automático
+                    </button>
+                  )}
+                </span>
+                <input
+                  type="range"
+                  min={400}
+                  max={800}
+                  step={50}
+                  value={boton.pesoBotonActivo ? boton.pesoBoton : efectiva.peso}
+                  onChange={(e) => {
+                    actualizarBotonEn(ubicacion, "pesoBoton", Number(e.target.value))
+                    actualizarBotonEn(ubicacion, "pesoBotonActivo", true)
+                  }}
+                  className="w-full cursor-pointer accent-foreground"
+                />
+              </label>
+            </div>
+          )
+        })()}
       </>
     )
   }
@@ -3739,13 +3988,14 @@ export function TarjetaForm({
                           <Trash2 className="size-4" />
                         </button>
                       </div>
-                      <input
+                      <EditorTextoEnriquecido
                         value={item.descripcion}
-                        onChange={(e) =>
-                          actualizarItemCatalogo(ubicacion, indiceItem, "descripcion", e.target.value)
+                        onChange={(valor) =>
+                          actualizarItemCatalogo(ubicacion, indiceItem, "descripcion", valor)
                         }
                         onFocus={() => scrollPreviewTo("botones")}
-                        placeholder="Descripción corta (opcional)"
+                        placeholder="Descripción corta (opcional) — selecciona texto y usa los botones para negrita/cursiva"
+                        rows={2}
                         className={inputClase}
                       />
                       <input
@@ -3758,6 +4008,7 @@ export function TarjetaForm({
                         placeholder="Enlace para agendar, comprar o ver más (opcional)"
                         className={inputClase}
                       />
+                      {contenidoWhatsappItemCatalogo(ubicacion, indiceItem, item)}
                       <div className="flex items-center gap-3">
                         {imagenItemMostrada && (
                           <div className="relative shrink-0">

@@ -18,6 +18,7 @@ import {
   normalizarBotones,
   obtenerBotonIcono,
   ordenContactoNormalizado,
+  resolverTipografiaBoton,
 } from "@/lib/boton-cta"
 import { obtenerColorContraste } from "@/lib/contraste"
 import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
@@ -183,6 +184,7 @@ export function TarjetaCard({
     fondoTarjetaTipoDegradado,
     fondoTarjetaDireccionGrados,
     colorTextoSecundario,
+    ubicacionCentrada,
     ordenContacto,
     badgeIconoActivo,
     badgeIconoId,
@@ -274,13 +276,20 @@ export function TarjetaCard({
   // "Repetir fondo": ancho 100% (alto proporcional) repitiendo hacia abajo
   // para llenar la pantalla, en vez de recortarse con object-fit:cover — no
   // usa next/image (no soporta background-repeat), se resuelve con un div
-  // con background-image plano. fondoImagenPosicion no aplica en este modo.
+  // con background-image plano. `fondoImagenPosicion` SÍ aplica en este
+  // modo (2026-08-12, antes quedaba fijo en "arriba centro" y el botón
+  // "Reposicionar" ni se mostraba) — mismo campo x/y/escala que el modo sin
+  // repetir, reinterpretado como background-position/background-size en
+  // vez de object-position/transform: escala > 1 ensancha el ancho más
+  // allá del 100% (equivalente a "acercar" antes de que el patrón se
+  // repita), x/y desplazan desde dónde arranca esa imagen ensanchada.
+  const escalaFondoRepetido = fondoImagenPosicion?.escala ?? 1
   const estiloFondoImagenRepetido: React.CSSProperties | undefined = fondoImagenRepetir
     ? {
         backgroundImage: `url(${fondoImagenUrl})`,
         backgroundRepeat: "repeat-y",
-        backgroundSize: "100% auto",
-        backgroundPosition: "top center",
+        backgroundSize: `${100 * escalaFondoRepetido}% auto`,
+        backgroundPosition: `${fondoImagenPosicion?.x ?? 50}% ${fondoImagenPosicion?.y ?? 50}%`,
       }
     : undefined
   const alturaBanner = bannerAltura ?? 192
@@ -528,19 +537,39 @@ export function TarjetaCard({
     )
   }
 
-  // Resuelve el estilo (fondo/texto/borde/textura/vidrio) de CUALQUIER
-  // botón de ancho completo (enlace/whatsapp/archivo/opciones) — un solo
-  // lugar en vez de repetir el cálculo por tipo.
-  function estiloDeBoton(boton: Boton | BotonHijo): React.CSSProperties {
+  // Resuelve el estilo (fondo/texto/borde/textura/vidrio/fuente) de
+  // CUALQUIER botón de ancho completo (enlace/whatsapp/archivo/opciones/
+  // catálogo/agenda) — un solo lugar en vez de repetir el cálculo por tipo.
+  // `padre` solo se pasa cuando `boton` es un hijo de "opciones" — hace
+  // falta para resolver la tipografía heredada (ver resolverTipografiaBoton,
+  // lib/boton-cta.ts); el resto de los campos no dependen del padre.
+  // Devuelve el estilo del CONTENEDOR (incluye fontFamily, que cascada bien
+  // hacia el subtítulo) separado del estilo del TÍTULO (fontWeight, que no
+  // debe cascadear al subtítulo — mismo peso fijo que tenían todos los
+  // botones antes de esta feature).
+  function estiloDeBoton(
+    boton: Boton | BotonHijo,
+    opts?: { padre?: BotonOpciones }
+  ): { contenedor: React.CSSProperties; titulo: React.CSSProperties } {
     const colorFondoBoton = boton.colorFondo || colorBotonesFinal
     const colorTextoBoton =
       boton.colorTexto || (boton.colorFondo ? obtenerColorContraste(boton.colorFondo) : colorTextoCta)
+    const tipografia = resolverTipografiaBoton(boton, {
+      padre: opts?.padre,
+      primero: botonesNormalizados[0],
+      fuenteCard: estiloTipografia ?? "moderna",
+      pesoCard: 600,
+    })
     return {
-      backgroundColor: colorFondoBoton ? `${colorFondoBoton}${alfaVidrio}` : undefined,
-      color: colorTextoBoton,
-      borderColor: boton.colorBorde,
-      ...estiloVidrio,
-      ...estiloTexturaBoton(boton.textura),
+      contenedor: {
+        backgroundColor: colorFondoBoton ? `${colorFondoBoton}${alfaVidrio}` : undefined,
+        color: colorTextoBoton,
+        borderColor: boton.colorBorde,
+        fontFamily: fuentePorEstilo(tipografia.fuente),
+        ...estiloVidrio,
+        ...estiloTexturaBoton(boton.textura),
+      },
+      titulo: { fontWeight: tipografia.peso },
     }
   }
 
@@ -559,10 +588,11 @@ export function TarjetaCard({
   // (metadata de tracking distinta, mismo render).
   function renderBotonSimple(
     boton: BotonEnlace | BotonWhatsapp | BotonArchivo,
-    opts?: { tipoEnlace?: string; botonPadre?: string }
+    opts?: { tipoEnlace?: string; padre?: BotonOpciones }
   ): React.ReactNode {
     const url =
       boton.tipo === "enlace" ? boton.url : boton.tipo === "whatsapp" ? construirUrlWhatsapp(boton.waNumero, boton.waMensaje ?? "") : boton.archivoUrl
+    const estiloBoton = estiloDeBoton(boton, { padre: opts?.padre })
     const vistaPrevia: BotonVistaPrevia = {
       titulo: boton.titulo,
       subtitulo: boton.subtitulo,
@@ -570,23 +600,23 @@ export function TarjetaCard({
       imagenUrl: boton.imagenUrl,
       iconoId: boton.iconoId,
       url,
+      estiloTitulo: estiloBoton.titulo,
     }
-    const estiloBotonCta = estiloDeBoton(boton)
     const tieneUrl = Boolean(url.trim())
     const tipoEnlace = opts?.tipoEnlace ?? `boton_${boton.tipo}`
     return (
       <div key={boton.id} className="relative">
-        <BotonCtaModal boton={vistaPrevia} estiloCta={estiloBotonCta} />
+        <BotonCtaModal boton={vistaPrevia} estiloCta={estiloBoton.contenedor} />
         <a
           {...(tieneUrl ? { href: url, target: "_blank", rel: "noopener noreferrer" } : {})}
           onClick={() =>
             track("click_enlace", {
               tipo_enlace: tipoEnlace,
               boton_titulo: boton.titulo,
-              ...(opts?.botonPadre ? { boton_padre: opts.botonPadre } : {}),
+              ...(opts?.padre ? { boton_padre: opts.padre.titulo } : {}),
             })
           }
-          style={estiloBotonCta}
+          style={estiloBoton.contenedor}
           className={cn(
             claseBotonBase,
             "pl-4 pr-9",
@@ -611,8 +641,10 @@ export function TarjetaCard({
   function renderCabeceraToggle(
     boton: BotonOpciones | BotonCatalogo | BotonAgenda,
     abierta: boolean,
-    onClick: () => void
+    onClick: () => void,
+    opts?: { padre?: BotonOpciones }
   ): React.ReactNode {
+    const estiloBoton = estiloDeBoton(boton, { padre: opts?.padre })
     const vistaPrevia: BotonVistaPrevia = {
       titulo: boton.titulo,
       subtitulo: boton.subtitulo,
@@ -620,13 +652,13 @@ export function TarjetaCard({
       imagenUrl: boton.imagenUrl,
       iconoId: boton.iconoId,
       url: "",
+      estiloTitulo: estiloBoton.titulo,
     }
-    const estiloBotonCta = estiloDeBoton(boton)
     return (
       <button
         type="button"
         onClick={onClick}
-        style={estiloBotonCta}
+        style={estiloBoton.contenedor}
         className={cn(
           claseBotonBase,
           "px-4",
@@ -660,8 +692,8 @@ export function TarjetaCard({
           <div className="flex flex-col gap-2.5 pl-4">
             {boton.hijos.map((hijo) =>
               hijo.tipo === "catalogo"
-                ? renderBotonCatalogo(hijo)
-                : renderBotonSimple(hijo, { tipoEnlace: "boton_opciones_hijo", botonPadre: boton.titulo })
+                ? renderBotonCatalogo(hijo, { padre: boton })
+                : renderBotonSimple(hijo, { tipoEnlace: "boton_opciones_hijo", padre: boton })
             )}
           </div>
         )}
@@ -674,7 +706,7 @@ export function TarjetaCard({
   // + grid de 2 columnas o lista de 1 por línea (elegido por el dueño) —
   // cada ítem abre el modal de detalle en vez de mostrar descripción/
   // precio/enlace apretado en el tile.
-  function renderBotonCatalogo(boton: BotonCatalogo): React.ReactNode {
+  function renderBotonCatalogo(boton: BotonCatalogo, opts?: { padre?: BotonOpciones }): React.ReactNode {
     const abierta = abiertos.has(boton.id)
     // El "chip" de título de cada ítem adopta el color del botón padre (o el
     // color de botones por defecto), igual criterio que estiloDeBoton pero
@@ -683,7 +715,7 @@ export function TarjetaCard({
     const colorTextoTitulo = boton.colorTexto || (colorFondoTitulo ? obtenerColorContraste(colorFondoTitulo) : undefined)
     return (
       <div key={boton.id} className="flex flex-col gap-2.5">
-        {renderCabeceraToggle(boton, abierta, () => toggleAbierto(boton.id))}
+        {renderCabeceraToggle(boton, abierta, () => toggleAbierto(boton.id), opts)}
         {abierta && boton.items.length > 0 && (
           <div
             className={cn(
@@ -726,16 +758,32 @@ export function TarjetaCard({
                     )}
                   />
                 )}
-                <p
+                {/* El fondo/color vive en este contenedor, NUNCA en el <p>
+                    de abajo: `line-clamp-2` fuerza `display: -webkit-box`,
+                    un modo de caja legacy que no siempre respeta
+                    `flex-1`/ancho completo — el fondo terminaba encogido al
+                    ancho del texto (se veía como un subrayado en vez de un
+                    chip, bug real reportado en vista "Lista"). Separando
+                    ambos roles, este `<div>` (block/flex normal) sí llena
+                    el ancho disponible siempre, sin importar cuántas líneas
+                    ocupe el título adentro. */}
+                <div
                   style={{ backgroundColor: colorFondoTitulo, color: colorTextoTitulo, ...estiloTextoGeneral }}
                   className={cn(
-                    "line-clamp-2 text-[11px] font-medium",
-                    boton.vista === "lista1" ? "flex-1 px-3 py-1" : "w-full px-1.5 py-1.5 text-center",
+                    "flex items-center",
+                    boton.vista === "lista1" ? "flex-1 px-3 py-1" : "w-full justify-center px-1.5 py-1.5",
                     !colorFondoTitulo && "text-[#18181b] dark:text-[#fafafa]"
                   )}
                 >
-                  {item.titulo}
-                </p>
+                  <p
+                    className={cn(
+                      "line-clamp-2 text-[11px] font-medium",
+                      boton.vista !== "lista1" && "text-center"
+                    )}
+                  >
+                    {item.titulo}
+                  </p>
+                </div>
               </button>
             ))}
           </div>
@@ -1050,14 +1098,20 @@ export function TarjetaCard({
             // servicios/productos) — antes esto era texto plano centrado
             // pegado debajo de la Bio, sin ningún límite visual entre
             // ambos: Bio, dirección y horario se leían como un solo bloque
-            // de texto gris. El borde + fondo tenue + alineación a la
-            // izquierda separan claramente "esto es un dato estructurado",
-            // no una continuación de la Bio. `whitespace-pre-line` en cada
-            // valor: el editor permite hasta 3 líneas por campo.
+            // de texto gris. El borde + fondo tenue separan claramente
+            // "esto es un dato estructurado", no una continuación de la
+            // Bio. Alineación izquierda/centro elegible (`ubicacionCentrada`,
+            // 2026-08-12) — izquierda sigue siendo el default, sin cambios
+            // para tarjetas que nunca tocaron este campo. `whitespace-pre-
+            // line` en cada valor: el editor permite hasta 3 líneas por
+            // campo.
             <div
               data-campo="ubicacion"
               style={estiloTextoGeneral}
-              className="mt-4 flex w-full flex-col gap-1.5 rounded-xl border border-[rgba(0,0,0,0.05)] bg-[rgba(0,0,0,0.02)] px-3 py-2.5 text-left text-xs text-[#71717a] dark:border-[rgba(255,255,255,0.08)] dark:bg-[rgba(255,255,255,0.03)] dark:text-[#a1a1aa]"
+              className={cn(
+                "mt-4 flex w-full flex-col gap-1.5 rounded-xl border border-[rgba(0,0,0,0.05)] bg-[rgba(0,0,0,0.02)] px-3 py-2.5 text-xs text-[#71717a] dark:border-[rgba(255,255,255,0.08)] dark:bg-[rgba(255,255,255,0.03)] dark:text-[#a1a1aa]",
+                ubicacionCentrada ? "items-center text-center" : "items-start text-left"
+              )}
             >
               {direccion?.trim() && (
                 <span className="inline-flex items-start gap-1.5">

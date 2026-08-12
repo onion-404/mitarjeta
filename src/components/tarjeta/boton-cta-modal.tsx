@@ -22,6 +22,14 @@ export interface BotonVistaPrevia {
   imagenUrl?: string
   iconoId?: string
   url: string
+  /** fontWeight ya resuelto (herencia padre/primero, ver
+   *  resolverTipografiaBoton en lib/boton-cta.ts) — se calcula una vez en
+   *  TarjetaCard y se pasa listo, este componente no sabe nada de la regla
+   *  de herencia. Solo el título (no el subtítulo, que mantiene su propio
+   *  peso más liviano de siempre). fontFamily NO viaja acá: se aplica al
+   *  contenedor entero (estiloCta, en el `<a>`/`<button>` que envuelve
+   *  esto) para que cascadee también al subtítulo. */
+  estiloTitulo?: React.CSSProperties
 }
 
 interface BotonCtaModalProps {
@@ -66,7 +74,7 @@ export function ContenidoBotonCta({ boton }: { boton: BotonVistaPrevia }) {
         </span>
       ) : null}
       <span className="min-w-0 flex-1 text-left">
-        <span className="block truncate text-sm font-semibold">
+        <span className="block truncate text-sm" style={boton.estiloTitulo}>
           {boton.titulo?.trim() || "Botón"}
         </span>
         {boton.subtitulo?.trim() && (
