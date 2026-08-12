@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-08-12. Fuente de verdad para que una sesión nueva entienda el
+> Última actualización: 2026-08-13. Fuente de verdad para que una sesión nueva entienda el
 > estado real del proyecto sin releer el historial de chat. Actualizar cuando cambie algo de
 > lo que describe. **Para el detalle histórico de verificaciones, bugs encontrados en el
 > camino, capturas de pantalla y logs de sesiones anteriores, ver [HISTORIAL.md](HISTORIAL.md)
@@ -1444,6 +1444,68 @@ real desde esta sesión salvo que se indique lo contrario):
   primero→subsecuentes con una tarjeta de varios botones, el link de WhatsApp generándose bien
   con caracteres especiales en el título, centrado de ubicación/horario, y el fondo repetido
   con zoom/posición custom.
+- **Deploy de este commit a producción falló, diagnosticado y resuelto desde esta sesión**:
+  el build de Vercel (commit `11209ae`) tiró "Turbopack build failed with 8 errors" — todos
+  `Module not found` resolviendo la fuente Plus Jakarta Sans (`next/font/google`), un 404 real
+  pidiendo el archivo a `fonts.gstatic.com` durante el build. Confirmado que NO era un bug de
+  código (`git diff` entre el último deploy bueno y este, cero cambios en `layout.tsx`, donde
+  se cargan las fuentes) — problema transitorio de red/caché de build. Producción nunca quedó
+  caída (Vercel no promueve un build roto, `linkard.mx` siguió sirviendo el commit anterior
+  todo el tiempo). Se entró al dashboard de Vercel vía Claude in Chrome (browser automation,
+  reusando la sesión ya logueada del usuario — sin credenciales propias de Vercel en este
+  entorno) para leer el log del build y disparar un Redeploy sin caché, que terminó en 1m10s
+  con estado Ready — confirmado visitando `linkard.mx` directo después. Sin acción de código
+  necesaria; queda como antecedente por si vuelve a pasar (mismo síntoma → mismo diagnóstico:
+  revisar si layout.tsx cambió antes de asumir que es un bug real).
+
+## Contenido multimedia como lista tipada (video + reels de Instagram) y fix de fondo de ítem de catálogo en vista Lista (2026-08-13)
+- **"Contenido multimedia" pasa de un campo único (`videoUrl`, solo YouTube) a una lista
+  tipada** — mismo patrón que la unificación de Botones (2026-08-09): el dueño agrega N ítems,
+  cada uno de un tipo con su propio shape (`MultimediaItem` = `MultimediaVideo | 
+  MultimediaReels`, lib/types.ts). `videoUrl` queda `@deprecated` (JSONB, sin migración de
+  schema) — se sigue leyendo solo dentro de `normalizarMultimedia()` (lib/multimedia.ts,
+  mismo criterio que `normalizarBotones()`: migración en memoria, nunca escribe hasta el
+  próximo "Guardar").
+  - **Tipo "Video"**: un campo de URL — YouTube o Vimeo, **auto-detectado**
+    (`resolverEmbedVideo()`, el dueño no elige el proveedor a mano). YouTube reusa
+    `obtenerYoutubeEmbedUrl()` (lib/youtube.ts, sin cambios); Vimeo es nuevo (mismo archivo,
+    `lib/multimedia.ts`) — el ID es el último segmento puramente numérico del path, cubre
+    `vimeo.com/123`, `player.vimeo.com/video/123` y las variantes `/channels/`/`/groups/`.
+  - **Tipo "Reels de Instagram"**: un solo ítem agrupa hasta `TOPE_REELS_POR_BLOQUE = 5` URLs
+    (no un ítem por reel — a diferencia de Botones, acá no hace falta título/ícono/color por
+    reel individual). Cada reel se resuelve a `https://www.instagram.com/reel/{codigo}/embed`
+    (`obtenerInstagramReelEmbedUrl()`) — embed directo por iframe, **a propósito sin el script
+    oficial `embed.js` de Instagram** (evita cargar/ejecutar JS de terceros en la tarjeta
+    pública; contrapartida conocida: sin contador de likes/comentarios, solo el video).
+  - **Render público** (`renderMultimedia()`, tarjeta-card.tsx): "Video" mantiene el mismo
+    embed `aspect-video` de siempre; "Reels" es un slide horizontal con **scroll-snap nativo
+    de CSS** (`snap-x snap-mandatory` + `.scrollbar-hide`, clase nueva en `globals.css`) —
+    sin librería de carrusel (Embla/Swiper/etc. no estaban instaladas, mismo criterio de "sin
+    dependencia nueva si CSS alcanza" que el resto del proyecto). Cards `aspect-[9/16]`
+    (proporción real de un reel), 62% del ancho en mobile / 45% en `sm:` (deja asomar la
+    siguiente card, hint visual de que se puede seguir deslizando — el efecto "cool" pedido).
+  - **Editor** (`tarjeta-form.tsx`): mismo patrón de fila colapsable que Botones
+    (`renderMultimediaFila`) — ícono/badge de tipo + mover ↑/↓ + eliminar + expandir, sin
+    anidar (a diferencia de Botones, acá no hay "opciones"/hijos). Tope
+    `TOPE_MULTIMEDIA = 4` ítems totales (video+reels combinados) — **supuesto tomado por
+    Claude Code, no pedido palabra por palabra**, ajustar si hace falta más. Ícono de
+    Instagram: no existe en `lucide-react` (repo no lo tiene) — se reusa
+    `SOCIAL_ICONS.instagram` (`social-icons.tsx`, el mismo SVG curado que ya usan las redes
+    sociales del editor), no se agregó ningún ícono nuevo.
+- **Fix — fondo del chip de título de ítem de catálogo en vista "Lista" no cubría toda la
+  altura de la fila** (bug real reportado, iteración 2 del mismo problema visual de
+  2026-08-12): el fix anterior (mover el fondo del `<p>` a un `<div>` contenedor) resolvió el
+  ancho pero no la altura — el `<div>` con `flex-1` seguía tomando la altura de SU PROPIO
+  contenido (angosto, centrado verticalmente en medio de la fila) en vez de estirarse a la
+  altura real de la imagen (`size-16`, 64px), porque la fila (`<button>`) tenía
+  `items-center` en vez de `items-stretch`. Fix: `items-center` → `items-stretch` en la fila
+  de vista "Lista" — la imagen (altura fija explícita, no afectada por `align-items`) y el
+  chip de fondo (ahora sí estirado a esa altura) quedan parejos.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 No verificado
+  todavía en navegador real — pendiente probar: un video de Vimeo real (YouTube ya se probó
+  en su momento con el campo viejo), un slide de reels con varios reels cargados (scroll/snap
+  se siente bien, los iframes de Instagram cargan), y el fix de altura del chip en vista Lista
+  con una imagen real.
 
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
@@ -1453,11 +1515,12 @@ real desde esta sesión salvo que se indique lo contrario):
   TikTok), reporte mensual por correo y parámetros UTM personalizados (los 5, Growth). "Cero
   ausencias" por WhatsApp (Connect) es un caso aparte: el código real es una confirmación al
   agendar, no el recordatorio programado antes de la cita que el copy sugiere.
-- 🔴 Commitear `src/lib/notificaciones-agenda.ts` + los 3 archivos modificados relacionados
-  (confirmación de agenda por WhatsApp vía Make) — funcionando en el working tree, sin commit.
 - 🔴 Texto enriquecido en catálogo, tipografía por botón, WhatsApp dinámico en ítems, ubicación
   centrable y fondo repetido reposicionable (2026-08-12) — solo verificado con `tsc`/`eslint`/
   `build`, sin probar en navegador real todavía (ver esa sección para el detalle completo).
+- 🔴 Contenido multimedia como lista tipada (video/reels) y fix de altura del chip de catálogo
+  en vista Lista (2026-08-13) — solo verificado con `tsc`/`eslint`/`build`, sin probar en
+  navegador real todavía (ver esa sección para el detalle completo).
 - 🔴 Agenda como calendario único (duración+colchón por servicio, sin "paso" configurable,
   2026-08-10) — migración APLICADA y confirmada por consulta real desde esta sesión, código
   listo para deploy; falta la prueba en navegador con servicios reales de distinta

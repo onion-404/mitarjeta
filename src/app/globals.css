@@ -138,6 +138,19 @@
   }
 }
 
+@layer utilities {
+  /* Oculta la scrollbar nativa sin perder el scroll — usada por el slide
+     horizontal de reels de Instagram (tarjeta-card.tsx): con scroll-snap
+     nativo, una scrollbar visible se ve fuera de lugar sobre un carrusel. */
+  .scrollbar-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @theme inline {
   --animate-float: float 6s ease-in-out infinite;
   --animate-float-delayed: float 6s ease-in-out infinite 1.5s;

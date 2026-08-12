@@ -238,6 +238,32 @@ export type Boton =
   | BotonArchivo
   | BotonAgenda
 
+/** 2 tipos de contenido multimedia (2026-08-13) — mismo patrón que `Boton`:
+ *  el dueño arma una lista de ítems, cada uno con su propio shape según
+ *  `tipo`. Ver `normalizarMultimedia()`/`resolverEmbedVideo()`/
+ *  `obtenerInstagramReelEmbedUrl()` en lib/multimedia.ts. */
+export type MultimediaTipo = "video" | "reels"
+
+/** Un video embebido — YouTube o Vimeo (auto-detectado desde la URL por
+ *  `resolverEmbedVideo()`, el dueño no elige el proveedor a mano). */
+export interface MultimediaVideo {
+  id: string
+  tipo: "video"
+  url: string
+}
+
+/** Hasta `TOPE_REELS_POR_BLOQUE` (lib/multimedia.ts) reels de Instagram en
+ *  un slide horizontal — un solo ítem "reels" agrupa varias URLs, no un
+ *  ítem por reel (a diferencia de Botones, acá no hace falta título/ícono/
+ *  color por reel individual, son videos que se muestran tal cual). */
+export interface MultimediaReels {
+  id: string
+  tipo: "reels"
+  urls: string[]
+}
+
+export type MultimediaItem = MultimediaVideo | MultimediaReels
+
 /** @deprecated Superado por la unificación de Agenda como `tipo: "agenda"`
  *  dentro de "Botones" (2026-08-10) — ya no queda más de un bloque
  *  reordenable a este nivel, así que no tiene sentido elegir un orden
@@ -285,7 +311,17 @@ export interface DatosContacto {
   // Común a ambos
   direccion?: string
   direccionMapsUrl?: string
+  /** @deprecated Reemplazado por `multimedia` (2026-08-13) — un solo video
+   *  de YouTube pasó a ser un ítem más de una lista tipada (video/reels,
+   *  mismo criterio que la unificación de Botones). Se sigue leyendo solo
+   *  dentro de `normalizarMultimedia()` (lib/multimedia.ts) para migrar
+   *  tarjetas viejas en memoria, nunca se escribe. */
   videoUrl?: string
+  /** "Contenido multimedia" (2026-08-13) — lista tipada, mismo patrón que
+   *  `Boton`: el dueño agrega N ítems, cada uno de un tipo con su propio
+   *  shape. Ver `MultimediaItem` y `normalizarMultimedia()`
+   *  (lib/multimedia.ts) para la migración desde `videoUrl`. */
+  multimedia?: MultimediaItem[]
   /** @deprecated Modelo viejo de "Servicios" (una sola lista, sin precio/
    *  imagen/enlace) — reemplazado primero por `seccionesServicios`, y esa a
    *  su vez absorbida por botones `tipo: "catalogo"` (2026-08-09). Se sigue

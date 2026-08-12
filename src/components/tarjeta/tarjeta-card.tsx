@@ -22,11 +22,15 @@ import {
 } from "@/lib/boton-cta"
 import { obtenerColorContraste } from "@/lib/contraste"
 import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
+import {
+  normalizarMultimedia,
+  obtenerInstagramReelEmbedUrl,
+  resolverEmbedVideo,
+} from "@/lib/multimedia"
 import { DIVISORES_BANNER, ESTILOS_TIPOGRAFIA } from "@/lib/personalizacion"
 import { obtenerPlataforma } from "@/lib/redes"
 import { registrarEvento, type TipoEventoCliente } from "@/lib/track-evento"
 import { cn } from "@/lib/utils"
-import { obtenerYoutubeEmbedUrl } from "@/lib/youtube"
 import type {
   Boton,
   BotonAgenda,
@@ -147,7 +151,6 @@ export function TarjetaCard({
     direccion,
     direccionMapsUrl,
     horarios,
-    videoUrl,
     redes,
   } = datosContacto
   const {
@@ -232,7 +235,10 @@ export function TarjetaCard({
   // caracteres) — ver lib/types.ts y la sección "Datos Esenciales" del editor.
   const nombrePrincipal = nombre
   const telefonoPrincipal = telefono
-  const videoEmbedUrl = obtenerYoutubeEmbedUrl(videoUrl)
+  const multimediaNormalizada = React.useMemo(
+    () => normalizarMultimedia(datosContacto),
+    [datosContacto]
+  )
   // Con un "Fondo de la tarjeta" personalizado, el contraste de TODO el
   // texto/bordes del panel (ya atados a dark: en vez de duplicarse por
   // elemento) sigue al color elegido en vez de a temaModo — mismo criterio
@@ -730,7 +736,14 @@ export function TarjetaCard({
                 onClick={() => setItemCatalogoAbierto({ botonId: boton.id, indice })}
                 className={cn(
                   "overflow-hidden rounded-xl border border-[rgba(0,0,0,0.05)] text-left dark:border-[rgba(255,255,255,0.08)]",
-                  boton.vista === "lista1" ? "flex items-center gap-3" : "flex flex-col"
+                  // items-stretch (no items-center): el fondo del chip de
+                  // título (ver más abajo) es un hermano de la imagen en el
+                  // mismo eje flex — con items-center quedaba con la altura
+                  // de su propio contenido (angosto, centrado en el medio
+                  // de la fila) en vez de estirarse a la altura real de la
+                  // imagen (size-16), bug real reportado ("no cubre todo el
+                  // fondo del ítem" en vista Lista).
+                  boton.vista === "lista1" ? "flex items-stretch gap-3" : "flex flex-col"
                 )}
               >
                 {item.imagenUrl ? (
@@ -810,6 +823,67 @@ export function TarjetaCard({
     catalogoDelItemAbierto && itemCatalogoAbierto
       ? (catalogoDelItemAbierto.items[itemCatalogoAbierto.indice] ?? null)
       : null
+
+  // "Contenido multimedia" (2026-08-13) — reemplaza el video único de
+  // YouTube de siempre: lista tipada de ítems "video" (YouTube o Vimeo,
+  // auto-detectado) y "reels" (slide horizontal de reels de Instagram).
+  // El slide usa scroll-snap nativo de CSS, sin librería de carrusel —
+  // mismo criterio de "sin dependencia nueva si CSS alcanza" que el resto
+  // del proyecto. Cada reel usa el embed directo por iframe de Instagram
+  // (obtenerInstagramReelEmbedUrl), no el script oficial embed.js — evita
+  // cargar/ejecutar JS de terceros en la tarjeta pública.
+  function renderMultimedia(): React.ReactNode {
+    if (!multimediaNormalizada.length) return null
+    return (
+      <div data-campo="video" className="mt-5 flex w-full flex-col gap-4">
+        {multimediaNormalizada.map((item) => {
+          if (item.tipo === "video") {
+            const embed = resolverEmbedVideo(item.url)
+            if (!embed) return null
+            return (
+              <div
+                key={item.id}
+                className="aspect-video w-full overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.1)]"
+              >
+                <iframe
+                  src={embed.embedUrl}
+                  title={`Video de ${nombrePrincipal || "la tarjeta"}`}
+                  className="size-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+              </div>
+            )
+          }
+          const embeds = item.urls
+            .map((url) => obtenerInstagramReelEmbedUrl(url))
+            .filter((url): url is string => Boolean(url))
+          if (!embeds.length) return null
+          return (
+            <div
+              key={item.id}
+              className="scrollbar-hide -mx-6 flex snap-x snap-mandatory gap-3 overflow-x-auto px-6 pb-1"
+            >
+              {embeds.map((embedUrl, indice) => (
+                <div
+                  key={indice}
+                  className="aspect-[9/16] w-[62%] shrink-0 snap-center overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] shadow-md dark:border-[rgba(255,255,255,0.1)] sm:w-[45%]"
+                >
+                  <iframe
+                    src={embedUrl}
+                    title={`Reel de Instagram ${indice + 1}`}
+                    className="size-full"
+                    allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                </div>
+              ))}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
 
   function renderBotones(): React.ReactNode {
     if (!botonesNormalizados.length) return null
@@ -1130,17 +1204,7 @@ export function TarjetaCard({
 
           {renderContactoYRedes()}
 
-          {videoEmbedUrl && (
-            <div data-campo="video" className="mt-5 aspect-video w-full overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.1)]">
-              <iframe
-                src={videoEmbedUrl}
-                title={`Video de ${nombrePrincipal || "la tarjeta"}`}
-                className="size-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowFullScreen
-              />
-            </div>
-          )}
+          {renderMultimedia()}
 
           {renderBotones()}
         </div>

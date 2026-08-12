@@ -15,6 +15,7 @@ import {
   Plus,
   Sun,
   Trash2,
+  Video,
   X,
 } from "lucide-react"
 import Link from "next/link"
@@ -48,6 +49,12 @@ import {
 import { validarCupon } from "@/lib/cupones"
 import { estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import {
+  MULTIMEDIA_TIPO_ETIQUETA,
+  TOPE_MULTIMEDIA,
+  TOPE_REELS_POR_BLOQUE,
+  normalizarMultimedia,
+} from "@/lib/multimedia"
+import {
   DIVISORES_BANNER,
   FORMAS_AVATAR,
   calcularBloqueos,
@@ -71,6 +78,8 @@ import type {
   DivisorBanner,
   EstiloTipografia,
   IdentidadVisual,
+  MultimediaItem,
+  MultimediaTipo,
   PeriodicidadSuscripcion,
   Plan,
   PlataformaRed,
@@ -156,6 +165,17 @@ interface BotonFormState {
   expandido: boolean
 }
 
+/** Estado de un ítem de "Contenido multimedia" en el editor — mismo
+ *  criterio plano (no discriminado) que `BotonFormState`: `url` solo
+ *  aplica a "video", `urls` solo a "reels". */
+interface MultimediaFormState {
+  id: string
+  tipo: MultimediaTipo
+  url: string // "video"
+  urls: string[] // "reels" — hasta TOPE_REELS_POR_BLOQUE
+  expandido: boolean
+}
+
 /** Direcciona un botón dentro del array top-level o, si `indiceHijo` está
  *  presente, un hijo de un botón "opciones" — un solo nivel de anidamiento,
  *  igual que el modelo de datos. Reusada tanto por el CRUD del editor como
@@ -237,6 +257,26 @@ function adaptarBotonFormState(boton: Boton | BotonHijo, expandido: boolean): Bo
             waMensaje: "",
           }))
         : [],
+    expandido,
+  }
+}
+
+/** Inversa de `adaptarMultimediaFormState` — arma el `MultimediaItem` final
+ *  a partir del estado de edición, filtrando URLs de reels vacías (mismo
+ *  criterio que el resto del editor: strings vacíos nunca se persisten). */
+function construirMultimediaFinal(item: MultimediaFormState): MultimediaItem {
+  if (item.tipo === "reels") {
+    return { id: item.id, tipo: "reels", urls: item.urls.map((u) => u.trim()).filter(Boolean) }
+  }
+  return { id: item.id, tipo: "video", url: item.url.trim() }
+}
+
+function adaptarMultimediaFormState(item: MultimediaItem, expandido: boolean): MultimediaFormState {
+  return {
+    id: item.id,
+    tipo: item.tipo,
+    url: item.tipo === "video" ? item.url : "",
+    urls: item.tipo === "reels" ? item.urls : [],
     expandido,
   }
 }
@@ -508,7 +548,9 @@ export function TarjetaForm({
   const [direccionMapsUrl, setDireccionMapsUrl] = React.useState(
     datosIniciales?.direccionMapsUrl ?? ""
   )
-  const [videoUrl, setVideoUrl] = React.useState(datosIniciales?.videoUrl ?? "")
+  const [multimedia, setMultimedia] = React.useState<MultimediaFormState[]>(() =>
+    normalizarMultimedia(datosIniciales ?? {}).map((item) => adaptarMultimediaFormState(item, false))
+  )
   const [redes, setRedes] = React.useState<RedSocial[]>(datosIniciales?.redes ?? [])
 
   // Botones — unifica Botones/Servicios/Productos/folleto suelto en un solo
@@ -1065,6 +1107,64 @@ export function TarjetaForm({
     )
   }
   const archivoDisponible = featuresPersonalizacion.personalizacion_avanzada || hayArchivo(botones)
+
+  // --- Contenido multimedia — CRUD (video/reels), lista plana sin anidar --
+
+  function crearMultimediaNueva(tipo: MultimediaTipo): MultimediaFormState {
+    return {
+      id: crypto.randomUUID(),
+      tipo,
+      url: "",
+      urls: tipo === "reels" ? [""] : [],
+      expandido: true,
+    }
+  }
+
+  function agregarMultimedia(tipo: MultimediaTipo) {
+    if (multimedia.length >= TOPE_MULTIMEDIA) return
+    setMultimedia((prev) => [...prev, crearMultimediaNueva(tipo)])
+  }
+
+  function actualizarMultimediaEn<K extends keyof MultimediaFormState>(
+    indice: number,
+    campo: K,
+    valor: MultimediaFormState[K]
+  ) {
+    setMultimedia((prev) => prev.map((item, i) => (i === indice ? { ...item, [campo]: valor } : item)))
+  }
+
+  function moverMultimediaEn(indice: number, direccion: -1 | 1) {
+    setMultimedia((prev) => moverEnArray(prev, indice, direccion))
+  }
+
+  function quitarMultimediaEn(indice: number) {
+    setMultimedia((prev) => prev.filter((_, i) => i !== indice))
+  }
+
+  function agregarReelUrl(indice: number) {
+    setMultimedia((prev) =>
+      prev.map((item, i) => {
+        if (i !== indice || item.urls.length >= TOPE_REELS_POR_BLOQUE) return item
+        return { ...item, urls: [...item.urls, ""] }
+      })
+    )
+  }
+
+  function actualizarReelUrl(indice: number, indiceReel: number, valor: string) {
+    setMultimedia((prev) =>
+      prev.map((item, i) =>
+        i === indice ? { ...item, urls: item.urls.map((u, j) => (j === indiceReel ? valor : u)) } : item
+      )
+    )
+  }
+
+  function quitarReelUrl(indice: number, indiceReel: number) {
+    setMultimedia((prev) =>
+      prev.map((item, i) =>
+        i === indice ? { ...item, urls: item.urls.filter((_, j) => j !== indiceReel) } : item
+      )
+    )
+  }
 
   // --- Botones — CRUD unificado (enlace/whatsapp/opciones/catalogo/archivo) --
 
@@ -1762,10 +1862,14 @@ export function TarjetaForm({
       .filter(({ boton }) => boton.titulo.trim())
       .map(({ boton, indice }) => construirBotonFinal(boton, { indice }))
 
+    const multimediaFinal: MultimediaItem[] = multimedia
+      .filter((item) => (item.tipo === "video" ? item.url.trim() : item.urls.some((u) => u.trim())))
+      .map(construirMultimediaFinal)
+
     const datos_contacto: DatosContacto = {
       direccion: direccion.trim() || undefined,
       direccionMapsUrl: direccionMapsUrl.trim() || undefined,
-      videoUrl: videoUrl.trim() || undefined,
+      multimedia: multimediaFinal,
       redes: redesFinales,
       botones: botonesFinales,
       nombre: nombre.trim(),
@@ -2004,10 +2108,14 @@ export function TarjetaForm({
     .filter((boton) => boton.titulo.trim())
     .map((boton) => construirBotonPreview(boton))
 
+  const multimediaActual: MultimediaItem[] = multimedia
+    .filter((item) => (item.tipo === "video" ? item.url.trim() : item.urls.some((u) => u.trim())))
+    .map(construirMultimediaFinal)
+
   const datosContactoActual: DatosContacto = {
     direccion,
     direccionMapsUrl,
-    videoUrl,
+    multimedia: multimediaActual,
     redes: redesValidas(redes),
     botones: botonesActuales,
     nombre,
@@ -3276,18 +3384,157 @@ export function TarjetaForm({
     </div>
   )
 
+  /** Fila-cabecera de un ítem de "Contenido multimedia" — mismo patrón
+   *  visual que `renderBotonFila` (ícono + título/preview + badge de tipo +
+   *  mover ↑/↓ + eliminar + chevron expandir/colapsar), sin anidar (a
+   *  diferencia de Botones, acá no hay hijos). */
+  function renderMultimediaFila(item: MultimediaFormState, indice: number, total: number): React.ReactNode {
+    const Icono = item.tipo === "reels" ? SOCIAL_ICONS.instagram : Video
+    const reelsCargados = item.urls.filter((u) => u.trim()).length
+    const tituloFila =
+      item.tipo === "video"
+        ? item.url.trim() || "Sin URL todavía"
+        : `${reelsCargados} reel${reelsCargados === 1 ? "" : "s"}`
+    return (
+      <div key={item.id} className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/50 p-3">
+        <div className="flex items-center gap-2">
+          <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted">
+            <Icono className="size-4 text-muted-foreground" />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+            {tituloFila}
+          </span>
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            {MULTIMEDIA_TIPO_ETIQUETA[item.tipo]}
+          </span>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => moverMultimediaEn(indice, -1)}
+              disabled={indice === 0}
+              aria-label="Subir"
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+            >
+              <ChevronUp className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => moverMultimediaEn(indice, 1)}
+              disabled={indice === total - 1}
+              aria-label="Bajar"
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+            >
+              <ChevronDown className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => quitarMultimediaEn(indice)}
+              aria-label="Quitar"
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => actualizarMultimediaEn(indice, "expandido", !item.expandido)}
+              aria-label={item.expandido ? "Colapsar" : "Expandir"}
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted"
+            >
+              <ChevronDown
+                className={cn(
+                  "size-3.5 transition-transform duration-200 ease-out",
+                  item.expandido && "rotate-180"
+                )}
+              />
+            </button>
+          </div>
+        </div>
+
+        {item.expandido && (
+          <div className="flex flex-col gap-3 border-t border-border/60 pt-3">
+            {item.tipo === "video" ? (
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted-foreground">URL del video</span>
+                <input
+                  value={item.url}
+                  onChange={(e) => actualizarMultimediaEn(indice, "url", e.target.value)}
+                  onFocus={() => scrollPreviewTo("video")}
+                  placeholder="https://www.youtube.com/watch?v=... o https://vimeo.com/..."
+                  className={inputClase}
+                />
+                <span className="text-[11px] text-muted-foreground">Admite YouTube y Vimeo.</span>
+              </label>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <span className="text-xs text-muted-foreground">
+                  URLs de los reels (hasta {TOPE_REELS_POR_BLOQUE})
+                </span>
+                {item.urls.map((url, indiceReel) => (
+                  <div key={indiceReel} className="flex items-center gap-2">
+                    <input
+                      value={url}
+                      onChange={(e) => actualizarReelUrl(indice, indiceReel, e.target.value)}
+                      onFocus={() => scrollPreviewTo("video")}
+                      placeholder="https://www.instagram.com/reel/..."
+                      className={cn(inputClase, "flex-1")}
+                    />
+                    {item.urls.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => quitarReelUrl(indice, indiceReel)}
+                        aria-label="Quitar reel"
+                        className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {item.urls.length < TOPE_REELS_POR_BLOQUE && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => agregarReelUrl(indice)}
+                    className="self-start"
+                  >
+                    <Plus className="size-3.5" /> Agregar reel
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const contenidoMultimedia = (
-    <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
-      <label className="flex flex-col gap-1.5">
-        <span className={labelClase}>Video de YouTube (opcional)</span>
-        <input
-          value={videoUrl}
-          onChange={(e) => setVideoUrl(e.target.value)}
-          onFocus={() => scrollPreviewTo("video")}
-          placeholder="https://www.youtube.com/watch?v=..."
-          className={inputClase}
-        />
-      </label>
+    <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+      <p className="text-xs text-muted-foreground">
+        Agrega videos (YouTube o Vimeo) o un slide horizontal de reels de Instagram.
+      </p>
+
+      {multimedia.map((item, indice) => renderMultimediaFila(item, indice, multimedia.length))}
+
+      {multimedia.length < TOPE_MULTIMEDIA && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => agregarMultimedia("video")}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+          >
+            <Plus className="size-3.5" /> Video
+          </button>
+          <button
+            type="button"
+            onClick={() => agregarMultimedia("reels")}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+          >
+            <Plus className="size-3.5" /> Reels de Instagram
+          </button>
+        </div>
+      )}
     </div>
   )
 
