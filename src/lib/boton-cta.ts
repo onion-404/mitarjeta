@@ -244,6 +244,16 @@ export function construirUrlWhatsapp(numero: string, mensaje: string): string {
   return texto ? `https://wa.me/${digitos}?text=${encodeURIComponent(texto)}` : `https://wa.me/${digitos}`
 }
 
+/** true si el enlace apunta a WhatsApp (armado con `construirUrlWhatsapp` o
+ *  pegado a mano por el dueño) — usado para cambiar el copy del botón de
+ *  "Ver más" (genérico) a "Solicitar información" (más preciso cuando el
+ *  destino es un chat, no una página con más detalle) en el modal de
+ *  detalle de un ítem de catálogo. */
+export function esEnlaceWhatsapp(url?: string) {
+  if (!url) return false
+  return /^https:\/\/(wa\.me|api\.whatsapp\.com)\//.test(url.trim())
+}
+
 // ============================================================================
 // Tipografía por botón (2026-08-12) — `fuenteBoton`/`pesoBoton` en
 // `BotonBase` son opcionales y se resuelven con herencia: un hijo de

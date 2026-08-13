@@ -1717,15 +1717,57 @@ real desde esta sesión salvo que se indique lo contrario):
   firma de subida tampoco lo requeriría si estuviera activo, así que no hay señal indirecta
   de que esté prendido) — pendiente confirmar en el dashboard de Cloudinary si algo se ve
   roto.
-- **Alcance NO tocado a propósito**: el tile se mantuvo `aspect-square` (mismo criterio que
-  las imágenes de la galería, uniformidad del grid) — un video vertical sigue recortándose
-  arriba/abajo con `object-cover` dentro del cuadrado, ahora ya recortado del lado de
-  Cloudinary. No se cambió a un tile más alto para video porque no fue un pedido explícito
-  (el cliente mencionó la proporción 1:1 como contexto de la pregunta de carga, no como algo a
-  cambiar) — avisar si en la práctica se prefiere un tile propio para video vertical.
+- **🔴→✅ El tile se mantuvo `aspect-square` en esta sesión — superado al día siguiente**: la
+  decisión de no tocar la proporción del tile (tomada acá, "no fue un pedido explícito") se
+  revirtió apenas el cliente confirmó que sí lo quería — ver la sección siguiente ("Galería con
+  proporción real").
 - Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 No verificado
   todavía en navegador real ni contra la cuenta real de Cloudinary — pendiente confirmar que
   las URLs transformadas cargan (no 401) y que el poster se ve como el primer frame real.
+
+## Botón "Solicitar información" para catálogo→WhatsApp + galería con proporción real (2026-08-17)
+- **Botón del modal de detalle de un ítem de catálogo dice "Solicitar información" cuando el
+  enlace es de WhatsApp** (antes siempre "Ver más", genérico) — `esEnlaceWhatsapp()` (nueva,
+  `lib/boton-cta.ts`) matchea `https://wa.me/...` o `https://api.whatsapp.com/...` (el formato
+  que arma `construirUrlWhatsapp()`, o un link pegado a mano por el dueño con ese mismo
+  dominio) y `CatalogoItemModal` elige el copy según eso. Sin cambios en el resto del botón
+  (mismo ícono `ExternalLink`, mismo estilo).
+- **🔴→✅ Galería de "Contenido multimedia" con proporción REAL en vez de forzada a 1:1**
+  (pedido explícito del cliente, revierte lo que se había dejado sin tocar el día anterior): un
+  video o foto vertical ahora se ve alto en el tile, uno horizontal se ve más bajo — ya no se
+  recorta todo a un cuadrado de 220px.
+  - `GaleriaTile` (nuevo, `components/tarjeta/galeria-tile.tsx`) reemplaza el bloque inline que
+    antes vivía en `renderMultimedia()` — mismo criterio de extracción que `FondoImagenRepetido`
+    (componente propio con su hook de medición adentro).
+  - **Sin cambio de schema**: `GaleriaItem` sigue siendo solo `{url, tipo}`, sin `ancho`/`alto`
+    guardados — la proporción se MIDE en el cliente (`useProporcionMedia`, hook nuevo dentro de
+    `galeria-tile.tsx`): un `Image()`/`<video>` desconectado del DOM (pide metadata/dimensiones
+    nomás, no la descarga completa) resuelve `naturalWidth/Height` o `videoWidth/Height`, y el
+    tile aplica `style={{aspectRatio}}` en vez del `aspect-square` fijo de antes. Ventaja
+    sobre guardar el dato al subir: funciona igual para contenido viejo subido ANTES de esta
+    feature, sin backfill ni migración.
+  - **Clamp 9:16 – 16:9**: cubre los 2 formatos de video estándar (retrato/paisaje de celular)
+    y todo lo intermedio (4:5, 1:1, etc.) — una proporción rarísima (un screenshot 1:4, por
+    ejemplo) se recorta a ese límite en vez de romper la fila del slide horizontal con un tile
+    absurdamente alto o angosto. Valor propuesto por Claude Code, no pedido en números
+    exactos — ajustar si algún formato real queda mal.
+  - Mientras se mide, fallback a 1:1 (mismo look de antes) — sin salto brusco al resolverse
+    gracias al patrón "ajustar estado durante el render" de React en vez de resetear en un
+    efecto (evita la condición de carrera de un archivo cacheado que "termina" de medirse
+    casi instantáneo).
+  - **Ancho del tile sigue fijo en 220px** (no se tocó) — el slide horizontal sigue viéndose
+    ordenado en ese eje, solo el alto varía según el contenido.
+  - **Miniatura chica del editor** (64px, `tarjeta-form.tsx`) se dejó sin tocar a propósito —
+    es solo un chip de gestión con botón de borrar, no la tarjeta real; la vista previa en vivo
+    del editor SÍ muestra la proporción correcta porque renderiza el mismo `TarjetaCard`/
+    `GaleriaTile` que la tarjeta pública.
+  - **Fuera de alcance a propósito**: los ítems de "Catálogo" (imágenes de `Producto`, sección
+    totalmente distinta) no se tocaron — el cliente preguntó puntualmente por "videos o
+    imágenes" de la galería, que es el único lugar donde conviven ambos tipos.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 No verificado
+  todavía en navegador real — pendiente probar con un video/foto vertical real (confirmar que
+  el tile crece en alto y no se recorta) y horizontal (confirmar que sigue viéndose bien más
+  bajo) en el mismo slide.
 
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
@@ -1755,6 +1797,10 @@ real desde esta sesión salvo que se indique lo contrario):
   frame (2026-08-16) — solo verificado con `tsc`/`eslint`/`build`, sin confirmar contra la
   cuenta real de Cloudinary (posible bloqueo por "Strict transformations") ni en navegador
   real (ver esa sección para el detalle completo).
+- 🔴 Botón "Solicitar información" en catálogo→WhatsApp + galería con proporción real (clamp
+  9:16–16:9, sin recorte a 1:1, 2026-08-17) — solo verificado con `tsc`/`eslint`/`build`, sin
+  probar en navegador real con archivos verticales/horizontales de verdad (ver esa sección
+  para el detalle completo).
 - 🔴 Agenda como calendario único (duración+colchón por servicio, sin "paso" configurable,
   2026-08-10) — migración APLICADA y confirmada por consulta real desde esta sesión, código
   listo para deploy; falta la prueba en navegador con servicios reales de distinta

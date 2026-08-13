@@ -20,7 +20,6 @@ import {
   ordenContactoNormalizado,
   resolverTipografiaBoton,
 } from "@/lib/boton-cta"
-import { posterVideoGaleria, videoOptimizadoGaleria } from "@/lib/cloudinary-media"
 import { obtenerColorContraste } from "@/lib/contraste"
 import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import { normalizarMultimedia, resolverEmbedVideo } from "@/lib/multimedia"
@@ -46,6 +45,7 @@ import { AvatarForma } from "@/components/tarjeta/avatar-forma"
 import { BotonCtaModal, ContenidoBotonCta, estiloTexturaBoton, type BotonVistaPrevia } from "@/components/tarjeta/boton-cta-modal"
 import { CatalogoItemModal } from "@/components/tarjeta/catalogo-item-modal"
 import { FondoImagenRepetido } from "@/components/tarjeta/fondo-imagen-repetido"
+import { GaleriaTile } from "@/components/tarjeta/galeria-tile"
 import { ReservarServicio } from "@/components/tarjeta/reservar-servicio"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 
@@ -854,37 +854,7 @@ export function TarjetaCard({
               className="scrollbar-hide -mx-6 flex snap-x snap-mandatory gap-3 overflow-x-auto px-6 pb-1"
             >
               {item.items.map((archivo, indice) => (
-                <div
-                  key={indice}
-                  className="relative aspect-square w-[220px] shrink-0 snap-center overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] shadow-md dark:border-[rgba(255,255,255,0.1)]"
-                >
-                  {archivo.tipo === "video" ? (
-                    <video
-                      src={
-                        esUrlOptimizable(archivo.url)
-                          ? videoOptimizadoGaleria(archivo.url)
-                          : archivo.url
-                      }
-                      poster={posterVideoGaleria(archivo.url)}
-                      controls
-                      playsInline
-                      // Con poster real (primer frame, ver posterVideoGaleria)
-                      // no hace falta pedirle nada al servidor hasta que el
-                      // visitante toca play — más liviano que "metadata".
-                      preload="none"
-                      className="size-full object-cover"
-                    />
-                  ) : (
-                    <Image
-                      src={archivo.url}
-                      alt=""
-                      fill
-                      sizes="220px"
-                      unoptimized={!esUrlOptimizable(archivo.url)}
-                      className="object-cover"
-                    />
-                  )}
-                </div>
+                <GaleriaTile key={indice} archivo={archivo} />
               ))}
             </div>
           )

@@ -5,6 +5,7 @@ import { ExternalLink, X } from "lucide-react"
 import Image from "next/image"
 import type { CSSProperties } from "react"
 
+import { esEnlaceWhatsapp } from "@/lib/boton-cta"
 import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import { renderizarTextoEnriquecido } from "@/lib/texto-enriquecido"
 import { cn } from "@/lib/utils"
@@ -93,7 +94,8 @@ export function CatalogoItemModal({ item, open, onOpenChange, estiloCta, onAbrir
                     !estiloCta && "bg-foreground text-background"
                   )}
                 >
-                  Ver más <ExternalLink className="size-3.5" />
+                  {esEnlaceWhatsapp(item.enlaceUrl) ? "Solicitar información" : "Ver más"}{" "}
+                  <ExternalLink className="size-3.5" />
                 </a>
               )}
             </>
