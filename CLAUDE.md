@@ -1685,6 +1685,48 @@ real desde esta sesión salvo que se indique lo contrario):
   - Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 No
     verificado todavía en navegador real.
 
+## Videos de la galería optimizados por Cloudinary + poster del primer frame (2026-08-16, mismo día)
+- **Reporte del cliente**: videos verticales subidos a la galería de "Contenido multimedia"
+  pesaban de más (tile de 220px mostrando el archivo a resolución completa) y no había ninguna
+  miniatura mientras cargaban — pantalla negra/vacía hasta tocar play. Pidió optimizar la
+  carga y usar el primer frame del video como "cubierta".
+- **`src/lib/cloudinary-media.ts`** (nuevo, cliente — a diferencia de `lib/cloudinary.ts`, que
+  es server-only porque firma la SUBIDA con el API secret, esto son transformaciones "on the
+  fly" en la URL de ENTREGA, pura manipulación de string, sin necesitar ninguna firma):
+  - `videoOptimizadoGaleria(url)`: inserta `f_auto,q_auto,c_fill,w_440,h_440` en la URL del
+    video — Cloudinary sirve el códec/calidad más liviano que soporte el navegador, ya
+    recortado al mismo cuadrado que el tile (`object-cover` en CSS pasa a ser redundante con
+    esto pero se dejó como fallback) en vez de bajar el archivo a resolución completa (1080×1920
+    de un clip vertical de celular) para mostrarlo en 220px. 440 = 2x el tile real, nítido en
+    retina.
+  - `posterVideoGaleria(url)`: mismo recorte pero pide un JPG del frame en el offset `so_0`
+    (el primer frame) en vez del video — usado como `poster` del `<video>`, habilita
+    `preload="none"` (cero descarga de video hasta que el visitante toca play; antes era
+    `preload="metadata"`, que igual pedía algo de data al servidor).
+  - Ambas devuelven la URL sin tocar si no es optimizable (`esUrlOptimizable`, `lib/imagen-
+    posicion.ts`) — cubre el preview local `blob:` de un video recién elegido en el editor,
+    todavía sin subir, donde no hay nada que Cloudinary pueda transformar.
+  - Aplicado en el render público (`tarjeta-card.tsx`) y también en la miniatura chica
+    (64px→pide 128px) del editor (`tarjeta-form.tsx`) para consistencia, aunque ahí el ahorro
+    de peso importa menos que en la tarjeta pública.
+- 🔴 **Caveat no verificable desde acá**: las transformaciones "on the fly" en la URL de
+  entrega requieren que la cuenta de Cloudinary NO tenga activado "Strict transformations"
+  (Settings → Security) — si está activado, Cloudinary devuelve un 401 para cualquier
+  combinación de parámetros que no haya sido pre-autorizada, y estos videos se romperían en
+  vez de optimizarse. La mayoría de las cuentas lo tienen desactivado por default (nuestra
+  firma de subida tampoco lo requeriría si estuviera activo, así que no hay señal indirecta
+  de que esté prendido) — pendiente confirmar en el dashboard de Cloudinary si algo se ve
+  roto.
+- **Alcance NO tocado a propósito**: el tile se mantuvo `aspect-square` (mismo criterio que
+  las imágenes de la galería, uniformidad del grid) — un video vertical sigue recortándose
+  arriba/abajo con `object-cover` dentro del cuadrado, ahora ya recortado del lado de
+  Cloudinary. No se cambió a un tile más alto para video porque no fue un pedido explícito
+  (el cliente mencionó la proporción 1:1 como contexto de la pregunta de carga, no como algo a
+  cambiar) — avisar si en la práctica se prefiere un tile propio para video vertical.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 No verificado
+  todavía en navegador real ni contra la cuenta real de Cloudinary — pendiente confirmar que
+  las URLs transformadas cargan (no 401) y que el poster se ve como el primer frame real.
+
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
   planes" arriba para el detalle completo de cada uno, decisión consciente del cliente de
@@ -1709,6 +1751,10 @@ real desde esta sesión salvo que se indique lo contrario):
 - 🔴 "Repetir fondo" reposicionable en los 2 ejes (fix del bug real de arrastre vertical) +
   Título opcional (2026-08-16) — solo verificado con `tsc`/`eslint`/`build`, sin probar en
   navegador real todavía (ver esa sección para el detalle completo).
+- 🔴 Videos de la galería optimizados vía transformación de Cloudinary + poster del primer
+  frame (2026-08-16) — solo verificado con `tsc`/`eslint`/`build`, sin confirmar contra la
+  cuenta real de Cloudinary (posible bloqueo por "Strict transformations") ni en navegador
+  real (ver esa sección para el detalle completo).
 - 🔴 Agenda como calendario único (duración+colchón por servicio, sin "paso" configurable,
   2026-08-10) — migración APLICADA y confirmada por consulta real desde esta sesión, código
   listo para deploy; falta la prueba en navegador con servicios reales de distinta

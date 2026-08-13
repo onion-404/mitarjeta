@@ -20,6 +20,7 @@ import {
   ordenContactoNormalizado,
   resolverTipografiaBoton,
 } from "@/lib/boton-cta"
+import { posterVideoGaleria, videoOptimizadoGaleria } from "@/lib/cloudinary-media"
 import { obtenerColorContraste } from "@/lib/contraste"
 import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import { normalizarMultimedia, resolverEmbedVideo } from "@/lib/multimedia"
@@ -859,10 +860,18 @@ export function TarjetaCard({
                 >
                   {archivo.tipo === "video" ? (
                     <video
-                      src={archivo.url}
+                      src={
+                        esUrlOptimizable(archivo.url)
+                          ? videoOptimizadoGaleria(archivo.url)
+                          : archivo.url
+                      }
+                      poster={posterVideoGaleria(archivo.url)}
                       controls
                       playsInline
-                      preload="metadata"
+                      // Con poster real (primer frame, ver posterVideoGaleria)
+                      // no hace falta pedirle nada al servidor hasta que el
+                      // visitante toca play — más liviano que "metadata".
+                      preload="none"
                       className="size-full object-cover"
                     />
                   ) : (

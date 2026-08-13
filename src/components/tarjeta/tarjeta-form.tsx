@@ -48,6 +48,7 @@ import {
   normalizarBotones,
   ordenContactoNormalizado,
 } from "@/lib/boton-cta"
+import { posterVideoGaleria } from "@/lib/cloudinary-media"
 import { validarCupon } from "@/lib/cupones"
 import { estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import {
@@ -3609,7 +3610,9 @@ export function TarjetaForm({
                           {archivo.tipo === "video" ? (
                             <video
                               src={mostrado}
+                              poster={posterVideoGaleria(mostrado, 128)}
                               muted
+                              preload="metadata"
                               className="size-16 rounded-lg border border-border object-cover"
                             />
                           ) : (
