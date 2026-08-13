@@ -1874,10 +1874,20 @@ real desde esta sesión salvo que se indique lo contrario):
   bajo control de `generateMetadata`: `"summary_large_image"` solo para `"personalizada"`,
   `"summary"` (card compacto) para `"avatar"`/`"ninguna"` — coherente con el tamaño de imagen
   real que va a intentar mostrar X/Twitter en cada caso.
-- **Fuera de alcance a propósito**: no se tocó `og:title`/`og:description`/`<title>` de la
-  página — el pedido fue específicamente sobre los DATOS DIBUJADOS DENTRO de la imagen, no el
-  texto que acompaña el link (que ya tiene su propio fallback sensato, ver sección de
-  `generateMetadata` más arriba en este archivo).
+- **🔴→✅ Bug real reportado por el cliente el mismo día, probando en WhatsApp de verdad**:
+  cargó "Nombre en la imagen OG" con tipo "Solo avatar" y la miniatura de WhatsApp seguía
+  mostrando "Tarjeta digital · Linkard" — el título nunca se actualizó. Causa: esta sesión
+  había escrito (acá arriba) que `og:title`/`og:description` quedaban "fuera de alcance a
+  propósito" — decisión equivocada en la práctica: `ogNombre`/`ogSubtitulo`/`ogBio` solo
+  alimentaban los PÍXELES de `opengraph-image.tsx`, pero `generateMetadata` (`[slug]/
+  page.tsx`) seguía calculando `nombre`/`titulo`/`descripcion` mirando ÚNICAMENTE
+  `datos_contacto.nombre/empresa/puesto` — en la tarjeta real del cliente ese campo estaba en
+  blanco a propósito (feature de "Título opcional", ver sección de ese mismo día más abajo),
+  así que caía siempre al fallback genérico sin importar el override. Fix: `generateMetadata`
+  ahora resuelve `nombre`/`descripcion` con el mismo criterio `ogX?.trim() || datosReales`
+  que ya usaba `opengraph-image.tsx` — el override de "Imagen OG" pasa a cubrir la vista
+  previa COMPLETA del link (imagen + título + descripción), no solo los píxeles de la imagen,
+  que es como el cliente esperaba la feature de entrada.
 - Verificado: `tsc --noEmit`, `eslint` (2 warnings preexistentes de `<img>` en Satori, no
   evitables — `next/image` no funciona dentro de `ImageResponse`) y `npm run build` (41 rutas)
   limpios. 🔴 No verificado todavía en navegador real ni contra un unfurler real (WhatsApp/

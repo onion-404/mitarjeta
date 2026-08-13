@@ -22,7 +22,18 @@ export async function generateMetadata({
 
   if (!tarjeta) return { title: "Tarjeta no encontrada" }
 
-  const nombre = tarjeta.datos_contacto.nombre?.trim() || "Tarjeta digital"
+  // "Imagen OG" (sección propia del editor): `ogNombre`/`ogSubtitulo`/
+  // `ogBio` son overrides pensados originalmente para los PÍXELES de
+  // opengraph-image.tsx — pero `og:title`/`og:description` son lo que
+  // WhatsApp/Telegram/etc. muestran como TEXTO junto a esa imagen, así que
+  // tienen que leer el mismo override o quedan desincronizados (bug real
+  // reportado: el dueño cargó un "Nombre en la imagen OG" con tipo "Solo
+  // avatar" y la miniatura de WhatsApp seguía mostrando "Tarjeta digital ·
+  // Linkard" — el título nunca miraba `ogNombre`, solo el nombre real de
+  // la tarjeta, que en ese caso estaba en blanco a propósito). Mismo
+  // fallback a los datos reales cuando no hay override.
+  const { ogNombre, ogSubtitulo, ogBio } = tarjeta.identidad_visual
+  const nombre = ogNombre?.trim() || tarjeta.datos_contacto.nombre?.trim() || "Tarjeta digital"
   const titulo = `${nombre} · Linkard`
   // La descripción se arma SIEMPRE con la info de la propia tarjeta (rol +
   // bio, cuando existan) — nunca con el copy de marketing genérico del
@@ -35,9 +46,10 @@ export async function generateMetadata({
   // `twitter:description` (de `twitter`), que NUNCA se sobreescribían acá
   // y por eso seguían mostrando el copy genérico heredado del layout raíz
   // sin importar qué dijera `description`.
-  const partes = [tarjeta.datos_contacto.empresa?.trim(), tarjeta.datos_contacto.puesto?.trim()].filter(
-    (parte): parte is string => Boolean(parte)
-  )
+  const partes = [
+    ogSubtitulo?.trim() || tarjeta.datos_contacto.empresa?.trim(),
+    ogBio?.trim() || tarjeta.datos_contacto.puesto?.trim(),
+  ].filter((parte): parte is string => Boolean(parte))
   const descripcion = partes.length > 0 ? partes.join(" — ") : `Tarjeta digital de ${nombre} en Linkard.`
 
   // "Imagen OG" (sección propia del editor) — la imagen en sí la resuelve
