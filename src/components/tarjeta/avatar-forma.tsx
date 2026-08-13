@@ -28,6 +28,9 @@ interface AvatarFormaProps {
   alt: string
   iniciales: ReactNode
   unoptimized?: boolean
+  /** El avatar siempre está arriba del pliegue — mismo criterio que ya
+   *  tenía el banner (`priority` sin condicionar), acá antes faltaba. */
+  priority?: boolean
 }
 
 // Encapsula las 3 estrategias de render (className legacy / clip-path
@@ -44,6 +47,7 @@ export function AvatarForma({
   alt,
   iniciales,
   unoptimized,
+  priority,
 }: AvatarFormaProps) {
   const claseLegacy = forma ? CLASE_LEGACY[forma] : undefined
   const meta = FORMAS_AVATAR.find((f) => f.id === forma)
@@ -55,6 +59,7 @@ export function AvatarForma({
       fill
       sizes={`${tamanoPx}px`}
       unoptimized={unoptimized}
+      priority={priority}
       className="object-cover"
       style={estiloImagenPosicionada(imagenPosicion)}
     />

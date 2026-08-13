@@ -1,5 +1,6 @@
 import { AccionesTarjeta } from "@/components/tarjeta/acciones-tarjeta"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
+import { TarjetaPreloader } from "@/components/tarjeta/tarjeta-preloader"
 import type { ServicioAgendable, Tarjeta } from "@/lib/types"
 
 interface TarjetaPublicaProps {
@@ -15,8 +16,21 @@ interface TarjetaPublicaProps {
 // igual. Separado de [slug]/page.tsx solo para que el layout
 // mobile-full-bleed de acá abajo quede documentado en un solo lugar.
 export function TarjetaPublica({ tarjeta, slug, agendaServicios }: TarjetaPublicaProps) {
-  const { colorPrimario, colorSecundario } = tarjeta.identidad_visual
+  const { colorPrimario, colorSecundario, avatarUrl, bannerUrl, fondoImagenUrl, tituloModo, tituloImagenUrl } =
+    tarjeta.identidad_visual
   const nombrePrincipal = tarjeta.datos_contacto.nombre
+
+  // "Arriba del pliegue" — lo que hace falta que esté listo antes de
+  // destapar la tarjeta real (ver TarjetaPreloader). El banner de color/
+  // preset no cuenta (no es una imagen que bajar); si hay imagen de fondo,
+  // reemplaza al banner en el render real, así que tampoco tiene sentido
+  // precargar los dos.
+  const urlsCriticas = [
+    fondoImagenUrl,
+    !fondoImagenUrl ? bannerUrl : undefined,
+    avatarUrl,
+    tituloModo === "imagen" ? tituloImagenUrl : undefined,
+  ].filter((url): url is string => Boolean(url))
 
   return (
     <>
@@ -35,18 +49,20 @@ export function TarjetaPublica({ tarjeta, slug, agendaServicios }: TarjetaPublic
           style={{ backgroundColor: colorSecundario || "#a855f7" }}
         />
 
-        <TarjetaCard
-          tipo={tarjeta.tipo}
-          datosContacto={tarjeta.datos_contacto}
-          identidadVisual={tarjeta.identidad_visual}
-          slug={slug}
-          agendaServicios={agendaServicios}
-          permitirAgendar
-          tarjetaId={tarjeta.id}
-          zonaHoraria={tarjeta.zona_horaria}
-          pantallaCompleta
-          className="relative"
-        />
+        <TarjetaPreloader urlsCriticas={urlsCriticas}>
+          <TarjetaCard
+            tipo={tarjeta.tipo}
+            datosContacto={tarjeta.datos_contacto}
+            identidadVisual={tarjeta.identidad_visual}
+            slug={slug}
+            agendaServicios={agendaServicios}
+            permitirAgendar
+            tarjetaId={tarjeta.id}
+            zonaHoraria={tarjeta.zona_horaria}
+            pantallaCompleta
+            className="relative"
+          />
+        </TarjetaPreloader>
       </div>
 
       {/* Siempre `fixed` (default de AccionesTarjeta, sin override acá) —

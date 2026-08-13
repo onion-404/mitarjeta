@@ -1769,6 +1769,122 @@ real desde esta sesión salvo que se indique lo contrario):
   el tile crece en alto y no se recorta) y horizontal (confirmar que sigue viéndose bien más
   bajo) en el mismo slide.
 
+## Preloader real (no cosmético) + ítems de catálogo precargados en segundo plano (2026-08-17, mismo día)
+- **Pedido explícito del cliente**: un preloader que refleje la carga REAL de la tarjeta
+  pública (no uno de duración fija/decorativo) y que la carga de imágenes/videos sea óptima en
+  cualquier situación — dio como ejemplo puntual que las imágenes de ítems de catálogo cargan
+  recién DESPUÉS de desplegar la lista.
+- **Preloader real** (`TarjetaPreloader`, nuevo, `components/tarjeta/tarjeta-preloader.tsx`,
+  usado solo desde `TarjetaPublica` — no en el editor ni en el demo del home): distinto de
+  `[slug]/loading.tsx` (el fallback de Suspense de la ruta, cubre solo el round-trip de datos
+  contra Supabase) — este cubre lo que pasa DESPUÉS de que el HTML ya llegó, cuando las
+  imágenes "arriba del pliegue" (avatar, banner O imagen de fondo si está activa, título como
+  logo si aplica) todavía están bajando y se ven aparecer una por una.
+  - **La tarjeta real se renderiza SIEMPRE de entrada** (nunca se retrasa su montaje ni se
+    saca del DOM) — clave para no perder SEO/contenido-sin-JS: el HTML que le llega a
+    cualquier crawler ya tiene el nombre/bio/botones reales desde el primer byte, y las
+    imágenes reales arrancan su descarga de inmediato. Lo que hace el preloader es tapar
+    visualmente esa carga con un overlay (mismo `TarjetaSkeleton` que ya usaba `loading.tsx`)
+    con `position:absolute` encima, con `pointer-events` bloqueados mientras tapa (para no
+    poder tocar contenido todavía cargando debajo).
+  - **Carga real, no fake**: precarga cada URL crítica con un `Image()` desconectado del DOM
+    (dispara `onload`/`onerror` igual sin estar montado) y solo revela (fade de 300ms) cuando
+    TODAS resolvieron — cargada O fallada, un error nunca traba el preloader para siempre — o
+    al timeout de seguridad (4s, por si una URL nunca resuelve). Como el navegador cachea esas
+    mismas URLs, cuando `TarjetaCard` las vuelve a pedir con sus propios `<Image>`, las sirve
+    de cache — instantáneo, sin request nueva.
+  - `TarjetaPublica` (ahora también decide qué URLs son críticas: imagen de fondo si está
+    activa tiene prioridad sobre el banner (mutuamente excluyentes en el render real, no tiene
+    sentido precargar los dos), avatar, y el logo del título si `tituloModo: "imagen"`.
+  - Avatar ganó `priority` en su `<Image>` (`avatar-forma.tsx` + `tarjeta-card.tsx`) — el
+    banner ya lo tenía desde antes, al avatar le faltaba a pesar de estar igual de "arriba del
+    pliegue".
+- **Ítems de catálogo precargados en segundo plano** (el ejemplo puntual que dio el cliente):
+  mientras el toggle de una sección "Catálogo" está cerrado, sus ítems NO están montados en el
+  DOM (`{abierta && ...}` en `renderBotonCatalogo`) — el navegador ni se entera de que esas
+  imágenes existen hasta que el dueño despliega la sección, ahí recién arranca la descarga
+  (bug real, exactamente lo reportado). Fix: `recopilarUrlsCatalogo()` (nueva, `lib/boton-
+  cta.ts`, recorre botones top-level + un nivel adentro de "opciones") + un `useEffect` en
+  `TarjetaCard` que precarga esas imágenes con `Image()` apenas la tarjeta se monta, sin
+  importar si el toggle está abierto o cerrado — para cuando el dueño lo despliegue, ya están
+  en cache.
+  - **Mismo problema de fondo que ya se resolvió para los videos de galería** (ver sección de
+    ayer): dejar que `next/image` optimice estas imágenes a través de su propio proxy
+    (`/_next/image?url=...&w=...`) arma una URL que depende del `sizes` resuelto en cada
+    momento — imposible de predecir de antemano para precargar con garantía de cache-hit. Fix
+    del mismo tipo: `imagenOptimizadaCuadrada()` (nueva, `lib/cloudinary-media.ts`, mismo
+    patrón que `videoOptimizadoGaleria`) transforma la imagen del lado de Cloudinary
+    (`f_auto,q_auto,c_fill,w_320,h_320`) a una URL FINAL y predecible — el `<Image>` real pasa
+    a `unoptimized` siempre (ya viene optimizada, evita un segundo resize redundante del lado
+    de next/image) y usa esa MISMA URL exacta que precarga el efecto, así el prefetch cae
+    garantizado en el cache-hit correcto. 320px fijo para grid Y lista (no varía por `vista`)
+    — supuesto tomado por Claude Code por simplicidad, en lista (`size-16`, 64px) queda
+    generoso pero el archivo igual pesa poco gracias a `q_auto`/`f_auto`.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 No verificado
+  todavía en navegador real — pendiente confirmar que el preloader se ve bien (sin flash raro,
+  el fade se siente natural) con una tarjeta real en una conexión lenta simulada, y que abrir
+  una sección de Catálogo ya no muestra el pop-in de imágenes reportado.
+
+## Sección "Imagen OG" — datos y tipo de imagen editables sin afectar la tarjeta (2026-08-17, mismo día)
+- **Pedido explícito del cliente, con un caso real de motivo**: una tarjeta donde el título se
+  omite EN LA TARJETA (el logo ya lo tiene, se sentía redundante) — pero la miniatura que se
+  comparte por WhatsApp/redes seguía sin nombre porque leía el mismo dato. Pidió una sección
+  "Imagen OG" para editar esos datos por separado, más elegir el TIPO de imagen: la
+  personalizada de siempre, una chica con solo el avatar (como una vista previa de link
+  genérica), o ninguna.
+- **Nueva sección del editor** ("Imagen OG", `contenidoImagenOg`, agregada a `SECCIONES` al
+  final, antes de "Estadísticas"): pill de 3 opciones (Personalizada/Solo avatar/Ninguna) +
+  3 campos opcionales — Nombre, Subtítulo y Bio "en la imagen OG" (Subtítulo/Bio solo
+  visibles en modo Personalizada, es lo único que "Solo avatar" no muestra) — cada uno con
+  placeholder mostrando el dato REAL de la tarjeta al que cae si se deja vacío. Link "Ver
+  imagen OG actual ↗" (solo en edición, abre `/{slug}/opengraph-image` en pestaña nueva) con
+  aviso de que muestra la última versión GUARDADA, no cambios sin guardar.
+- **Modelo de datos** (`IdentidadVisual`, sin migración — jsonb): `ogTipo?: "personalizada" |
+  "avatar" | "ninguna"` (default `"personalizada"`, comportamiento de siempre) +
+  `ogNombre`/`ogSubtitulo`/`ogBio` (overrides, caen a `datos_contacto.nombre/empresa/puesto`
+  cuando están vacíos — NUNCA tocan lo que se ve en la tarjeta, el override vive 100% aparte).
+- **`[slug]/opengraph-image.tsx`** lee estos 4 campos y bifurca en 3 ramas:
+  - `"ninguna"` → `return new Response(null, { status: 404 })`, antes de cargar la fuente o el
+    avatar (nada que renderizar). 🔴 **Limitación real de Next.js, no un bug**: el archivo de
+    convención `opengraph-image.tsx` **siempre tiene prioridad sobre lo que devuelva
+    `generateMetadata` para el campo `images`** (confirmado contra
+    `node_modules/next/dist/docs/.../generate-metadata.md`: "File-based metadata has the
+    higher priority and will override the metadata object and generateMetadata function") —
+    no existe forma de sacar el `<meta property="og:image">` del `<head>` por completo para UN
+    slug específico manteniendo el archivo activo para el resto. La ruta se sigue anunciando
+    en el HTML sin importar `ogTipo`; lo que sí se logra con el 404 es el resultado VISUAL
+    (WhatsApp/Telegram/iMessage/Facebook omiten el recuadro de imagen cuando la URL
+    referenciada falla) — mismo efecto que "sin imagen" para quien recibe el link, aunque la
+    metadata cruda técnicamente siga mencionando una URL.
+  - `"avatar"` → `ImageResponse` propio, cuadrado (600×600, avatar/iniciales centrado, SIN
+    texto), con un `new ImageResponse(..., { width, height, fonts })` que declara dimensiones
+    DISTINTAS al `size` exportado a nivel de módulo (1200×630, fijo — next/og no permite
+    variarlo por request/slug, es una constante de la ruta completa). 🔴 **Mismatch aceptado a
+    propósito**: el `<meta og:image:width/height>` que arma Next sigue diciendo 1200×630
+    aunque el archivo real pese/mida 600×600 — se acepta porque las plataformas grandes
+    (confirmado el comportamiento documentado de Facebook/WhatsApp) leen las dimensiones REALES
+    del archivo que bajan para decidir el layout de la preview (miniatura vs. banner grande),
+    no solo el hint declarado — sin este mismatch no había forma de lograr el efecto "miniatura
+    chica" pedido dentro de las limitaciones de la file convention.
+  - Sin ninguno de los dos (`"personalizada"`, default): mismo banner 1200×630 de siempre,
+    ahora con `nombre`/`subtitulo`/`bio` resueltos como `ogNombre?.trim() || datos_contacto.
+    nombre`, etc. (mismo patrón para los 3).
+- **`twitter.card` en `generateMetadata` ([slug]/page.tsx)** — a diferencia de la imagen en sí
+  (bloqueada por la file convention), `twitter.card` NO es un campo de imagen y sigue 100%
+  bajo control de `generateMetadata`: `"summary_large_image"` solo para `"personalizada"`,
+  `"summary"` (card compacto) para `"avatar"`/`"ninguna"` — coherente con el tamaño de imagen
+  real que va a intentar mostrar X/Twitter en cada caso.
+- **Fuera de alcance a propósito**: no se tocó `og:title`/`og:description`/`<title>` de la
+  página — el pedido fue específicamente sobre los DATOS DIBUJADOS DENTRO de la imagen, no el
+  texto que acompaña el link (que ya tiene su propio fallback sensato, ver sección de
+  `generateMetadata` más arriba en este archivo).
+- Verificado: `tsc --noEmit`, `eslint` (2 warnings preexistentes de `<img>` en Satori, no
+  evitables — `next/image` no funciona dentro de `ImageResponse`) y `npm run build` (41 rutas)
+  limpios. 🔴 No verificado todavía en navegador real ni contra un unfurler real (WhatsApp/
+  Twitter Card Validator) — pendiente confirmar los 3 tipos con una tarjeta real, sobre todo
+  que "avatar" efectivamente rinda como miniatura chica (no banner grande) en al menos
+  WhatsApp y Twitter/X, y que "ninguna" omita el recuadro de imagen en la práctica.
+
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
   planes" arriba para el detalle completo de cada uno, decisión consciente del cliente de
@@ -1801,6 +1917,14 @@ real desde esta sesión salvo que se indique lo contrario):
   9:16–16:9, sin recorte a 1:1, 2026-08-17) — solo verificado con `tsc`/`eslint`/`build`, sin
   probar en navegador real con archivos verticales/horizontales de verdad (ver esa sección
   para el detalle completo).
+- 🔴 Preloader real de la tarjeta pública (`TarjetaPreloader`) + precarga en segundo plano de
+  ítems de catálogo cerrados (2026-08-17) — solo verificado con `tsc`/`eslint`/`build`, sin
+  probar en navegador real (ver esa sección para el detalle completo).
+- 🔴 Sección "Imagen OG" (tipo personalizada/avatar/ninguna + overrides de nombre/subtítulo/
+  bio, 2026-08-17) — solo verificado con `tsc`/`eslint`/`build`, sin probar en navegador real
+  ni contra un unfurler real (WhatsApp/Twitter Card Validator) todavía (ver esa sección para
+  el detalle completo, incluye 2 limitaciones reales aceptadas de la file convention de
+  Next.js).
 - 🔴 Agenda como calendario único (duración+colchón por servicio, sin "paso" configurable,
   2026-08-10) — migración APLICADA y confirmada por consulta real desde esta sesión, código
   listo para deploy; falta la prueba en navegador con servicios reales de distinta

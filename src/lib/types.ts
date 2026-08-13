@@ -511,6 +511,22 @@ export interface IdentidadVisual {
   tituloImagenUrl?: string
   /** Alto del logo en px — rango sugerido en el editor 24-80, default 32. */
   tituloImagenAltura?: number
+  /** Tipo de imagen OG (miniatura al compartir el link, [slug]/opengraph-
+   *  image.tsx) — INDEPENDIENTE de lo que se ve en la tarjeta real. Sin
+   *  valor = "personalizada" (comportamiento de siempre: banner 1200x630
+   *  con nombre/rol/bio/avatar). "avatar" = solo el avatar en miniatura
+   *  (imagen chica, como una vista previa de link genérica en vez de un
+   *  banner grande). "ninguna" = sin imagen OG en absoluto. */
+  ogTipo?: "personalizada" | "avatar" | "ninguna"
+  /** Overrides SOLO para la imagen OG — nunca tocan lo que se ve en la
+   *  tarjeta. Sin valor, cada uno cae a los datos reales
+   *  (nombre/empresa/puesto). Caso real que motivó esto: el título se
+   *  omite EN LA TARJETA porque el logo ya lo tiene (redundante), pero se
+   *  quiere igual en la miniatura al compartir. Sin efecto si
+   *  `ogTipo === "ninguna"` (no hay imagen sobre la que dibujar texto). */
+  ogNombre?: string
+  ogSubtitulo?: string
+  ogBio?: string
 }
 
 export type MetodoPago = "mercado_pago" | "transferencia"

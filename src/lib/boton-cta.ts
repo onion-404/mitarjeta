@@ -482,3 +482,30 @@ export function normalizarBotones(datosContacto: DatosContacto, identidadVisual:
 
   return resultado
 }
+
+/** Todas las `imagenUrl` de ítems de catálogo de la tarjeta (top-level y un
+ *  nivel adentro de "opciones") — usada para precargar en segundo plano
+ *  esas imágenes ANTES de que el dueño despliegue la sección (los ítems no
+ *  están montados en el DOM mientras el toggle está cerrado, así que el
+ *  navegador ni se entera de que existen hasta ese momento; sin este
+ *  prefetch, recién ahí arrancaba la descarga — bug real reportado, "las
+ *  imágenes cargan después de desplegada la lista"). Solo URLs, no
+ *  posiciones/gating — el prefetch es "mejor esfuerzo", no afecta qué se
+ *  muestra. */
+export function recopilarUrlsCatalogo(botones: Boton[]): string[] {
+  const urls: string[] = []
+  function agregarDeCatalogo(boton: BotonCatalogo) {
+    boton.items.forEach((item) => {
+      if (item.imagenUrl) urls.push(item.imagenUrl)
+    })
+  }
+  botones.forEach((boton) => {
+    if (boton.tipo === "catalogo") agregarDeCatalogo(boton)
+    if (boton.tipo === "opciones") {
+      boton.hijos.forEach((hijo) => {
+        if (hijo.tipo === "catalogo") agregarDeCatalogo(hijo)
+      })
+    }
+  })
+  return urls
+}

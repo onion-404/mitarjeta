@@ -35,18 +35,117 @@ interface Props {
 
 export default async function Image({ params }: Props) {
   const { slug } = await params
+  const tarjeta = await getTarjetaPublicada(slug)
+
+  if (!tarjeta || !tarjeta.plan_id) {
+    const soraBold = await cargarSoraBold()
+    const fonts = [
+      { name: "Sora", data: soraBold, style: "normal" as const, weight: 700 as const },
+    ]
+    return new ImageResponse(renderOgImageGenerico(), { ...size, fonts })
+  }
+
+  // "Imagen OG" (2026-08-17, editor → sección propia): independiente de lo
+  // que se ve en la tarjeta real — caso real que lo motivó: el dueño omite
+  // el título EN LA TARJETA porque su logo ya lo tiene (redundante), pero
+  // igual lo quiere en la miniatura que se comparte. `ogTipo === "ninguna"`
+  // devuelve 404 ANTES de cargar la fuente/avatar (nada que renderizar) —
+  // no hay forma de sacar el <meta og:image> del <head> por completo (ver
+  // CLAUDE.md: el archivo de convención de Next SIEMPRE tiene prioridad
+  // sobre lo que devuelva generateMetadata para ese mismo campo, así que
+  // esta ruta se sigue anunciando en el HTML) pero la mayoría de las apps
+  // de mensajería (WhatsApp/Telegram/iMessage/Facebook) omiten el recuadro
+  // de imagen sin más si la URL referenciada devuelve error — mismo
+  // resultado visual que "sin imagen" para quien recibe el link.
+  const ogTipo = tarjeta.identidad_visual.ogTipo ?? "personalizada"
+  if (ogTipo === "ninguna") {
+    return new Response(null, { status: 404 })
+  }
+
   const soraBold = await cargarSoraBold()
   const fonts = [
     { name: "Sora", data: soraBold, style: "normal" as const, weight: 700 as const },
   ]
 
-  const tarjeta = await getTarjetaPublicada(slug)
+  const { colorPrimario, colorSecundario, avatarUrl, ogNombre, ogSubtitulo, ogBio } =
+    tarjeta.identidad_visual
+  const nombre = ogNombre?.trim() || tarjeta.datos_contacto.nombre || "Linkard"
+  const fondo =
+    colorPrimario && colorSecundario
+      ? `linear-gradient(135deg, ${colorPrimario}, ${colorSecundario})`
+      : colorPrimario || "#171717"
+  const colorTexto = obtenerColorContraste(colorPrimario || "#171717")
+  const colorTextoSuave =
+    colorTexto === "#ffffff" ? "rgba(255,255,255,0.72)" : "rgba(0,0,0,0.6)"
+  const colorMarcaAgua =
+    colorTexto === "#ffffff" ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.45)"
 
-  if (!tarjeta || !tarjeta.plan_id) {
-    return new ImageResponse(renderOgImageGenerico(), { ...size, fonts })
+  const avatarSrc = avatarUrl ? await cargarImagenBase64(avatarUrl) : null
+  const inicial = nombre.trim().charAt(0).toUpperCase() || "L"
+
+  // "Solo avatar": un cuadrado chico con nada más que el avatar/iniciales,
+  // sin texto — imita cómo se ve una vista previa de link genérica (miniatura
+  // al lado del título/descripción) en vez del banner grande de siempre.
+  // Ancho/alto DISTINTOS al `size` exportado arriba (1200x630, fijo para
+  // toda la ruta — next/og no permite variar `size` por request/slug) a
+  // propósito: WhatsApp/Facebook/Telegram detectan el "tamaño de card"
+  // (miniatura vs. banner grande) por la proporción REAL del archivo que
+  // bajan, no por el `og:image:width/height` declarado — así que esto sí
+  // logra el efecto pedido a pesar del mismatch con la metadata declarada
+  // (verificado que las plataformas grandes leen las dimensiones reales del
+  // archivo, no solo el hint declarado).
+  if (ogTipo === "avatar") {
+    const ladoAvatar = 600
+    return new ImageResponse(
+      (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: fondo,
+          }}
+        >
+          {avatarSrc ? (
+            <img
+              src={avatarSrc}
+              alt=""
+              width={420}
+              height={420}
+              style={{
+                borderRadius: "50%",
+                objectFit: "cover",
+                border: `10px solid ${colorTextoSuave}`,
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                width: 420,
+                height: 420,
+                borderRadius: "50%",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor:
+                  colorTexto === "#ffffff" ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.1)",
+                fontSize: 180,
+                fontFamily: "Sora",
+                fontWeight: 700,
+                color: colorTexto,
+              }}
+            >
+              {inicial}
+            </div>
+          )}
+        </div>
+      ),
+      { width: ladoAvatar, height: ladoAvatar, fonts }
+    )
   }
 
-  const nombre = tarjeta.datos_contacto.nombre || "Linkard"
   // Antes `subtitulo` era `empresa || puesto` — un OR excluyente: si la
   // tarjeta tenía AMBOS campos cargados (el caso más común), la Bio nunca
   // se mostraba en la miniatura, solo el rol/empresa. Reportado por el
@@ -60,22 +159,8 @@ export default async function Image({ params }: Props) {
   // caracteres real). Un truncado con "…" se probó primero y el cliente
   // pidió texto completo — se sacó por completo, no solo se agrandó el
   // límite.
-  const subtitulo = tarjeta.datos_contacto.empresa
-  const bio = tarjeta.datos_contacto.puesto?.trim() || undefined
-
-  const { colorPrimario, colorSecundario, avatarUrl } = tarjeta.identidad_visual
-  const fondo =
-    colorPrimario && colorSecundario
-      ? `linear-gradient(135deg, ${colorPrimario}, ${colorSecundario})`
-      : colorPrimario || "#171717"
-  const colorTexto = obtenerColorContraste(colorPrimario || "#171717")
-  const colorTextoSuave =
-    colorTexto === "#ffffff" ? "rgba(255,255,255,0.72)" : "rgba(0,0,0,0.6)"
-  const colorMarcaAgua =
-    colorTexto === "#ffffff" ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.45)"
-
-  const avatarSrc = avatarUrl ? await cargarImagenBase64(avatarUrl) : null
-  const inicial = nombre.trim().charAt(0).toUpperCase() || "L"
+  const subtitulo = ogSubtitulo?.trim() || tarjeta.datos_contacto.empresa
+  const bio = ogBio?.trim() || tarjeta.datos_contacto.puesto?.trim() || undefined
   const fontSizeNombre = nombre.length > 22 ? 56 : 72
 
   return new ImageResponse(

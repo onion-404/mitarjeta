@@ -40,6 +40,16 @@ export async function generateMetadata({
   )
   const descripcion = partes.length > 0 ? partes.join(" — ") : `Tarjeta digital de ${nombre} en Linkard.`
 
+  // "Imagen OG" (sección propia del editor) — la imagen en sí la resuelve
+  // [slug]/opengraph-image.tsx (el archivo de convención SIEMPRE gana sobre
+  // lo que digamos acá para ese campo, ver el comentario largo ahí), pero
+  // `twitter.card` NO es un campo de imagen — sigue 100% bajo control de
+  // generateMetadata. "avatar" (miniatura chica) y "ninguna" (sin imagen)
+  // usan "summary" (card compacto, mismo criterio que X/Twitter reserva
+  // para una imagen chica o ausente); solo "personalizada" (banner
+  // 1200x630) amerita "summary_large_image".
+  const ogTipo = tarjeta.identidad_visual.ogTipo ?? "personalizada"
+
   return {
     title: titulo,
     description: descripcion,
@@ -51,7 +61,7 @@ export async function generateMetadata({
       type: "website",
     },
     twitter: {
-      card: "summary_large_image",
+      card: ogTipo === "personalizada" ? "summary_large_image" : "summary",
       title: titulo,
       description: descripcion,
     },

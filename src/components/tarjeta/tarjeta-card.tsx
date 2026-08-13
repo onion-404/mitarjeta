@@ -18,8 +18,10 @@ import {
   normalizarBotones,
   obtenerBotonIcono,
   ordenContactoNormalizado,
+  recopilarUrlsCatalogo,
   resolverTipografiaBoton,
 } from "@/lib/boton-cta"
+import { imagenOptimizadaCuadrada } from "@/lib/cloudinary-media"
 import { obtenerColorContraste } from "@/lib/contraste"
 import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import { normalizarMultimedia, resolverEmbedVideo } from "@/lib/multimedia"
@@ -207,6 +209,24 @@ export function TarjetaCard({
     () => normalizarBotones(datosContacto, identidadVisual),
     [datosContacto, identidadVisual]
   )
+  // Precarga en segundo plano las imágenes de ítems de catálogo AUNQUE el
+  // toggle esté cerrado — mientras está cerrado esos ítems no están
+  // montados en el DOM (ver renderBotonCatalogo), así que sin esto el
+  // navegador ni se entera de que esas imágenes existen hasta que el dueño
+  // despliega la sección (bug real reportado: "las imágenes cargan después
+  // de desplegada la lista"). `new Image()` desconectado del DOM — el
+  // navegador cachea la respuesta igual, así que cuando el <Image> real se
+  // monta al abrir, la sirve de cache en vez de pedirla de nuevo.
+  React.useEffect(() => {
+    recopilarUrlsCatalogo(botonesNormalizados).forEach((url) => {
+      if (!esUrlOptimizable(url)) return
+      // Misma transformación exacta que el <Image unoptimized> real de
+      // renderBotonCatalogo — así esto precarga el cache-hit correcto en
+      // vez de una URL distinta que el navegador nunca vuelve a pedir.
+      const img = new window.Image()
+      img.src = imagenOptimizadaCuadrada(url)
+    })
+  }, [botonesNormalizados])
   // Un solo Set de ids "abiertos" para cualquier botón colapsable (catálogo u
   // opciones) — reemplaza los 3 estados separados que tenía cada sección
   // antes de la unificación (productosAbiertos/serviciosAbiertos/
@@ -742,11 +762,20 @@ export function TarjetaCard({
                     )}
                   >
                     <Image
-                      src={item.imagenUrl}
+                      src={
+                        esUrlOptimizable(item.imagenUrl)
+                          ? imagenOptimizadaCuadrada(item.imagenUrl)
+                          : item.imagenUrl
+                      }
                       alt={item.titulo}
                       fill
-                      sizes="(max-width: 640px) 45vw, 160px"
-                      unoptimized={!esUrlOptimizable(item.imagenUrl)}
+                      // unoptimized siempre: ya viene recortada/optimizada
+                      // del lado de Cloudinary (misma URL exacta que
+                      // precarga el efecto de arriba) — dejar que next/image
+                      // la reoptimice de nuevo a través de su propio proxy
+                      // sería un segundo resize redundante, y esa URL
+                      // distinta rompería el cache-hit del prefetch.
+                      unoptimized
                       className="object-cover"
                       style={estiloImagenPosicionada(item.imagenPosicion)}
                     />
@@ -1027,6 +1056,7 @@ export function TarjetaCard({
               alt={nombrePrincipal ?? "Avatar"}
               iniciales={iniciales(nombrePrincipal)}
               unoptimized={avatarUrl ? !esUrlOptimizable(avatarUrl) : undefined}
+              priority
             />
           </div>
         </div>

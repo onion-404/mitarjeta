@@ -668,6 +668,23 @@ export function TarjetaForm({
     visualInicial?.colorTextoSecundario ?? ""
   )
 
+  // Imagen OG (miniatura al compartir el link) — independiente de lo que
+  // se ve en la tarjeta real. Pedido explícito del cliente: un caso real
+  // donde el título se omite EN LA TARJETA porque el logo ya lo tiene
+  // (redundante), pero se quiere igual en la miniatura de WhatsApp/
+  // redes. `ogTipo` elige el estilo completo de imagen — "personalizada"
+  // (default, comportamiento de siempre: banner 1200x630 con nombre/rol/
+  // bio/avatar), "avatar" (solo el avatar en miniatura, como una vista
+  // previa de link genérica) o "ninguna" (sin imagen — [slug]/
+  // opengraph-image.tsx devuelve 404 para ese caso, la mayoría de las
+  // apps de mensajería omiten el recuadro de imagen si la URL falla).
+  const [ogTipo, setOgTipo] = React.useState<"personalizada" | "avatar" | "ninguna">(
+    visualInicial?.ogTipo ?? "personalizada"
+  )
+  const [ogNombre, setOgNombre] = React.useState(visualInicial?.ogNombre ?? "")
+  const [ogSubtitulo, setOgSubtitulo] = React.useState(visualInicial?.ogSubtitulo ?? "")
+  const [ogBio, setOgBio] = React.useState(visualInicial?.ogBio ?? "")
+
   // Alineación del bloque de dirección/horario — izquierda (default, sin
   // cambios para tarjetas existentes) o centrado.
   const [ubicacionCentrada, setUbicacionCentrada] = React.useState(
@@ -2051,6 +2068,10 @@ export function TarjetaForm({
       tituloImagenAltura: tituloModo === "imagen" && tituloImagenAltura !== 32 ? tituloImagenAltura : undefined,
       badgeIconoActivo,
       badgeIconoId: badgeIconoActivo ? badgeIconoId : undefined,
+      ogTipo: ogTipo !== "personalizada" ? ogTipo : undefined,
+      ogNombre: ogTipo !== "ninguna" ? ogNombre.trim() || undefined : undefined,
+      ogSubtitulo: ogTipo !== "ninguna" ? ogSubtitulo.trim() || undefined : undefined,
+      ogBio: ogTipo !== "ninguna" ? ogBio.trim() || undefined : undefined,
     }
 
     if (bloqueosGuardado.length > 0) {
@@ -4560,6 +4581,108 @@ export function TarjetaForm({
     </div>
   )
 
+  const contenidoImagenOg = (
+    <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+      <p className="text-xs text-muted-foreground">
+        Así se ve tu tarjeta cuando compartes el enlace por WhatsApp, redes o mensajes —
+        independiente de lo que se muestra en la tarjeta misma. Útil, por ejemplo, si omitiste
+        el título en la tarjeta porque tu logo ya lo tiene, pero igual lo quieres en esta
+        miniatura.
+      </p>
+
+      <div className="flex flex-col gap-2">
+        <span className={labelClase}>Tipo de imagen</span>
+        <div className="inline-flex w-fit flex-wrap rounded-full border border-border p-0.5">
+          {(
+            [
+              { valor: "personalizada", etiqueta: "Personalizada" },
+              { valor: "avatar", etiqueta: "Solo avatar" },
+              { valor: "ninguna", etiqueta: "Ninguna" },
+            ] as const
+          ).map((opcion) => (
+            <button
+              key={opcion.valor}
+              type="button"
+              onClick={() => setOgTipo(opcion.valor)}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                ogTipo === opcion.valor
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {opcion.etiqueta}
+            </button>
+          ))}
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {ogTipo === "personalizada" &&
+            "El banner de siempre: nombre, rol, bio y avatar sobre tu color de marca."}
+          {ogTipo === "avatar" &&
+            "Solo tu avatar en miniatura, como una vista previa de link genérica (sin texto encima)."}
+          {ogTipo === "ninguna" &&
+            "Sin imagen — el enlace se comparte solo con título y descripción."}
+        </span>
+      </div>
+
+      {ogTipo !== "ninguna" && (
+        <>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClase}>Nombre en la imagen OG (opcional)</span>
+            <input
+              value={ogNombre}
+              onChange={(e) => setOgNombre(e.target.value)}
+              placeholder={nombre || "Usa el Título de la tarjeta"}
+              className={inputClase}
+            />
+          </label>
+          {ogTipo === "personalizada" && (
+            <>
+              <label className="flex flex-col gap-1.5">
+                <span className={labelClase}>Subtítulo en la imagen OG (opcional)</span>
+                <input
+                  value={ogSubtitulo}
+                  onChange={(e) => setOgSubtitulo(e.target.value)}
+                  placeholder={empresa || "Usa el Rol o descripción de la tarjeta"}
+                  className={inputClase}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className={labelClase}>Bio en la imagen OG (opcional)</span>
+                <textarea
+                  value={ogBio}
+                  onChange={(e) => setOgBio(e.target.value)}
+                  placeholder={puesto || "Usa la Bio de la tarjeta"}
+                  rows={2}
+                  className={cn(inputClase, "resize-none")}
+                />
+              </label>
+            </>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Deja cualquiera en blanco para usar el dato real de la tarjeta.
+          </p>
+        </>
+      )}
+
+      {esEdicion && tarjeta && (
+        <a
+          href={`/${tarjeta.slug}/opengraph-image`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-foreground underline underline-offset-2 hover:text-muted-foreground"
+        >
+          Ver imagen OG actual ↗
+        </a>
+      )}
+      {esEdicion && tarjeta && (
+        <p className="-mt-2 text-xs text-muted-foreground">
+          Muestra la última versión guardada — cambios sin guardar todavía no se reflejan ahí.
+        </p>
+      )}
+    </div>
+  )
+
   const contenidoMetricas = esEdicion && tarjeta && (
     <div className="px-5 pb-5 pt-1">
       <EstadisticasTarjeta tarjetaId={tarjeta.id} planId={tarjeta.plan_id} />
@@ -4683,6 +4806,7 @@ export function TarjetaForm({
     // después-de-Botones, y ahora ambos viven en la misma lista
     // reordenable (ver SeccionOrdenable, lib/types.ts).
     { id: "botones", titulo: "Botones", contenido: contenidoBotones },
+    { id: "imagen-og", titulo: "Imagen OG", contenido: contenidoImagenOg },
     ...(esEdicion && tarjeta
       ? [{ id: "metricas", titulo: "Estadísticas", contenido: contenidoMetricas }]
       : []),
