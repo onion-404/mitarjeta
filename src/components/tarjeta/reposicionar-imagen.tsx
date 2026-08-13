@@ -5,7 +5,14 @@ import { Move, ZoomIn } from "lucide-react"
 import * as React from "react"
 
 import { Button } from "@/components/ui/button"
-import { ESCALA_MAX, ESCALA_MIN } from "@/lib/imagen-posicion"
+import { useAltoBaldosaRepetida } from "@/components/tarjeta/fondo-imagen-repetido"
+import {
+  ESCALA_MAX,
+  ESCALA_MIN,
+  offsetYBaldosaRepetida,
+  porcentajeYDesdeOffsetBaldosa,
+  yEfectivaRepetida,
+} from "@/lib/imagen-posicion"
 import type { PosicionImagen } from "@/lib/types"
 
 type Posicion = PosicionImagen
@@ -21,6 +28,15 @@ interface ReposicionarImagenProps {
    *  hay un alto real único (depende del contenido), se usa uno
    *  representativo. */
   alto: number
+  /** true = la imagen se muestra en modo "Repetir fondo" (ver
+   *  IdentidadVisual.fondoImagenRepetir) — cambia tanto la vista previa
+   *  (tileada de verdad, no un recorte tipo cover) como la matemática de
+   *  arrastre: el eje X sigue acotado (el ancho de la baldosa vs. el
+   *  contenedor), pero el eje Y ya no tiene límite real — el patrón se
+   *  repite infinito, así que arrastrar "gira" el patrón en vez de
+   *  trabarse en un extremo. Default false = comportamiento de siempre
+   *  (object-fit:cover con arrastre acotado en los 2 ejes). */
+  repetir?: boolean
   onCancelar: () => void
   onConfirmar: (posicion: Posicion) => void
 }
@@ -35,12 +51,15 @@ function clamp(valor: number, min: number, max: number) {
 // cuánto "sobra" de imagen en cada eje, y cada pixel de arrastre se traduce
 // directo a ese sobrante — mismo cálculo que usa `object-position`
 // internamente, así el resultado final coincide exactamente con lo que se
-// vio mientras se arrastraba.
+// vio mientras se arrastraba. En modo `repetir` el eje Y usa una matemática
+// distinta (ver `porcentajeYDesdeOffsetBaldosa` en lib/imagen-posicion.ts) —
+// acá no hay "cover", el patrón se repite infinito.
 export function ReposicionarImagen({
   abierto,
   imagenUrl,
   valorInicial,
   alto,
+  repetir = false,
   onCancelar,
   onConfirmar,
 }: ReposicionarImagenProps) {
@@ -56,8 +75,16 @@ export function ReposicionarImagen({
     startOffsetX: number
     startOffsetY: number
     overflowX: number
+    // Modo cover: overflow real del eje Y (offset acotado a [-overflowY, 0]).
+    // Modo repetir: alto de una baldosa (offset sin acotar, se normaliza con
+    // módulo) — mismo campo, distinto significado según `repetir`.
     overflowY: number
   } | null>(null)
+
+  // Solo se mide/usa en modo `repetir` (ver useAltoBaldosaRepetida) — en
+  // modo cover queda en 0 sin costo real (el hook no encuentra contenedor
+  // con imagen de fondo para medir).
+  const altoBaldosa = useAltoBaldosaRepetida(containerRef, repetir ? imagenUrl : "", escala)
 
   React.useEffect(() => {
     if (!abierto) return
@@ -83,8 +110,8 @@ export function ReposicionarImagen({
   // sobrante real en píxeles de pantalla queda multiplicado por `escala`;
   // se compensa dividiendo el delta del cursor por `escala` en
   // handlePointerMove para que el arrastre se sienta 1:1 con el cursor
-  // también con zoom aplicado.
-  function calcularOverflow() {
+  // también con zoom aplicado. Solo aplica en modo cover (sin repetir).
+  function calcularOverflowCover() {
     const caja = containerRef.current?.getBoundingClientRect()
     const { w: naturalW, h: naturalH } = naturalSizeRef.current
     if (!caja || !naturalW || !naturalH) return { overflowX: 0, overflowY: 0 }
@@ -93,6 +120,16 @@ export function ReposicionarImagen({
       overflowX: Math.max(naturalW * escalaBase - caja.width, 0),
       overflowY: Math.max(naturalH * escalaBase - caja.height, 0),
     }
+  }
+
+  // Modo repetir: el ancho de la baldosa es `contenedor * escala` (mismo
+  // criterio que `background-size: X% auto` en el render real) — el
+  // "sobrante" horizontal es la diferencia contra el contenedor. El alto no
+  // tiene overflow real (se repite infinito), se maneja aparte con
+  // `altoBaldosa` + módulo.
+  function calcularOverflowXRepetido() {
+    const anchoContenedor = containerRef.current?.getBoundingClientRect().width ?? 0
+    return Math.max(anchoContenedor * (escala - 1), 0)
   }
 
   function offsetDesdePorcentaje(pct: number, overflow: number) {
@@ -104,27 +141,43 @@ export function ReposicionarImagen({
     return clamp((-offset / overflow) * 100, 0, 100)
   }
 
-  function handlePointerDown(event: React.PointerEvent<HTMLImageElement>) {
-    const { overflowX, overflowY } = calcularOverflow()
+  function handlePointerDown(event: React.PointerEvent<HTMLElement>) {
     event.currentTarget.setPointerCapture(event.pointerId)
+    const { overflowX, overflowY } = repetir
+      ? { overflowX: calcularOverflowXRepetido(), overflowY: altoBaldosa }
+      : calcularOverflowCover()
     dragRef.current = {
       activo: true,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       startOffsetX: offsetDesdePorcentaje(posicion.x, overflowX),
-      startOffsetY: offsetDesdePorcentaje(posicion.y, overflowY),
+      startOffsetY: repetir
+        ? offsetYBaldosaRepetida(yEfectivaRepetida(posicion.y), overflowY)
+        : offsetDesdePorcentaje(posicion.y, overflowY),
       overflowX,
       overflowY,
     }
   }
 
-  function handlePointerMove(event: React.PointerEvent<HTMLImageElement>) {
+  function handlePointerMove(event: React.PointerEvent<HTMLElement>) {
     const drag = dragRef.current
     if (!drag?.activo) return
     const dx = (event.clientX - drag.startX) / escala
     const dy = (event.clientY - drag.startY) / escala
     const nuevoOffsetX = clamp(drag.startOffsetX + dx, -drag.overflowX, 0)
+    if (repetir) {
+      // Sin clamp en Y a propósito: el patrón se repite infinito, así que
+      // arrastrar sin soltar "gira" en vez de trabarse en un extremo — el
+      // módulo pasa a `porcentajeYDesdeOffsetBaldosa`.
+      const nuevoOffsetY = drag.startOffsetY + dy
+      setPosicion((prev) => ({
+        ...prev,
+        x: porcentajeDesdeOffset(nuevoOffsetX, drag.overflowX),
+        y: porcentajeYDesdeOffsetBaldosa(nuevoOffsetY, drag.overflowY),
+      }))
+      return
+    }
     const nuevoOffsetY = clamp(drag.startOffsetY + dy, -drag.overflowY, 0)
     setPosicion((prev) => ({
       ...prev,
@@ -133,7 +186,7 @@ export function ReposicionarImagen({
     }))
   }
 
-  function handlePointerUp(event: React.PointerEvent<HTMLImageElement>) {
+  function handlePointerUp(event: React.PointerEvent<HTMLElement>) {
     if (dragRef.current) dragRef.current.activo = false
     event.currentTarget.releasePointerCapture(event.pointerId)
   }
@@ -147,25 +200,46 @@ export function ReposicionarImagen({
             Reposicionar imagen
           </Dialog.Title>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Move className="size-3.5 shrink-0" /> Arrastra la imagen para ajustar qué parte se ve.
+            <Move className="size-3.5 shrink-0" />
+            {repetir
+              ? "Arrastra para elegir qué parte del patrón se repite — gira sin límite."
+              : "Arrastra la imagen para ajustar qué parte se ve."}
           </p>
           <div
             ref={containerRef}
             className="relative mt-4 w-full touch-none overflow-hidden rounded-xl border border-border bg-muted"
             style={{ height: alto }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- arrastre directo con pointer events, next/image no expone eso */}
-            <img
-              src={imagenUrl}
-              alt=""
-              onLoad={handleImageLoad}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              className="absolute inset-0 size-full cursor-grab touch-none object-cover select-none active:cursor-grabbing"
-              style={{ objectPosition: `${posicion.x}% ${posicion.y}%`, transform: `scale(${escala})`, transformOrigin: `${posicion.x}% ${posicion.y}%` }}
-              draggable={false}
-            />
+            {repetir ? (
+              // Vista previa REAL (tileada), no un recorte tipo cover — el
+              // mismo cálculo que usa la tarjeta real (FondoImagenRepetido),
+              // así lo que se arrastra acá es 1:1 con el resultado final.
+              <div
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                className="absolute inset-0 size-full cursor-grab touch-none select-none active:cursor-grabbing"
+                style={{
+                  backgroundImage: `url(${imagenUrl})`,
+                  backgroundRepeat: "repeat-y",
+                  backgroundSize: `${100 * escala}% auto`,
+                  backgroundPosition: `${posicion.x}% ${offsetYBaldosaRepetida(yEfectivaRepetida(posicion.y), altoBaldosa)}px`,
+                }}
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element -- arrastre directo con pointer events, next/image no expone eso
+              <img
+                src={imagenUrl}
+                alt=""
+                onLoad={handleImageLoad}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                className="absolute inset-0 size-full cursor-grab touch-none object-cover select-none active:cursor-grabbing"
+                style={{ objectPosition: `${posicion.x}% ${posicion.y}%`, transform: `scale(${escala})`, transformOrigin: `${posicion.x}% ${posicion.y}%` }}
+                draggable={false}
+              />
+            )}
           </div>
           <label className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
             <ZoomIn className="size-4 shrink-0" />

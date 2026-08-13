@@ -2,7 +2,7 @@
 
 # Estado del negocio y la arquitectura (mitarjeta)
 
-> Última actualización: 2026-08-15. Fuente de verdad para que una sesión nueva entienda el
+> Última actualización: 2026-08-16. Fuente de verdad para que una sesión nueva entienda el
 > estado real del proyecto sin releer el historial de chat. Actualizar cuando cambie algo de
 > lo que describe. **Para el detalle histórico de verificaciones, bugs encontrados en el
 > camino, capturas de pantalla y logs de sesiones anteriores, ver [HISTORIAL.md](HISTORIAL.md)
@@ -1611,6 +1611,80 @@ real desde esta sesión salvo que se indique lo contrario):
   galería, confirmar que el video reproduce con los controles nativos (sin ninguna marca de
   terceros) y que el límite de 8 ítems/30MB por video se siente razonable en la práctica.
 
+## "Repetir fondo" reposicionable de verdad en los 2 ejes + Título opcional (2026-08-16)
+- **🔴→✅ Bug real reportado por el cliente**: en modo "Repetir fondo" (imagen de fondo de
+  toda la tarjeta, ver sección anterior), el reposicionamiento solo funcionaba en el eje
+  horizontal — el vertical no tenía ningún efecto visible real, y la vista previa (miniatura
+  del editor y modal de arrastre) no coincidía con lo que terminaba viéndose en la tarjeta.
+  - **Causa real**: con `background-repeat: repeat-y`, un `background-position` en
+    PORCENTAJE se calcula contra el **alto total del contenedor** (`(altoContenedor -
+    altoBaldosa) * pct`) — nunca contra el alto de UNA baldosa del patrón. El contenedor real
+    mide hasta 3000px (`ALTO_FONDO_IMAGEN`) o `100svh` en pantalla completa, muchísimo más
+    que una baldosa (unas pocas decenas/cientos de px) — el mismo % de Y guardado producía un
+    desplazamiento en píxeles gigantesco que, al repetirse la imagen, terminaba en un punto
+    casi arbitrario del patrón (a veces indistinguible del original). En X no pasaba porque
+    no hay `repeat-x`: el ancho de la baldosa se fija en `contenedor × escala`, el mismo
+    contenedor contra el que se calcula el %, así que ahí el % sí es válido — de ahí que el
+    bug fuera "solo en vertical".
+  - **Fix**: el offset de Y se expresa ahora en **píxeles absolutos relativos a UNA baldosa**
+    (`offsetYBaldosaRepetida`/`porcentajeYDesdeOffsetBaldosa`/`altoBaldosaRepetida`, funciones
+    puras nuevas en `lib/imagen-posicion.ts`), en vez de en % del contenedor — el eje X sigue
+    en % (siempre fue correcto ahí). El alto real de una baldosa se mide con un hook nuevo
+    (`useAltoBaldosaRepetida`, `fondo-imagen-repetido.tsx`): ancho del contenedor vía
+    `ResizeObserver` (cambia entre mobile/desktop/miniatura) × proporción natural del archivo
+    (`naturalWidth/Height`, cargado una vez por URL vía `new Image()`, sin depender de un
+    `<img>` visible).
+  - **Un solo componente reusado en los 3 lugares que renderizan el patrón repetido**
+    (`<FondoImagenRepetido>`, nuevo) — la tarjeta real (pantalla completa y contenida, en
+    `tarjeta-card.tsx`), la miniatura del editor (`tarjeta-form.tsx`) y, para el arrastre en
+    vivo, el propio cálculo de fondo dentro de `ReposicionarImagen` — los 3 nunca pueden
+    volver a desincronizarse entre sí, que era la otra mitad del reporte ("la vista previa
+    también se debe visualizar correctamente siempre").
+  - **`ReposicionarImagen` ganó un prop `repetir?: boolean`** (pasado solo desde la invocación
+    del modal para la imagen de fondo, `fondoImagenRepetir` — el banner normal y el resto de
+    invocaciones del modal, avatar/ítems de catálogo/logo del título, no lo usan y siguen con
+    el comportamiento de siempre): en este modo, la vista previa del modal deja de ser un
+    recorte tipo `object-fit:cover` (limitación aceptada en la sesión anterior) y pasa a ser
+    el mismo fondo tileado real, con arrastre directo sobre ese `div` (sin `<img>` de por
+    medio). Matemática de arrastre distinta a la de siempre en el eje Y: sin `clamp` (el
+    patrón se repite infinito, no hay límite real) — se normaliza con módulo, así arrastrar
+    sin soltar "gira" el patrón en vez de trabarse en un extremo, igual sensación que un
+    fondo repetido de verdad. El eje X sigue acotado (overflow real: `contenedor ×
+    (escala-1)`, mismo criterio que el render final).
+  - **🔴→✅ Segundo bug real, mismo día, reportado apenas se probó el fix de arriba**: con la
+    posición SIN tocar (default recién descrito), la imagen se veía centrada dentro de cada
+    baldosa en vez de arrancar con su tope pegado al tope del banner — pedido explícito del
+    cliente: "al repetirla, la imagen debe quedar el top de la imagen y el top del banner".
+    Causa: `fondoImagenPosicion` es un campo COMPARTIDO con el modo sin repetir (cover), donde
+    el default `{x:50, y:50}` significa "centrado" — ese mismo `y:50` alimentaba
+    `offsetYBaldosaRepetida` tal cual, dando un offset de medio tile (visualmente "centrado"
+    dentro de la baldosa) en vez de 0 (tope). Fix: `yEfectivaRepetida()` (nueva, `lib/imagen-
+    posicion.ts`) — mientras el dueño no arrastró el eje Y a mano (sigue en el 50 default
+    compartido), se interpreta como 0 (tope); si ya lo movió a cualquier otro valor, se
+    respeta tal cual. No reescribe el dato guardado, solo cambia cómo se INTERPRETA ese
+    sentinel compartido cuando el modo es Repetir — aplicado en los 3 lugares que leen
+    `posicion.y` en este modo (`FondoImagenRepetido`, y las 2 lecturas de
+    `ReposicionarImagen`: el preview del modal y el arranque del arrastre).
+  - Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 No
+    verificado todavía en navegador real — pendiente confirmar con el cliente que el
+    arrastre vertical ahora se siente 1:1, que arranca alineado arriba por default, y que la
+    miniatura/modal/tarjeta real coinciden con una imagen real, sobre todo en los extremos
+    (imagen muy panorámica vs. muy vertical, con y sin zoom).
+- **Título ("nombre") pasa a ser opcional** (pedido explícito del cliente): se sacó el
+  `required` del input y la validación que bloqueaba "Guardar" con
+  `"Ingresa un título para continuar."` en `tarjeta-form.tsx`. En `TarjetaCard`, el `<h1>` del
+  título (rama de texto, no la de "Título como logo") ahora es condicional a que el nombre
+  tenga contenido — en blanco no se reserva ningún hueco (ni el texto ni su `mt-2`), como si
+  el elemento no existiera, en vez de mostrar el placeholder `"Sin nombre"` de antes. Los
+  fallbacks a `"Sin nombre"` que ya existían en otros lugares NO se tocaron a propósito, son
+  contextos distintos al elemento visual de la tarjeta: `nombrePrincipalDeTarjeta()`
+  (listados internos de admin/`mi-cuenta`), el `FN:` del vCard exportable (`exportar-
+  tarjeta.ts`, el campo es obligatorio en la spec de vCard) y el `<title>`/OG de `[slug]/
+  page.tsx` (ya tenía su propio fallback `"Tarjeta digital"`, sin cambios). "Título como logo"
+  (`tituloModo: "imagen"`) no depende del nombre en absoluto, sin cambios ahí.
+  - Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 No
+    verificado todavía en navegador real.
+
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
   planes" arriba para el detalle completo de cada uno, decisión consciente del cliente de
@@ -1632,6 +1706,9 @@ real desde esta sesión salvo que se indique lo contrario):
   después de probar el widget oficial de Instagram y no querer su chrome de marca) — solo
   verificado con `tsc`/`eslint`/`build`, sin probar subir un archivo real todavía (ver esa
   sección para el detalle completo).
+- 🔴 "Repetir fondo" reposicionable en los 2 ejes (fix del bug real de arrastre vertical) +
+  Título opcional (2026-08-16) — solo verificado con `tsc`/`eslint`/`build`, sin probar en
+  navegador real todavía (ver esa sección para el detalle completo).
 - 🔴 Agenda como calendario único (duración+colchón por servicio, sin "paso" configurable,
   2026-08-10) — migración APLICADA y confirmada por consulta real desde esta sesión, código
   listo para deploy; falta la prueba en navegador con servicios reales de distinta

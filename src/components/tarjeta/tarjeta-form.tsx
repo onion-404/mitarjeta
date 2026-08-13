@@ -31,6 +31,7 @@ import { CandadoPlan } from "@/components/tarjeta/candado-plan"
 import { ColorPicker } from "@/components/tarjeta/color-picker"
 import { CompartirTarjeta } from "@/components/tarjeta/compartir-tarjeta"
 import { EditorTextoEnriquecido } from "@/components/tarjeta/editor-texto-enriquecido"
+import { FondoImagenRepetido } from "@/components/tarjeta/fondo-imagen-repetido"
 import { OpcionPersonalizacion, SwatchDivisor, SwatchForma } from "@/components/tarjeta/opcion-personalizacion"
 import { PlantillasGaleria } from "@/components/tarjeta/plantillas-galeria"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
@@ -1670,10 +1671,9 @@ export function TarjetaForm({
 
   async function handleGuardar(event: React.SubmitEvent) {
     event.preventDefault()
-    if (!nombre.trim()) {
-      setSaveError("Ingresa un título para continuar.")
-      return
-    }
+    // El título es opcional a propósito (pedido explícito del cliente,
+    // 2026-08-16): dejarlo en blanco es válido, TarjetaCard no reserva
+    // ningún espacio para el <h1> cuando no hay nombre.
 
     // El enlace es obligatorio siempre (editable en cualquier modo, ver
     // CLAUDE.md) — en edición viene pre-llenado con el actual, así que solo
@@ -2669,13 +2669,15 @@ export function TarjetaForm({
       <label className="flex flex-col gap-1.5">
         <span className={labelClase}>Título</span>
         <input
-          required
           value={nombre}
           onChange={(e) => setNombre(e.target.value)}
           onFocus={() => scrollPreviewTo("nombre")}
           placeholder="Ej. María Gómez o Café Aroma"
           className={inputClase}
         />
+        {/* Opcional a propósito: dejarlo en blanco no reserva ningún hueco
+            en la tarjeta — TarjetaCard directamente no renderiza el <h1>
+            (ver tarjeta-card.tsx), como si el elemento no existiera. */}
       </label>
       <label className="flex flex-col gap-1.5">
         <span className={labelClase}>Rol o descripción</span>
@@ -3163,22 +3165,25 @@ export function TarjetaForm({
         <div className="flex items-center gap-3">
           {fondoImagenMostrado && (
             <div className="relative shrink-0">
-              <div
-                className="h-12 w-20 rounded-lg border border-border bg-cover"
-                style={
-                  fondoImagenRepetir
-                    ? {
-                        backgroundImage: `url(${fondoImagenMostrado})`,
-                        backgroundRepeat: "repeat-y",
-                        backgroundSize: `${100 * (fondoImagenPosicion.escala ?? 1)}% auto`,
-                        backgroundPosition: `${fondoImagenPosicion.x}% ${fondoImagenPosicion.y}%`,
-                      }
-                    : {
-                        backgroundImage: `url(${fondoImagenMostrado})`,
-                        backgroundPosition: `${fondoImagenPosicion.x}% ${fondoImagenPosicion.y}%`,
-                      }
-                }
-              />
+              {fondoImagenRepetir ? (
+                // Mismo componente que usa la tarjeta real (FondoImagenRepetido)
+                // — nunca puede desincronizarse de lo que termina viéndose ahí,
+                // a diferencia del cálculo manual en % que tenía antes esta
+                // miniatura (roto en el eje vertical, ver lib/imagen-posicion.ts).
+                <FondoImagenRepetido
+                  imagenUrl={fondoImagenMostrado}
+                  posicion={fondoImagenPosicion}
+                  className="h-12 w-20 rounded-lg border border-border"
+                />
+              ) : (
+                <div
+                  className="h-12 w-20 rounded-lg border border-border bg-cover"
+                  style={{
+                    backgroundImage: `url(${fondoImagenMostrado})`,
+                    backgroundPosition: `${fondoImagenPosicion.x}% ${fondoImagenPosicion.y}%`,
+                  }}
+                />
+              )}
               <button
                 type="button"
                 onClick={quitarFondoImagen}
@@ -3263,6 +3268,7 @@ export function TarjetaForm({
           imagenUrl={fondoImagenMostrado}
           valorInicial={fondoImagenPosicion}
           alto={420}
+          repetir={fondoImagenRepetir}
           onCancelar={() => setReposicionandoFondoImagen(false)}
           onConfirmar={(pos) => {
             setFondoImagenPosicion(pos)

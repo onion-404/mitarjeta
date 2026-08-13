@@ -44,6 +44,7 @@ import type {
 import { AvatarForma } from "@/components/tarjeta/avatar-forma"
 import { BotonCtaModal, ContenidoBotonCta, estiloTexturaBoton, type BotonVistaPrevia } from "@/components/tarjeta/boton-cta-modal"
 import { CatalogoItemModal } from "@/components/tarjeta/catalogo-item-modal"
+import { FondoImagenRepetido } from "@/components/tarjeta/fondo-imagen-repetido"
 import { ReservarServicio } from "@/components/tarjeta/reservar-servicio"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 
@@ -277,24 +278,13 @@ export function TarjetaCard({
   const estiloBannerImagen = estiloImagenPosicionada(bannerPosicion)
   const estiloFondoImagen = estiloImagenPosicionada(fondoImagenPosicion)
   // "Repetir fondo": ancho 100% (alto proporcional) repitiendo hacia abajo
-  // para llenar la pantalla, en vez de recortarse con object-fit:cover — no
-  // usa next/image (no soporta background-repeat), se resuelve con un div
-  // con background-image plano. `fondoImagenPosicion` SÍ aplica en este
-  // modo (2026-08-12, antes quedaba fijo en "arriba centro" y el botón
-  // "Reposicionar" ni se mostraba) — mismo campo x/y/escala que el modo sin
-  // repetir, reinterpretado como background-position/background-size en
-  // vez de object-position/transform: escala > 1 ensancha el ancho más
-  // allá del 100% (equivalente a "acercar" antes de que el patrón se
-  // repita), x/y desplazan desde dónde arranca esa imagen ensanchada.
-  const escalaFondoRepetido = fondoImagenPosicion?.escala ?? 1
-  const estiloFondoImagenRepetido: React.CSSProperties | undefined = fondoImagenRepetir
-    ? {
-        backgroundImage: `url(${fondoImagenUrl})`,
-        backgroundRepeat: "repeat-y",
-        backgroundSize: `${100 * escalaFondoRepetido}% auto`,
-        backgroundPosition: `${fondoImagenPosicion?.x ?? 50}% ${fondoImagenPosicion?.y ?? 50}%`,
-      }
-    : undefined
+  // para llenar la pantalla, en vez de recortarse con object-fit:cover —
+  // resuelto por <FondoImagenRepetido> (fondo-imagen-repetido.tsx), que mide
+  // el contenedor real y expresa el desplazamiento vertical en píxeles
+  // relativos a una baldosa en vez de en % del contenedor (ver el porqué en
+  // `lib/imagen-posicion.ts` — un `background-position` en % contra un
+  // contenedor de miles de píxeles de alto, como acá, hacía que reposicionar
+  // verticalmente pareciera no tener ningún efecto real).
   const alturaBanner = bannerAltura ?? 192
 
   // Fondo del panel de contenido (separado del fondo del banner de arriba).
@@ -945,7 +935,11 @@ export function TarjetaCard({
             // que la barra se oculta, preferible al salto.
             <div className="fixed inset-x-0 top-0 z-0 h-[100svh] sm:hidden" aria-hidden>
               {fondoImagenRepetir ? (
-                <div className="size-full" style={estiloFondoImagenRepetido} />
+                <FondoImagenRepetido
+                  imagenUrl={fondoImagenUrl!}
+                  posicion={fondoImagenPosicion}
+                  className="size-full"
+                />
               ) : (
                 <Image
                   src={fondoImagenUrl!}
@@ -980,7 +974,11 @@ export function TarjetaCard({
             aria-hidden
           >
             {fondoImagenRepetir ? (
-              <div className="size-full" style={estiloFondoImagenRepetido} />
+              <FondoImagenRepetido
+                imagenUrl={fondoImagenUrl!}
+                posicion={fondoImagenPosicion}
+                className="size-full"
+              />
             ) : (
               <Image
                 src={fondoImagenUrl!}
@@ -1123,19 +1121,26 @@ export function TarjetaCard({
               className="mx-auto mt-2 w-auto max-w-full object-contain"
             />
           ) : (
-            <h1
-              data-campo="nombre"
-              style={{
-                fontFamily: fuenteEncabezado,
-                ...estiloTextoGeneral,
-                fontSize: tituloTamano ? `${tituloTamano}px` : undefined,
-                fontWeight: tituloPeso ?? undefined,
-                ...(colorTitulo ? { color: colorTitulo } : undefined),
-              }}
-              className="mt-2 text-xl font-semibold text-balance text-[#18181b] dark:text-[#fafafa]"
-            >
-              {nombrePrincipal?.trim() || "Sin nombre"}
-            </h1>
+            // Título opcional (pedido explícito del cliente, 2026-08-16):
+            // en blanco no se reserva ningún hueco — ni el <h1> ni su
+            // margen (mt-2) se renderizan, como si el elemento no
+            // existiera, en vez de mostrar un placeholder tipo "Sin
+            // nombre" u ocupar espacio vacío.
+            nombrePrincipal?.trim() && (
+              <h1
+                data-campo="nombre"
+                style={{
+                  fontFamily: fuenteEncabezado,
+                  ...estiloTextoGeneral,
+                  fontSize: tituloTamano ? `${tituloTamano}px` : undefined,
+                  fontWeight: tituloPeso ?? undefined,
+                  ...(colorTitulo ? { color: colorTitulo } : undefined),
+                }}
+                className="mt-2 text-xl font-semibold text-balance text-[#18181b] dark:text-[#fafafa]"
+              >
+                {nombrePrincipal.trim()}
+              </h1>
+            )
           )}
           {empresa?.trim() && (
             <p
