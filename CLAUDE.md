@@ -1888,6 +1888,15 @@ real desde esta sesión salvo que se indique lo contrario):
   que ya usaba `opengraph-image.tsx` — el override de "Imagen OG" pasa a cubrir la vista
   previa COMPLETA del link (imagen + título + descripción), no solo los píxeles de la imagen,
   que es como el cliente esperaba la feature de entrada.
+- **Subtítulo/Bio habilitados también en "Solo avatar"** (2026-08-13, pedido explícito): esos 2
+  campos vivían ocultos detrás de `ogTipo === "personalizada"` en el editor — con "Solo avatar"
+  activo no había forma de tocar la descripción del link (aunque `generateMetadata` YA la
+  soportaba ahí, sin cambios de ese lado: nunca bifurcó por `ogTipo`, siempre miró
+  `ogSubtitulo`/`ogBio` sin importar el tipo de imagen). Fix puramente de UI: se sacó el
+  condicional que los ocultaba (visibles siempre que `ogTipo !== "ninguna"`, mismo criterio
+  que el campo Nombre) + una nota aclaratoria solo en modo "Solo avatar" explicando que ahí
+  esos 2 campos NO se dibujan en la imagen (que sigue siendo solo el avatar) pero SÍ arman la
+  descripción de texto que WhatsApp/redes muestran junto al título.
 - Verificado: `tsc --noEmit`, `eslint` (2 warnings preexistentes de `<img>` en Satori, no
   evitables — `next/image` no funciona dentro de `ImageResponse`) y `npm run build` (41 rutas)
   limpios. 🔴 No verificado todavía en navegador real ni contra un unfurler real (WhatsApp/

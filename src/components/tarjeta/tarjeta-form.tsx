@@ -4636,28 +4636,31 @@ export function TarjetaForm({
               className={inputClase}
             />
           </label>
-          {ogTipo === "personalizada" && (
-            <>
-              <label className="flex flex-col gap-1.5">
-                <span className={labelClase}>Subtítulo en la imagen OG (opcional)</span>
-                <input
-                  value={ogSubtitulo}
-                  onChange={(e) => setOgSubtitulo(e.target.value)}
-                  placeholder={empresa || "Usa el Rol o descripción de la tarjeta"}
-                  className={inputClase}
-                />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className={labelClase}>Bio en la imagen OG (opcional)</span>
-                <textarea
-                  value={ogBio}
-                  onChange={(e) => setOgBio(e.target.value)}
-                  placeholder={puesto || "Usa la Bio de la tarjeta"}
-                  rows={2}
-                  className={cn(inputClase, "resize-none")}
-                />
-              </label>
-            </>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClase}>Subtítulo en la imagen OG (opcional)</span>
+            <input
+              value={ogSubtitulo}
+              onChange={(e) => setOgSubtitulo(e.target.value)}
+              placeholder={empresa || "Usa el Rol o descripción de la tarjeta"}
+              className={inputClase}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClase}>Bio en la imagen OG (opcional)</span>
+            <textarea
+              value={ogBio}
+              onChange={(e) => setOgBio(e.target.value)}
+              placeholder={puesto || "Usa la Bio de la tarjeta"}
+              rows={2}
+              className={cn(inputClase, "resize-none")}
+            />
+          </label>
+          {ogTipo === "avatar" && (
+            <p className="text-xs text-muted-foreground">
+              En &ldquo;Solo avatar&rdquo; el subtítulo y la bio no se dibujan en la imagen (que
+              queda solo con el avatar) — pero sí arman la descripción de texto que
+              WhatsApp/redes muestran junto al título en la miniatura.
+            </p>
           )}
           <p className="text-xs text-muted-foreground">
             Deja cualquiera en blanco para usar el dato real de la tarjeta.
