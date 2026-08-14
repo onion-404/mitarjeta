@@ -536,7 +536,10 @@ interface TarjetaFormProps {
   tarjeta?: Tarjeta
   /** Plan elegido en /planes — requerido en modo creación (ver /crear/page.tsx). */
   plan?: Plan
-  /** Ciclo de facturación elegido en /planes — requerido en modo creación. */
+  /** Ciclo de facturación elegido en /planes (creación) o el de la última
+   *  suscripción intentada (reintentar pago) — punto de partida nomás, el
+   *  dueño lo puede cambiar en "Tu plan" antes de pagar (ver `periodicidad`
+   *  como estado más abajo). */
   periodicidad?: PeriodicidadSuscripcion
   /** Plan REAL de la tarjeta en modo edición (distinto de `plan`, que en
    *  edición es sobre una suscripción pendiente/abandonada) — fuente del
@@ -553,10 +556,21 @@ interface TarjetaFormProps {
 export function TarjetaForm({
   tarjeta,
   plan,
-  periodicidad = "anual",
+  periodicidad: periodicidadInicial = "anual",
   planActivo,
   cuponInicial,
 }: TarjetaFormProps) {
+  // Editable en "Tu plan" antes de pagar (ver contenidoResumenPago) — antes
+  // era un prop fijo sin forma de cambiarlo desde el editor: tanto /crear
+  // (viene de ?ciclo= en la URL, elegido en /planes) como /editar/[id] en
+  // modo "reintentar pago" (viene de la periodicidad de la ÚLTIMA
+  // suscripción intentada, que puede ser una de años atrás o una manual que
+  // el admin cargó con otro ciclo) dejaban al dueño sin ninguna forma de
+  // cambiar de mensual a anual o viceversa una vez adentro del editor — bug
+  // real reportado: una tarjeta armada en anual por el admin, el dueño real
+  // prefería mensual y no había cómo.
+  const [periodicidad, setPeriodicidad] =
+    React.useState<PeriodicidadSuscripcion>(periodicidadInicial)
   const esEdicion = Boolean(tarjeta)
   // Una tarjeta existente puede no tener plan activo todavía: se creó, se
   // llegó a Stripe, pero el pago se canceló o abandonó antes de completarse
@@ -4696,9 +4710,23 @@ export function TarjetaForm({
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-foreground">{plan.nombre_display}</span>
-        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-          {periodicidad === "anual" ? "Anual" : "Mensual"}
-        </span>
+        <div className="inline-flex rounded-full border border-border p-0.5">
+          {(["mensual", "anual"] as const).map((opcion) => (
+            <button
+              key={opcion}
+              type="button"
+              onClick={() => setPeriodicidad(opcion)}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                periodicidad === opcion
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {opcion === "mensual" ? "Mensual" : "Anual"}
+            </button>
+          ))}
+        </div>
       </div>
 
       {precioBase !== null && (

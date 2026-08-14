@@ -1960,6 +1960,29 @@ real desde esta sesión salvo que se indique lo contrario):
   y que después el dueño real puede completar un checkout de Stripe para esa misma tarjeta sin
   el 409 que motivó todo esto.
 
+## Periodicidad (mensual/anual) editable en "Tu plan" antes de pagar (2026-08-13, mismo día)
+- **Caso real que lo destapó**: siguiendo el flujo de la sección anterior, el cliente reasignó
+  y liberó una tarjeta que él mismo había armado en ciclo anual (alta manual) — el dueño real
+  llegó al editor, avanzó hasta "Tu plan" para pagar por Stripe, y quería mensual en vez de
+  anual, sin ninguna forma de cambiarlo ahí.
+- **Causa real, más ancha que este caso puntual**: `periodicidad` era un prop FIJO en
+  `TarjetaForm`, nunca estado — en `/crear` viene de `?ciclo=` (elegido en `/planes`, ANTES de
+  llegar al editor) y en `/editar/[id]` (reintentar pago) viene de la periodicidad de la
+  ÚLTIMA suscripción intentada (que puede ser una manual vieja con el ciclo que el admin haya
+  cargado, o un intento de Stripe abandonado hace tiempo) — en NINGUNO de los 2 flujos había
+  manera de cambiar de mensual a anual (o viceversa) una vez adentro del editor, había que
+  volver atrás y re-armar la URL con otro `?ciclo=` (inviable para una tarjeta ya existente).
+- **Fix**: `periodicidad` pasa a ser estado (`useState`, inicializado con el prop de siempre
+  como punto de partida — sin cambios en el flujo normal si nadie lo toca) + un toggle real
+  (mismo patrón pill mensual/anual que `/planes`/home) en el resumen "Tu plan" — reemplaza el
+  badge de solo-lectura que había ahí antes. Precio/cupón ya eran cálculos reactivos sobre
+  `plan`+`periodicidad`+`cuponValidado` (sin memización con deps desactualizadas), así que
+  recalculan solos al tocar el toggle, sin tocar esa lógica.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (42 rutas) limpios. 🔴 No verificado
+  todavía en navegador real — pendiente confirmar que el toggle cambia el precio mostrado en
+  vivo (con y sin cupón aplicado) y que el checkout de Stripe efectivamente cobra el ciclo
+  elegido en el toggle, no el que traía el prop original.
+
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
   planes" arriba para el detalle completo de cada uno, decisión consciente del cliente de
@@ -2001,6 +2024,9 @@ real desde esta sesión salvo que se indique lo contrario):
 - 🔴 Botón "Cancelar suscripción manual" en `/admin/tarjetas/[id]` (2026-08-13) — solo
   verificado con `tsc`/`eslint`/`build`, sin probar con una suscripción manual real todavía
   (ver esa sección para el detalle completo).
+- 🔴 Toggle mensual/anual editable en "Tu plan" antes de pagar (2026-08-13) — solo verificado
+  con `tsc`/`eslint`/`build`, sin confirmar en navegador que el checkout de Stripe cobra el
+  ciclo elegido en el toggle (ver esa sección para el detalle completo).
 - 🔴 Sección "Imagen OG" (tipo personalizada/avatar/ninguna + overrides de nombre/subtítulo/
   bio, 2026-08-17) — solo verificado con `tsc`/`eslint`/`build`, sin probar en navegador real
   ni contra un unfurler real (WhatsApp/Twitter Card Validator) todavía (ver esa sección para
