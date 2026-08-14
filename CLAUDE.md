@@ -1904,6 +1904,32 @@ real desde esta sesión salvo que se indique lo contrario):
   que "avatar" efectivamente rinda como miniatura chica (no banner grande) en al menos
   WhatsApp y Twitter/X, y que "ninguna" omita el recuadro de imagen en la práctica.
 
+## Tarjeta pegada al footer cuando hay imagen de fondo (mobile) — sin hueco donde se viera el fondo repetido (2026-08-13)
+- **🔴→✅ Bug real reportado por el cliente**: con imagen de fondo activa (sobre todo notado
+  con "Repetir fondo"), quedaba un hueco visible entre el borde inferior de la tarjeta y el
+  `<footer>` — ahí se alcanzaba a ver el fondo "cortado" sin ninguna transición, y en algunos
+  casos se veía feo. Pidió que la tarjeta quedara pegada al footer, o que el footer se
+  expandiera para cubrir ese hueco, o que ese espacio tuviera blur.
+- **Causa real**: el layer `fixed` a pantalla completa de `TarjetaCard` (mobile, ver la sección
+  de "Repetir fondo" más arriba) cubre TODO el viewport detrás de la tarjeta — pero el
+  contenedor de `TarjetaPublica` tenía `pb-6` (24px) de padding después del `<article>`, más
+  las esquinas de abajo del `<article>` redondeadas (`rounded-2xl`) — ese hueco + las esquinas
+  no tenían ningún fondo propio ahí (transparente), así que el fondo `fixed` de atrás se veía
+  directo, sin el scrim que sí protege al `<footer>` mismo (ver sección de "Fixes de contraste
+  visual", 2026-08-05).
+- **Fix** (`tarjeta-publica.tsx`, sin tocar `TarjetaCard` ni el footer): con imagen de fondo
+  activa (`tieneFondoImagen`, cualquier modo, no solo repetido), el `pb-6` pasa a `pb-0` Y las
+  esquinas de ABAJO del `<article>` pasan a cuadradas (`rounded-b-none`, override vía `cn`/
+  `twMerge` sobre el `rounded-2xl` base — deja las de ARRIBA intactas) — la tarjeta queda
+  pegada al footer sin ningún hueco en el medio ni esquinas redondeadas asomando el fondo. El
+  borde/scrim que YA tenía el footer para este caso hace de transición limpia. Sin efecto para
+  tarjetas sin imagen de fondo (mismo look de siempre) ni en desktop (`sm:` — ahí la card nunca
+  es full-bleed, este fondo se apaga solo, no hay nada que pegar).
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (41 rutas) limpios. 🔴 No verificado
+  todavía en navegador real — pendiente confirmar con una tarjeta real con "Repetir fondo" (y
+  con imagen de fondo sin repetir) que la unión con el footer se ve limpia, sin ningún hueco
+  ni salto, tanto con contenido corto (footer visible sin scroll) como largo.
+
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
   planes" arriba para el detalle completo de cada uno, decisión consciente del cliente de
@@ -1939,6 +1965,9 @@ real desde esta sesión salvo que se indique lo contrario):
 - 🔴 Preloader real de la tarjeta pública (`TarjetaPreloader`) + precarga en segundo plano de
   ítems de catálogo cerrados (2026-08-17) — solo verificado con `tsc`/`eslint`/`build`, sin
   probar en navegador real (ver esa sección para el detalle completo).
+- 🔴 Tarjeta pegada al footer cuando hay imagen de fondo (mobile), sin hueco donde se viera el
+  fondo repetido (2026-08-13) — solo verificado con `tsc`/`eslint`/`build`, sin probar en
+  navegador real todavía (ver esa sección para el detalle completo).
 - 🔴 Sección "Imagen OG" (tipo personalizada/avatar/ninguna + overrides de nombre/subtítulo/
   bio, 2026-08-17) — solo verificado con `tsc`/`eslint`/`build`, sin probar en navegador real
   ni contra un unfurler real (WhatsApp/Twitter Card Validator) todavía (ver esa sección para

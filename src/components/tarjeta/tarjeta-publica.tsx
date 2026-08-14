@@ -2,6 +2,7 @@ import { AccionesTarjeta } from "@/components/tarjeta/acciones-tarjeta"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { TarjetaPreloader } from "@/components/tarjeta/tarjeta-preloader"
 import type { ServicioAgendable, Tarjeta } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 interface TarjetaPublicaProps {
   tarjeta: Tarjeta
@@ -32,12 +33,31 @@ export function TarjetaPublica({ tarjeta, slug, agendaServicios }: TarjetaPublic
     tituloModo === "imagen" ? tituloImagenUrl : undefined,
   ].filter((url): url is string => Boolean(url))
 
+  // Con imagen de fondo activa, el layer `fixed` a pantalla completa de
+  // TarjetaCard (mobile) cubre TODO el viewport detrás de la tarjeta — el
+  // `pb-6`/las esquinas redondeadas de abajo dejaban un hueco visible entre
+  // el borde inferior de la card y el <footer> donde esa imagen se veía
+  // "cortada" sin más contexto alrededor (bug real reportado, se notaba
+  // sobre todo con el fondo repetido: el patrón terminaba ahí sin ninguna
+  // transición). Fix: sin ese padding y con las esquinas de ABAJO cuadradas
+  // (las de arriba siguen redondeadas), la tarjeta queda pegada al footer —
+  // mismo borde/scrim que YA tiene el footer cuando hay imagen de fondo
+  // (ver [slug]/page.tsx) hace de transición limpia, sin ningún hueco en
+  // el medio donde el patrón pudiera "verse feo". Sin efecto en desktop
+  // (sm:): ahí la card nunca es full-bleed, este fondo se apaga solo.
+  const tieneFondoImagen = Boolean(fondoImagenUrl)
+
   return (
     <>
       {/* Mobile (por debajo de sm:): ancho completo, sin margin/padding
           arriba — la tarjeta arranca pegada al top. Desde sm: vuelve al
           layout centrado con blobs decorativos de siempre. */}
-      <div className="relative flex flex-1 flex-col items-stretch justify-start px-0 pt-0 pb-6 sm:items-center sm:justify-center sm:px-4 sm:py-16">
+      <div
+        className={cn(
+          "relative flex flex-1 flex-col items-stretch justify-start px-0 pt-0 sm:items-center sm:justify-center sm:px-4 sm:py-16",
+          tieneFondoImagen ? "pb-0" : "pb-6"
+        )}
+      >
         <div
           aria-hidden
           className="pointer-events-none absolute -top-24 -left-24 hidden size-72 rounded-full opacity-40 blur-3xl sm:block"
@@ -60,7 +80,7 @@ export function TarjetaPublica({ tarjeta, slug, agendaServicios }: TarjetaPublic
             tarjetaId={tarjeta.id}
             zonaHoraria={tarjeta.zona_horaria}
             pantallaCompleta
-            className="relative"
+            className={cn("relative", tieneFondoImagen && "rounded-b-none")}
           />
         </TarjetaPreloader>
       </div>
