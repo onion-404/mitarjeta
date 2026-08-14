@@ -55,6 +55,9 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
   const [emailReasignar, setEmailReasignar] = React.useState("")
   const [reasignando, setReasignando] = React.useState(false)
 
+  // --- Cancelar suscripción manual (libera la tarjeta para repagar) ---
+  const [cancelando, setCancelando] = React.useState(false)
+
   const cargar = React.useCallback(async () => {
     const [t, planes] = await Promise.all([getTarjetaPorId(id), getPlanesActivos()])
     setTarjeta(t)
@@ -127,6 +130,36 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
     }
     setMensaje({ tipo: "exito", texto: "Plan activado correctamente." })
     setNotaManual("")
+    await cargar()
+  }
+
+  async function handleCancelarSuscripcion() {
+    if (!suscripcion) return
+    if (
+      !window.confirm(
+        'Cancelar esta suscripción manual va a dejar la tarjeta SIN plan activo — se ve "temporalmente inactiva" para cualquier visitante hasta que se active otra (Stripe o una manual nueva). ¿Continuar?'
+      )
+    ) {
+      return
+    }
+
+    setMensaje(null)
+    setCancelando(true)
+    const { data: sessionData } = await supabase.auth.getSession()
+    const accessToken = sessionData.session?.access_token
+    const res = await fetch("/api/admin/cancelar-suscripcion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ suscripcionId: suscripcion.id }),
+    })
+    const data = (await res.json()) as { error?: string }
+    setCancelando(false)
+
+    if (!res.ok) {
+      setMensaje({ tipo: "error", texto: data.error ?? "No pudimos cancelar la suscripción." })
+      return
+    }
+    setMensaje({ tipo: "exito", texto: "Suscripción cancelada — la tarjeta quedó sin plan activo." })
     await cargar()
   }
 
@@ -238,10 +271,28 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
           </p>
 
           {tieneSuscripcionActivaNoPendiente ? (
-            <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
-              Esta tarjeta ya tiene una suscripción {suscripcion?.estado} (
-              {suscripcion?.proveedor}). Cancélala primero si quieres reemplazarla por una manual.
-            </p>
+            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+              <p>
+                Esta tarjeta ya tiene una suscripción {suscripcion?.estado} (
+                {suscripcion?.proveedor}).{" "}
+                {suscripcion?.proveedor === "manual"
+                  ? "Cancélala para reemplazarla — por otra manual o para que el dueño pague en línea con Stripe."
+                  : "Cancélala desde Stripe/Mercado Pago si quieres reemplazarla — no se puede hacer desde acá."}
+              </p>
+              {suscripcion?.proveedor === "manual" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={cancelando}
+                  onClick={handleCancelarSuscripcion}
+                  className="self-start border-amber-300 bg-transparent text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900"
+                >
+                  {cancelando ? <Loader2 className="size-4 animate-spin" /> : null}
+                  Cancelar suscripción manual
+                </Button>
+              )}
+            </div>
           ) : (
             <form onSubmit={handleActivarManual} className="mt-4 flex flex-col gap-3">
               <label className="flex flex-col gap-1.5">

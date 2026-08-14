@@ -1930,6 +1930,36 @@ real desde esta sesión salvo que se indique lo contrario):
   con imagen de fondo sin repetir) que la unión con el footer se ve limpia, sin ningún hueco
   ni salto, tanto con contenido corto (footer visible sin scroll) como largo.
 
+## Botón "Cancelar suscripción manual" en /admin/tarjetas/[id] (2026-08-13, mismo día)
+- **Caso real que lo motivó**: el cliente había hecho un alta manual para una tarjeta creada a
+  nombre de otra persona (esperaba una transferencia), reasignó la tarjeta a esa persona, y esa
+  persona terminó prefiriendo pagar en línea con su propia tarjeta — pero no había forma de
+  liberar la suscripción manual para dejar pasar un pago real por Stripe sin tocar Supabase a
+  mano. La sección "Activar plan manualmente" de esa misma página ya avisaba en texto
+  ("Cancélala primero si quieres reemplazarla") pero no tenía ningún botón que lo hiciera —
+  hueco real, no un olvido de esta sesión.
+- **`POST /api/admin/cancelar-suscripcion`** (nuevo, gate `ADMIN_EMAIL`, mismo patrón que
+  `activar-manual`/`reasignar-tarjeta`): recibe `suscripcionId`, la vuelve a consultar server-
+  side (nunca confía en lo que ya tenga la página en memoria) y **rechaza cualquier
+  `proveedor` que no sea `"manual"`** (400, con el mensaje "cancélala desde ahí") — cancelar acá
+  una suscripción real de Stripe/Mercado Pago solo tocaría nuestra fila sin avisarle al
+  proveedor real, que seguiría cobrando igual del lado de Stripe; ese caso queda fuera de
+  alcance a propósito, se cancela desde el Customer Portal o la API de Stripe. Con `proveedor:
+  "manual"` real: `estado → "cancelada"` + `tarjetas.plan_id → null` en la misma llamada —
+  mismo criterio fail-closed que ya aplica el webhook de Stripe automáticamente (cualquier
+  estado que no sea autorizada/trialing vacía `plan_id`), acá no hay webhook así que el
+  endpoint lo hace explícito.
+- **UI** (`/admin/tarjetas/[id]`): el aviso ámbar de "ya tiene una suscripción" ahora es
+  condicional por `proveedor` — con `"manual"` suma el botón "Cancelar suscripción manual"
+  (con `window.confirm` avisando que la tarjeta va a quedar pública como "temporalmente
+  inactiva" hasta reactivarse, mismo campo `plan_id` que gatea `/{slug}`); con cualquier otro
+  proveedor, el aviso solo indica que hay que cancelarla desde su propio panel, sin botón.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (42 rutas — suma la nueva ruta de API)
+  limpios. 🔴 No verificado todavía en navegador real — pendiente confirmar con una suscripción
+  manual real: que el botón cancela, que `/{slug}` pasa a "temporalmente inactiva" al instante,
+  y que después el dueño real puede completar un checkout de Stripe para esa misma tarjeta sin
+  el 409 que motivó todo esto.
+
 ## Pendiente técnico sin resolver (consolidado)
 - 🔴🔴 **Urgente — publicado en marketing sin código real todavía** (ver "Copy de marketing de
   planes" arriba para el detalle completo de cada uno, decisión consciente del cliente de
@@ -1968,6 +1998,9 @@ real desde esta sesión salvo que se indique lo contrario):
 - 🔴 Tarjeta pegada al footer cuando hay imagen de fondo (mobile), sin hueco donde se viera el
   fondo repetido (2026-08-13) — solo verificado con `tsc`/`eslint`/`build`, sin probar en
   navegador real todavía (ver esa sección para el detalle completo).
+- 🔴 Botón "Cancelar suscripción manual" en `/admin/tarjetas/[id]` (2026-08-13) — solo
+  verificado con `tsc`/`eslint`/`build`, sin probar con una suscripción manual real todavía
+  (ver esa sección para el detalle completo).
 - 🔴 Sección "Imagen OG" (tipo personalizada/avatar/ninguna + overrides de nombre/subtítulo/
   bio, 2026-08-17) — solo verificado con `tsc`/`eslint`/`build`, sin probar en navegador real
   ni contra un unfurler real (WhatsApp/Twitter Card Validator) todavía (ver esa sección para
