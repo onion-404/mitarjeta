@@ -545,6 +545,10 @@ export interface Tarjeta {
   precio_pagado: number | null
   cupon_codigo: string | null
   plan_id: string | null
+  /** Null en tarjetas creadas antes de la migración de este campo, o si el
+   *  dueño no lo definió en el paso inicial (es opcional). Ver tipo `Giro`
+   *  arriba. */
+  giro: Giro | null
   zona_horaria: string
   /** @deprecated Columna existe en DB (migración
    *  20260810000000_add_agenda_intervalo_colchon.sql) pero sin caller: un
@@ -710,6 +714,26 @@ export interface Testimonio {
 }
 
 export type PlanSlug = "connect" | "growth"
+
+// Categoría de negocio/rubro de una tarjeta — elegida en el paso previo al
+// editor (ver src/components/tarjeta/paso-inicial-tarjeta.tsx). Lista
+// cerrada: DEBE coincidir 1:1 con el CHECK constraint de
+// supabase/migrations/20260817000000_add_tarjeta_giro.sql y con GIROS en
+// src/lib/giros.ts (labels + metadata).
+export type Giro =
+  | "salud_bienestar"
+  | "belleza_estetica"
+  | "gastronomia"
+  | "comercio_retail"
+  | "legal_consultoria"
+  | "automotriz"
+  | "hogar_servicios"
+  | "educacion"
+  | "arte_diseno"
+  | "eventos"
+  | "inmobiliaria"
+  | "creadores_freelance"
+  | "otro"
 
 export interface Plan {
   id: string

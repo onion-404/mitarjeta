@@ -14,15 +14,20 @@ interface ComparativaPlanesProps {
   /** Viaja desde /planes?cupon=... (botón "Obtener mi descuento" del home) —
    *  se reenvía tal cual a /crear para que TarjetaForm lo pre-llene. */
   cuponCodigo?: string
+  /** Viaja desde /planes?nombre=... (input "Reclama tu link" del hero del
+   *  home) — se reenvía tal cual a /crear para que TarjetaForm pre-llene el
+   *  Título. */
+  nombreInicial?: string
 }
 
-export function ComparativaPlanes({ planes, cuponCodigo }: ComparativaPlanesProps) {
+export function ComparativaPlanes({ planes, cuponCodigo, nombreInicial }: ComparativaPlanesProps) {
   const router = useRouter()
   const [ciclo, setCiclo] = React.useState<PeriodicidadSuscripcion>("anual")
 
   function continuar(slug: string) {
     const cupon = cuponCodigo ? `&cupon=${encodeURIComponent(cuponCodigo)}` : ""
-    router.push(`/crear?plan=${encodeURIComponent(slug)}&ciclo=${ciclo}${cupon}`)
+    const nombre = nombreInicial ? `&nombre=${encodeURIComponent(nombreInicial)}` : ""
+    router.push(`/crear?plan=${encodeURIComponent(slug)}&ciclo=${ciclo}${cupon}${nombre}`)
   }
 
   return (

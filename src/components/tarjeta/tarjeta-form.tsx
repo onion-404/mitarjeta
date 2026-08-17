@@ -551,6 +551,12 @@ interface TarjetaFormProps {
    *  verdad (fn_cupon_es_valido) — no se asume aplicado solo por venir en
    *  la URL, puede haberse agotado/vencido para cuando la persona llega acá. */
   cuponInicial?: string
+  /** Texto que la persona escribió en el input "Reclama tu link" del hero
+   *  del home (?nombre=...), reenviado a través de /planes → /crear (y del
+   *  redirectTo de login) con el mismo criterio que `cuponInicial`. Solo
+   *  pre-llena el campo Título — nunca sobreescribe una tarjeta existente
+   *  (no se usa en modo edición). */
+  nombreInicial?: string
 }
 
 export function TarjetaForm({
@@ -559,6 +565,7 @@ export function TarjetaForm({
   periodicidad: periodicidadInicial = "anual",
   planActivo,
   cuponInicial,
+  nombreInicial,
 }: TarjetaFormProps) {
   // Editable en "Tu plan" antes de pagar (ver contenidoResumenPago) — antes
   // era un prop fijo sin forma de cambiarlo desde el editor: tanto /crear
@@ -599,7 +606,7 @@ export function TarjetaForm({
   // los campos nuevos al guardar — los legacy quedan @deprecated en
   // lib/types.ts, no se borran de tarjetas no regrabadas.
   const [nombre, setNombre] = React.useState(
-    datosIniciales?.nombre ?? datosIniciales?.nombreEmpresa ?? ""
+    datosIniciales?.nombre ?? datosIniciales?.nombreEmpresa ?? nombreInicial ?? ""
   )
   const [empresa, setEmpresa] = React.useState(
     datosIniciales?.empresa ?? datosIniciales?.giro ?? ""
@@ -4706,7 +4713,7 @@ export function TarjetaForm({
     </div>
   )
 
-  const contenidoResumenPago = mostrarSeccionPago && plan && (
+  const contenidoResumenPago = mostrarSeccionPago && (plan ? (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-foreground">{plan.nombre_display}</span>
@@ -4786,7 +4793,20 @@ export function TarjetaForm({
         a este si te corresponde algún descuento adicional.
       </p>
     </div>
-  )
+  ) : (
+    // Caso borde: tarjeta sin plan activo, sin suscripción pendiente Y sin
+    // ?plan= en la URL (ej. volvió mucho después y perdió el query param) —
+    // en vez de dejar la sección "Tu plan" vacía sin explicación.
+    <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+      <p>Todavía no elegiste un plan para esta tarjeta.</p>
+      <Link
+        href="/planes"
+        className="w-fit font-medium text-foreground underline underline-offset-2"
+      >
+        Elegir un plan
+      </Link>
+    </div>
+  ))
 
   // 3 estados posibles, no 2: edición pura (esEdicion && tienePlanActivo),
   // reintentar pago (esEdicion && !tienePlanActivo — tarjeta ya creada pero

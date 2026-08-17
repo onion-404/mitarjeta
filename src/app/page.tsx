@@ -1,12 +1,11 @@
 import {
   ArrowRight,
-  BarChart3,
   Bot,
   Calendar,
   Check,
   CreditCard,
-  Palette,
-  ShoppingBag,
+  LayoutGrid,
+  Link2,
   Sparkles,
   Wallet,
   X,
@@ -17,134 +16,94 @@ import { AdminShortcut } from "@/components/admin/admin-shortcut"
 import { HeaderGlobal } from "@/components/header-global"
 import { ContadorAnimado } from "@/components/landing/contador-animado"
 import { CuponLanzamiento } from "@/components/landing/cupon-lanzamiento"
+import { FaqAcordeon } from "@/components/landing/faq-acordeon"
 import { PreciosDestacados } from "@/components/landing/precios-destacados"
+import { ReclamarLink } from "@/components/landing/reclamar-link"
+import { ShowcaseNichos } from "@/components/landing/showcase-nichos"
 import { TarjetaTilt } from "@/components/landing/tarjeta-tilt"
 import { TestimoniosDestacados } from "@/components/landing/testimonios-destacados"
 import { buttonVariants } from "@/components/ui/button"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { getPlanesActivos } from "@/lib/planes"
+import { getTarjetaEjemploPorGiro } from "@/lib/tarjetas"
 import { getTestimoniosActivos } from "@/lib/testimonios"
+import type { Giro } from "@/lib/types"
+
+import { TARJETA_ANTOJITOS, TARJETA_CREADORA, TARJETA_ESTUDIO } from "@/components/landing/tarjetas-demo"
+
+// Giros que hoy tienen su propio tab en el showcase de la landing (ver
+// showcase-nichos.tsx) — se resuelve acá, server-side, cuál Linkard real
+// mostrar (o ninguna, y el componente cae a su mockup de ejemplo).
+const GIROS_SHOWCASE: Giro[] = ["salud_bienestar", "belleza_estetica", "legal_consultoria", "gastronomia"]
 
 export const dynamic = "force-dynamic"
 
-// Las 3 tarjetas del abanico del hero: personas de ejemplo (mismo criterio
-// que ya usaba TARJETA_DEMO — mockup de producto, no un testimonio ni una
-// afirmación de cliente real) que muestran las dos audiencias por igual:
-// 1 creadora de contenido + 2 sabores de negocio pequeño. Cada una usa un
-// bannerPreset real (lib/banner-presets.ts) en vez de un gradiente inventado
-// para la landing — el color de esta sección ES el producto, no decoración.
-const TARJETA_CREADORA = {
-  tipo: "personal" as const,
-  slug: "sofia-martin",
-  datosContacto: {
-    nombre: "Sofía Martín",
-    puesto: "Diseñadora UX",
-    telefono: "+52 55 5555 5555",
-    whatsapp: "+52 55 5555 5555",
-    email: "sofia@ejemplo.com",
-    redes: [
-      { plataforma: "instagram" as const, label: "", url: "https://instagram.com/sofia" },
-    ],
-  },
-  identidadVisual: {
-    colorPrimario: "#6366f1",
-    colorSecundario: "#a855f7",
-    bannerPreset: "aurora",
-  },
-}
-
-const TARJETA_ESTUDIO = {
-  tipo: "personal" as const,
-  slug: "estudio-raiz",
-  datosContacto: {
-    nombre: "Estudio Raíz",
-    empresa: "Peluquería y estética",
-    telefono: "+52 55 4444 4444",
-    horarios: "Lun-Sáb 9-19h",
-  },
-  identidadVisual: {
-    bannerPreset: "sunset",
-    estiloTipografia: "elegante" as const,
-  },
-}
-
-const TARJETA_ANTOJITOS = {
-  tipo: "personal" as const,
-  slug: "tacos-el-primo",
-  datosContacto: {
-    nombre: "Tacos El Primo",
-    empresa: "Antojitos mexicanos",
-    telefono: "+52 55 3333 3333",
-    horarios: "Todos los días 18-24h",
-  },
-  identidadVisual: {
-    bannerPreset: "citrus",
-    estiloTipografia: "creativa" as const,
-  },
-}
-
 const NAV_HOME = [
+  { etiqueta: "Nichos", href: "#nichos" },
   { etiqueta: "Todo incluido", href: "#incluye" },
   { etiqueta: "Precios", href: "#precios" },
-  { etiqueta: "Opiniones", href: "#testimonios" },
+  { etiqueta: "Preguntas", href: "#faq" },
 ]
 
-const ANTES = [
-  "Imprimes cientos de tarjetas y la mitad termina en la basura antes de la semana.",
-  "Cambias de número o de trabajo y tus contactos se pierden para siempre.",
-  "Mandas capturas de pantalla borrosas de tu catálogo por WhatsApp.",
-  "No tienes idea de si tu presencia digital está funcionando o no.",
+// Tabla "Sin Linkard vs. con Linkard" — comparación fila a fila, no dos
+// listas sueltas: cada índice de SIN_LINKARD se lee junto a su par en
+// CON_LINKARD.
+const SIN_LINKARD = [
+  "Perder horas respondiendo DMs con precios y horarios.",
+  "Mandar números de cuenta o links de pago sueltos por chat.",
+  "Enviar PDFs pesados o catálogos desactualizados.",
+  "Usar un \"link en bio\" tradicional que solo tiene botones aburridos.",
 ]
 
-const DESPUES = [
-  "Un solo link que actualizas al instante, para siempre — nada que reimprimir.",
-  "Tu cliente guarda tu contacto con un toque, sin escribir nada a mano.",
-  "Tu catálogo, tu agenda y tus redes, en un lugar que se ve profesional.",
-  "Un panel real te dice qué está funcionando — no lo adivinas.",
+const CON_LINKARD = [
+  "Tu cliente agenda y paga solo, sin que muevas un dedo.",
+  "Cobra por tu tiempo o tus servicios por adelantado, de forma segura.",
+  "Muestra tus productos y servicios impecables en segundos.",
+  "Una mini página web profesional que proyecta autoridad y cierra ventas.",
 ]
 
 const INCLUYE = [
   {
-    icono: Palette,
-    titulo: "Personalización de verdad",
+    icono: CreditCard,
+    titulo: "Cobro de citas y servicios",
     texto:
-      "Elige entre 6 plantillas premium o arma la tuya: formas de foto, colores, tipografías y efecto vidrio. Tu tarjeta se ve como tú, no como una plantilla más.",
+      "Cobra el anticipo o el total de tus citas al instante. Tu cliente paga con tarjeta directo desde tu Linkard, sin salir del chat.",
   },
   {
     icono: Calendar,
-    titulo: "Agenda con cobro opcional",
+    titulo: "Agendamiento de citas inteligente",
     texto:
-      "Deja que agenden contigo solos, con o sin cobro por adelantado. Se acabó el ida y vuelta por WhatsApp para cuadrar un horario.",
+      "Tu agenda se llena sin mensajes de ida y vuelta. Define tus horarios disponibles y deja que reserven las 24 horas del día.",
   },
   {
-    icono: ShoppingBag,
-    titulo: "Venta de productos",
+    icono: LayoutGrid,
+    titulo: "Catálogo y portafolio visual",
     texto:
-      "Muestra tu catálogo y manda tráfico directo a comprar — sin que nadie se pierda buscando tu tienda o tu WhatsApp.",
+      "Muestra tu trabajo y enamora a primera vista. Organiza tus productos, servicios o proyectos en un catálogo armado por ti.",
   },
   {
-    icono: BarChart3,
-    titulo: "Panel de métricas real",
+    icono: Link2,
+    titulo: "Red de enlaces y contacto directo",
     texto:
-      "Vistas, clics y agendamientos reales de tu tarjeta. Sabes qué está funcionando, no lo adivinas.",
+      "Conecta tu WhatsApp, tus redes sociales, un archivo descargable y tu ubicación — todo en un solo lugar, sin verse saturado.",
   },
 ]
 
 const PASOS = [
   {
-    numero: "1",
-    titulo: "Crea",
-    texto: "Elige si es personal o de tu negocio y completa tus datos en minutos.",
+    numero: "01",
+    titulo: "Crea y personaliza",
+    texto: "Elige tu diseño, sube tu foto o logo y completa tus datos en minutos.",
   },
   {
-    numero: "2",
-    titulo: "Personaliza",
-    texto: "Plantilla, colores, foto y catálogo con vista previa en tiempo real.",
+    numero: "02",
+    titulo: "Agrega tus servicios o tu agenda",
+    texto: "Define cuánto cobras, tu catálogo y tus horarios de atención.",
   },
   {
-    numero: "3",
-    titulo: "Comparte",
-    texto: "Un link y un QR listos para tu bio, WhatsApp o mostrador.",
+    numero: "03",
+    titulo: "Pega tu link en tus redes",
+    texto: "Ponlo en Instagram, TikTok o WhatsApp y empieza a recibir clientes en automático.",
   },
 ]
 
@@ -167,14 +126,35 @@ const PROXIMAMENTE = [
 ]
 
 const NUMERO_CLASE =
-  "flex size-9 items-center justify-center rounded-full font-[family-name:var(--font-display)] text-sm font-bold text-white"
-const NUMERO_FONDO = ["bg-violet-500", "bg-fuchsia-500", "bg-indigo-500"]
+  "flex size-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 font-[family-name:var(--font-display)] text-base font-extrabold text-white shadow-[0_0_20px_-4px_var(--tw-shadow-color)]"
+const NUMERO_SOMBRA = ["shadow-violet-500/60", "shadow-fuchsia-500/60", "shadow-indigo-500/60"]
 
 export default async function Home() {
-  const [testimonios, planes] = await Promise.all([getTestimoniosActivos(), getPlanesActivos()])
+  const [testimonios, planes, tarjetasPorGiro] = await Promise.all([
+    getTestimoniosActivos(),
+    getPlanesActivos(),
+    Promise.all(GIROS_SHOWCASE.map((giro) => getTarjetaEjemploPorGiro(giro))),
+  ])
+
+  // Solo los 3 campos que <TarjetaCard> necesita (ver tarjetas-demo.ts) —
+  // giros sin ninguna Linkard real todavía quedan afuera del objeto, y
+  // ShowcaseNichos cae a su mockup de ejemplo para esos.
+  const tarjetasReales = Object.fromEntries(
+    GIROS_SHOWCASE.map((giro, index) => [giro, tarjetasPorGiro[index]] as const)
+      .filter(([, tarjeta]) => tarjeta !== null)
+      .map(([giro, tarjeta]) => [
+        giro,
+        {
+          tipo: tarjeta!.tipo,
+          slug: tarjeta!.slug,
+          datosContacto: tarjeta!.datos_contacto,
+          identidadVisual: tarjeta!.identidad_visual,
+        },
+      ])
+  )
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-[#08070d] text-white">
+    <div className="flex flex-1 flex-col overflow-hidden bg-[#090a0f] text-white">
       <AdminShortcut />
 
       <HeaderGlobal variant="flotante" nav={NAV_HOME} />
@@ -193,43 +173,26 @@ export default async function Home() {
         <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-16 px-6 lg:grid-cols-2">
           <div className="flex flex-col items-start text-left">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 font-[family-name:var(--font-geist-mono)] text-xs font-medium tracking-tight text-white/70 backdrop-blur">
-              <Sparkles className="size-3.5 text-violet-400" /> LINKARD · PLATAFORMA DIGITAL
+              🚀 Mucho más que un &quot;link en tu bio&quot;
             </span>
 
             <h1 className="mt-6 font-[family-name:var(--font-display)] text-4xl font-extrabold tracking-tight text-balance sm:text-5xl lg:text-6xl">
-              Tu presencia digital,{" "}
+              Transforma tus seguidores en clientes.{" "}
               <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-indigo-400 bg-clip-text text-transparent">
-                en un solo link
+                Tu agenda, pagos y servicios en un solo link.
               </span>
-              .
             </h1>
             <p className="mt-4 max-w-lg text-lg text-balance text-white/70">
-              <strong className="font-semibold text-white">Linkard</strong> es la plataforma
-              todo-en-uno: perfil de contacto, agenda con cobro, catálogo de productos y
-              métricas reales — para negocios y para creadores.
+              Deja de perder tiempo respondiendo &quot;¿qué precio tiene?&quot; o coordinando
+              horarios por mensaje. Con <strong className="font-semibold text-white">Linkard</strong>,
+              tus clientes agendan y pagan su cita, ven tu catálogo completo y te contactan —
+              todo en automático.
             </p>
 
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link
-                href="/crear"
-                className={buttonVariants({
-                  size: "lg",
-                  className: "bg-white px-8 text-base text-violet-700 hover:bg-white/90",
-                })}
-              >
-                Crea tu tarjeta <ArrowRight className="size-4" />
-              </Link>
-              <Link
-                href="/planes"
-                className={buttonVariants({
-                  variant: "outline",
-                  size: "lg",
-                  className: "border-white/20 bg-white/5 px-6 text-base text-white hover:bg-white/10",
-                })}
-              >
-                Ver planes y precios
-              </Link>
-            </div>
+            <ReclamarLink />
+            <p className="mt-3 text-sm text-white/50">
+              ⚡ Listo para compartir en menos de 3 minutos.
+            </p>
 
             <Link
               href="/editar"
@@ -289,38 +252,60 @@ export default async function Home() {
         <CuponLanzamiento codigo="LINKARD15" porcentaje={15} />
       </section>
 
-      {/* Antes / Después — cualitativo, sin estadísticas inventadas. */}
+      {/* Showcase por nichos — misma <TarjetaCard> real detrás de cada
+          pestaña (ver showcase-nichos.tsx), no capturas estáticas. */}
+      <section id="nichos" className="relative border-t border-white/10 py-20">
+        <div className="mx-auto w-full max-w-5xl px-6">
+          <h2 className="text-center font-[family-name:var(--font-display)] text-3xl font-extrabold text-balance sm:text-4xl">
+            Un Linkard para cada tipo de negocio
+          </h2>
+          <p className="mx-auto mt-3 max-w-lg text-center text-white/60">
+            Así se ve un Linkard armado para tu rubro — elige tu categoría y mira el resultado.
+          </p>
+          <div className="mt-12">
+            <ShowcaseNichos tarjetasReales={tarjetasReales} />
+          </div>
+        </div>
+      </section>
+
+      {/* Sin Linkard vs. con Linkard — fila a fila, no dos listas sueltas. */}
       <section className="relative border-t border-white/10 py-20">
         <div className="mx-auto w-full max-w-4xl px-6">
           <h2 className="text-center font-[family-name:var(--font-display)] text-3xl font-extrabold text-balance sm:text-4xl">
-            Sin Linkard vs. con Linkard
+            Por qué los negocios eligen Linkard frente a un link tradicional
           </h2>
-          <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2">
-            <div className="flex flex-col gap-4 rounded-3xl border border-red-500/20 bg-red-500/5 p-8">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-red-400">
-                Sin Linkard
+          <p className="mx-auto mt-3 max-w-lg text-center text-white/60">
+            Compara lo que vives hoy contra lo que lograrás con tu perfil automatizado.
+          </p>
+
+          <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1">
+              <h3 className="px-2 pb-2 text-xs font-semibold tracking-wide text-red-400 uppercase">
+                ❌ Sin Linkard
               </h3>
-              <ul className="flex flex-col gap-4">
-                {ANTES.map((texto) => (
-                  <li key={texto} className="flex items-start gap-3">
-                    <X className="mt-0.5 size-4 shrink-0 text-red-400" />
-                    <p className="text-sm text-white/70">{texto}</p>
-                  </li>
-                ))}
-              </ul>
+              {SIN_LINKARD.map((texto) => (
+                <div
+                  key={texto}
+                  className="flex min-h-[4.5rem] items-start gap-3 rounded-2xl border border-red-500/15 bg-red-500/[0.04] p-4"
+                >
+                  <X className="mt-0.5 size-4 shrink-0 text-red-400/80" />
+                  <p className="text-sm text-white/60">{texto}</p>
+                </div>
+              ))}
             </div>
-            <div className="flex flex-col gap-4 rounded-3xl border border-emerald-500/20 bg-emerald-500/5 p-8">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-emerald-400">
-                Con Linkard
+            <div className="flex flex-col gap-1">
+              <h3 className="px-2 pb-2 text-xs font-semibold tracking-wide text-violet-300 uppercase">
+                ✅ Con Linkard
               </h3>
-              <ul className="flex flex-col gap-4">
-                {DESPUES.map((texto) => (
-                  <li key={texto} className="flex items-start gap-3">
-                    <Check className="mt-0.5 size-4 shrink-0 text-emerald-400" />
-                    <p className="text-sm text-white/70">{texto}</p>
-                  </li>
-                ))}
-              </ul>
+              {CON_LINKARD.map((texto) => (
+                <div
+                  key={texto}
+                  className="flex min-h-[4.5rem] items-start gap-3 rounded-2xl border border-violet-400/30 bg-violet-500/[0.08] p-4 shadow-[0_0_30px_-15px_rgba(139,92,246,0.8)]"
+                >
+                  <Check className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+                  <p className="text-sm text-white/85">{texto}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -331,13 +316,13 @@ export default async function Home() {
       <section id="incluye" className="relative border-t border-white/10 py-20">
         <div className="mx-auto w-full max-w-5xl px-6">
           <h2 className="text-center font-[family-name:var(--font-display)] text-3xl font-extrabold text-balance sm:text-4xl">
-            Todo lo que incluye tu tarjeta
+            Todo lo que tu negocio necesita en una sola herramienta
           </h2>
           <div className="mt-12 grid grid-cols-1 gap-6 sm:grid-cols-2">
             {INCLUYE.map(({ icono: Icono, titulo, texto }) => (
               <div
                 key={titulo}
-                className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl transition-colors duration-200 ease-out hover:bg-white/[0.07]"
+                className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl transition-all duration-300 ease-out hover:-translate-y-1 hover:bg-white/[0.07]"
               >
                 <span className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white">
                   <Icono className="size-5" />
@@ -354,12 +339,12 @@ export default async function Home() {
       <section className="relative border-t border-white/10 py-20">
         <div className="mx-auto w-full max-w-5xl px-6">
           <h2 className="text-center font-[family-name:var(--font-display)] text-3xl font-extrabold">
-            Lista en 3 pasos
+            Tu Linkard listo en menos de 3 minutos
           </h2>
           <div className="mt-12 grid grid-cols-1 gap-8 sm:grid-cols-3">
             {PASOS.map((paso, index) => (
               <div key={paso.numero} className="flex flex-col items-start gap-3">
-                <span className={`${NUMERO_CLASE} ${NUMERO_FONDO[index]}`}>{paso.numero}</span>
+                <span className={`${NUMERO_CLASE} ${NUMERO_SOMBRA[index]}`}>{paso.numero}</span>
                 <h3 className="text-base font-semibold text-white">{paso.titulo}</h3>
                 <p className="text-sm text-white/60">{paso.texto}</p>
               </div>
@@ -414,6 +399,18 @@ export default async function Home() {
 
       <PreciosDestacados planes={planes} />
 
+      {/* FAQ — rompiendo objeciones antes del CTA final. */}
+      <section id="faq" className="relative border-t border-white/10 py-20">
+        <div className="mx-auto w-full max-w-2xl px-6">
+          <h2 className="text-center font-[family-name:var(--font-display)] text-3xl font-extrabold text-balance sm:text-4xl">
+            Preguntas frecuentes
+          </h2>
+          <div className="mt-10">
+            <FaqAcordeon />
+          </div>
+        </div>
+      </section>
+
       {/* Próximamente — roadmap real confirmado, presentado como tal. */}
       <section className="relative border-t border-white/10 py-20">
         <div className="mx-auto w-full max-w-5xl px-6">
@@ -440,24 +437,38 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* CTA final */}
-      <section className="relative border-t border-white/10 py-24 text-center">
-        <h2 className="font-[family-name:var(--font-display)] text-3xl font-extrabold text-balance sm:text-4xl">
-          Tu próxima venta empieza con un toque
-        </h2>
-        <p className="mt-2 text-white/60">
-          Crea tu tarjeta hoy y déjala lista para compartir en minutos.
-        </p>
-        <div className="mt-6">
-          <Link
-            href="/crear"
-            className={buttonVariants({
-              size: "lg",
-              className: "bg-white px-8 text-base text-violet-700 hover:bg-white/90",
-            })}
-          >
-            Crea tu tarjeta <ArrowRight className="size-4" />
-          </Link>
+      {/* CTA final — card de cierre con glow, alto impacto. */}
+      <section className="relative border-t border-white/10 py-24">
+        <div className="mx-auto w-full max-w-3xl px-6">
+          <div className="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-gradient-to-br from-violet-950/60 via-[#0d0b16] to-fuchsia-950/40 p-10 text-center shadow-[0_0_120px_-30px_rgba(139,92,246,0.5)] sm:p-16">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute left-1/2 top-0 size-[28rem] -translate-x-1/2 -translate-y-1/3 rounded-full bg-violet-600/30 blur-[100px]"
+            />
+            <div className="relative flex items-center justify-center">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 font-[family-name:var(--font-geist-mono)] text-xs font-medium text-white/70 backdrop-blur">
+                <Sparkles className="size-3.5 text-violet-400" /> LINKARD
+              </span>
+            </div>
+            <h2 className="relative mt-5 font-[family-name:var(--font-display)] text-3xl font-extrabold text-balance sm:text-4xl">
+              ¿Listo para automatizar tus ventas y agendar citas mientras duermes?
+            </h2>
+            <p className="relative mt-3 text-white/60">
+              Únete a los profesionales que ya le dieron un giro a su presencia digital.
+            </p>
+            <div className="relative mt-8 flex justify-center">
+              <Link
+                href="/crear"
+                className={buttonVariants({
+                  size: "lg",
+                  className:
+                    "bg-gradient-to-r from-violet-500 to-fuchsia-500 px-8 text-base text-white transition-all duration-300 ease-out hover:scale-[1.03] hover:shadow-[0_0_30px_rgba(139,92,246,0.6)]",
+                })}
+              >
+                Crear mi Linkard <ArrowRight className="size-4" />
+              </Link>
+            </div>
+          </div>
         </div>
       </section>
 

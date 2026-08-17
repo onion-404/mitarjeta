@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase"
 import type {
   CambioSlugTarjeta,
   EstadoSuscripcion,
+  Giro,
   PeriodicidadSuscripcion,
   ProveedorSuscripcion,
   ServicioAgendable,
@@ -27,6 +28,31 @@ export const getTarjetaPublicada = cache(async (slug: string) => {
     .select("*")
     .eq("slug", slug)
     .eq("publicado", true)
+    .maybeSingle()
+
+  return data as Tarjeta | null
+})
+
+/**
+ * Una tarjeta real (publicada, con plan activo) de un giro dado — usada por
+ * el showcase por nicho del home (ver showcase-nichos.tsx) para mostrar
+ * ejemplos REALES en vez de solo personas de ejemplo ficticias, ahora que
+ * `tarjetas.giro` existe (migración 20260817000000_add_tarjeta_giro.sql).
+ * `null` si todavía no hay ninguna tarjeta real de ese giro — el caller cae
+ * a un mockup de ejemplo en ese caso (ver tarjetas-demo.ts), nunca rompe la
+ * sección. La más reciente primero: si en el futuro hay varias del mismo
+ * giro, prioriza la que se sumó último (más probable que sea la mejor
+ * carta de presentación vigente).
+ */
+export const getTarjetaEjemploPorGiro = cache(async (giro: Giro) => {
+  const { data } = await supabase
+    .from("tarjetas")
+    .select("*")
+    .eq("giro", giro)
+    .eq("publicado", true)
+    .not("plan_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle()
 
   return data as Tarjeta | null

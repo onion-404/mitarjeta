@@ -7,12 +7,14 @@ export const dynamic = "force-dynamic"
 interface PlanesPageProps {
   // "cupon" llega desde el botón "Obtener mi descuento" del home
   // (/planes?cupon=LINKARD15) — se reenvía a /crear al elegir un plan, ver
-  // ComparativaPlanes. Solo viaja en la URL, ver CLAUDE.md.
-  searchParams: Promise<{ cupon?: string }>
+  // ComparativaPlanes. "nombre" llega del input "Reclama tu link" del hero
+  // del home, mismo criterio de reenvío. Ambos solo viajan en la URL, ver
+  // CLAUDE.md.
+  searchParams: Promise<{ cupon?: string; nombre?: string }>
 }
 
 export default async function PlanesPage({ searchParams }: PlanesPageProps) {
-  const [planes, { cupon }] = await Promise.all([getPlanesActivos(), searchParams])
+  const [planes, { cupon, nombre }] = await Promise.all([getPlanesActivos(), searchParams])
 
   return (
     <div className="flex flex-1 flex-col">
@@ -31,7 +33,7 @@ export default async function PlanesPage({ searchParams }: PlanesPageProps) {
           </p>
         )}
         <div className="mt-6 w-full">
-          <ComparativaPlanes planes={planes} cuponCodigo={cupon} />
+          <ComparativaPlanes planes={planes} cuponCodigo={cupon} nombreInicial={nombre} />
         </div>
       </div>
     </div>

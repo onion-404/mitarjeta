@@ -38,7 +38,7 @@ export function PreciosDestacados({ planes }: PreciosDestacadosProps) {
       <div className="relative mx-auto w-full max-w-3xl px-6">
         <div className="text-center">
           <h2 className="font-[family-name:var(--font-display)] text-3xl font-extrabold text-balance text-white sm:text-4xl">
-            Un plan para cada tipo de negocio
+            Un plan simple que se paga solo con tu primera venta
           </h2>
           <p className="mt-3 text-white/60">
             Cada Linkard tiene su propio plan y su propia suscripción — elige el que se
@@ -66,18 +66,33 @@ export function PreciosDestacados({ planes }: PreciosDestacadosProps) {
           </div>
         </div>
 
-        <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 md:items-start">
           {planes.map((plan) => {
             const copy = COPY_PLAN[plan.slug as PlanSlug]
             const precioMensualEquivalente = Math.round(plan.precio_anual / 12)
             // Monto ahorrado en pesos (no el %) — más claro de un vistazo.
             const ahorroMonto = Math.round(plan.precio_mensual * 12 - plan.precio_anual)
+            // El plan con más features (Growth) lleva el tratamiento
+            // "destacado" — borde/glow púrpura y badge, mismo criterio
+            // visual que ClickUp/Monday para el plan que quieren empujar.
+            const destacado = plan.slug === "growth"
 
             return (
               <div
                 key={plan.id}
-                className="relative flex flex-col gap-4 rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl transition-all duration-200 ease-out hover:bg-white/[0.07]"
+                className={cn(
+                  "relative flex flex-col gap-4 rounded-3xl border p-8 backdrop-blur-xl transition-all duration-300 ease-out hover:-translate-y-1",
+                  destacado
+                    ? "border-violet-400/50 bg-white/[0.07] shadow-[0_0_60px_-15px_rgba(139,92,246,0.6)] hover:shadow-[0_0_70px_-10px_rgba(139,92,246,0.7)]"
+                    : "border-white/10 bg-white/5 hover:bg-white/[0.07]"
+                )}
               >
+                {destacado && (
+                  <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-3.5 py-1 text-[10px] font-bold tracking-wide text-white uppercase shadow-lg">
+                    Más popular
+                  </span>
+                )}
+
                 <div>
                   <h3 className="text-lg font-semibold text-white">{plan.nombre_display}</h3>
                   {copy && <p className="mt-1.5 text-sm text-white/60">{copy.tagline}</p>}
@@ -113,10 +128,14 @@ export function PreciosDestacados({ planes }: PreciosDestacadosProps) {
                   href={`/crear?plan=${encodeURIComponent(plan.slug)}&ciclo=${ciclo}`}
                   className={cn(
                     buttonVariants({ size: "lg" }),
-                    "mt-1 w-full justify-center bg-white/10 text-white hover:bg-white/20"
+                    "mt-1 w-full justify-center transition-all duration-300 ease-out hover:scale-[1.03]",
+                    destacado
+                      ? "bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white hover:shadow-[0_0_24px_rgba(139,92,246,0.5)]"
+                      : "border border-white/20 bg-white/10 text-white hover:bg-white/20"
                   )}
                 >
-                  Elegir {plan.nombre_display} <ArrowRight className="size-4" />
+                  {destacado ? "Empezar con Growth" : `Crear mi ${plan.nombre_display}`}
+                  <ArrowRight className="size-4" />
                 </Link>
 
                 {copy && (
