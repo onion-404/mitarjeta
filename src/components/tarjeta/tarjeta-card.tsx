@@ -187,6 +187,8 @@ export function TarjetaCard({
     fondoTarjetaTipoDegradado,
     fondoTarjetaDireccionGrados,
     colorTextoSecundario,
+    colorFondoContacto,
+    colorFondoRedes,
     ubicacionCentrada,
     multimediaAlFinal,
     ordenContacto,
@@ -364,6 +366,26 @@ export function TarjetaCard({
     : undefined
   const estiloTextoGeneral = modoColorAvanzado && colorTextoGeneral ? { color: colorTextoGeneral } : undefined
 
+  // Fondo de los pills de "Canales de contacto" y "Redes sociales" —
+  // independientes entre sí, mismo patrón que estiloCta/estiloBadge (texto
+  // auto-contrastado, sin campo de texto propio). Sin valor = undefined =
+  // conserva el look neutro fijo de `accionClase` (blanco/vidrio
+  // translúcido), cero regresión para tarjetas que nunca los toquen.
+  const estiloContacto = colorFondoContacto
+    ? {
+        backgroundColor: `${colorFondoContacto}${alfaVidrio}`,
+        color: obtenerColorContraste(colorFondoContacto),
+        ...estiloVidrio,
+      }
+    : undefined
+  const estiloRedes = colorFondoRedes
+    ? {
+        backgroundColor: `${colorFondoRedes}${alfaVidrio}`,
+        color: obtenerColorContraste(colorFondoRedes),
+        ...estiloVidrio,
+      }
+    : undefined
+
   const divisorMeta = DIVISORES_BANNER.find((d) => d.id === divisorBanner)
   const estiloDivisor = divisorMeta?.clipPath ? { clipPath: divisorMeta.clipPath } : undefined
 
@@ -413,6 +435,7 @@ export function TarjetaCard({
           href={`tel:${telefonoPrincipal}`}
           onClick={() => track("click_enlace", { tipo_enlace: "tel" })}
           className={accionClase}
+          style={estiloContacto}
         >
           <Phone className="size-3.5" /> Llamar
         </a>
@@ -427,6 +450,7 @@ export function TarjetaCard({
           rel="noopener noreferrer"
           onClick={() => track("click_enlace", { tipo_enlace: "whatsapp" })}
           className={accionClase}
+          style={estiloContacto}
         >
           <SOCIAL_ICONS.whatsapp className="size-3.5" /> WhatsApp
         </a>
@@ -439,6 +463,7 @@ export function TarjetaCard({
           href={`mailto:${email}`}
           onClick={() => track("click_enlace", { tipo_enlace: "email" })}
           className={accionClase}
+          style={estiloContacto}
         >
           <Mail className="size-3.5" /> Email
         </a>
@@ -453,6 +478,7 @@ export function TarjetaCard({
           rel="noopener noreferrer"
           onClick={() => track("click_enlace", { tipo_enlace: "ubicacion" })}
           className={accionClase}
+          style={estiloContacto}
         >
           <MapPin className="size-3.5" /> Cómo llegar
         </a>
@@ -479,6 +505,7 @@ export function TarjetaCard({
           rel="noopener noreferrer"
           onClick={() => track("click_enlace", { tipo_enlace: "red_social", red: red.plataforma })}
           className={accionClase}
+          style={estiloRedes}
         >
           <Icono className="size-3.5" /> {etiqueta}
         </a>

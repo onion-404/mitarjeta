@@ -115,6 +115,11 @@ interface ProductoFormState {
   waAbierto: boolean
   waNumero: string
   waMensaje: string
+  /** Colapsado por defecto si viene de datos ya guardados; un ítem
+   *  agregado en la sesión actual arranca expandido (mismo criterio que
+   *  `BotonFormState.expandido`). Solo controla la UI del editor, nunca se
+   *  persiste. */
+  expandido: boolean
 }
 
 /** Estado de un botón en el editor — unifica Botones/Servicios/Productos/
@@ -268,6 +273,7 @@ function adaptarBotonFormState(boton: Boton | BotonHijo, expandido: boolean): Bo
             waAbierto: false,
             waNumero: "",
             waMensaje: "",
+            expandido: false,
           }))
         : [],
     expandido,
@@ -688,6 +694,15 @@ export function TarjetaForm({
   const [colorTextoSecundario, setColorTextoSecundario] = React.useState(
     visualInicial?.colorTextoSecundario ?? ""
   )
+  // Fondo de los pills de "Canales de contacto" y "Redes sociales" — cada
+  // uno independiente, mismo criterio que colorTitulo/colorTextoSecundario:
+  // vacío = look neutro de siempre (blanco/vidrio translúcido).
+  const [colorFondoContacto, setColorFondoContacto] = React.useState(
+    visualInicial?.colorFondoContacto ?? ""
+  )
+  const [colorFondoRedes, setColorFondoRedes] = React.useState(
+    visualInicial?.colorFondoRedes ?? ""
+  )
 
   // Imagen OG (miniatura al compartir el link) — independiente de lo que
   // se ve en la tarjeta real. Pedido explícito del cliente: un caso real
@@ -814,6 +829,8 @@ export function TarjetaForm({
         colorTextoGeneral,
         colorTitulo,
         colorTextoSecundario,
+        colorFondoContacto,
+        colorFondoRedes,
         fondoTarjetaColor,
         fondoTarjetaColorSecundario,
         ...botones.flatMap(recolectarColoresBoton),
@@ -1499,6 +1516,7 @@ export function TarjetaForm({
               waAbierto: false,
               waNumero: "",
               waMensaje: "",
+              expandido: true,
             },
           ],
         }
@@ -1563,6 +1581,15 @@ export function TarjetaForm({
           if (item.imagenPreview) URL.revokeObjectURL(item.imagenPreview)
           return { ...item, imagenFile: null, imagenPreview: "", imagenUrlExistente: "" }
         }),
+      }))
+    )
+  }
+
+  function moverItemCatalogo(ubicacion: UbicacionBoton, indiceItem: number, direccion: -1 | 1) {
+    setBotones((prev) =>
+      actualizarEnUbicacion(prev, ubicacion, (boton) => ({
+        ...boton,
+        items: moverEnArray(boton.items, indiceItem, direccion),
       }))
     )
   }
@@ -2081,6 +2108,8 @@ export function TarjetaForm({
           ? fondoTarjetaDireccionGrados
           : undefined,
       colorTextoSecundario: colorTextoSecundario || undefined,
+      colorFondoContacto: colorFondoContacto || undefined,
+      colorFondoRedes: colorFondoRedes || undefined,
       ubicacionCentrada: ubicacionCentrada || undefined,
       multimediaAlFinal: multimediaAlFinal || undefined,
       ordenContacto,
@@ -2334,6 +2363,8 @@ export function TarjetaForm({
         ? fondoTarjetaDireccionGrados
         : undefined,
     colorTextoSecundario: colorTextoSecundario || undefined,
+    colorFondoContacto: colorFondoContacto || undefined,
+    colorFondoRedes: colorFondoRedes || undefined,
     ubicacionCentrada: ubicacionCentrada || undefined,
     multimediaAlFinal: multimediaAlFinal || undefined,
     ordenContacto,
@@ -3360,6 +3391,29 @@ export function TarjetaForm({
         />
       </label>
 
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+        <span className="text-xs text-muted-foreground">
+          Color de fondo de los botones (Llamar, WhatsApp, Email, Cómo llegar)
+        </span>
+        <div className="flex items-center gap-2">
+          {colorFondoContacto && (
+            <button
+              type="button"
+              onClick={() => setColorFondoContacto("")}
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Automático
+            </button>
+          )}
+          <ColorPicker
+            value={colorFondoContacto || "#ffffff"}
+            onChange={setColorFondoContacto}
+            onFocus={() => scrollPreviewTo("contacto")}
+            recientes={coloresPersonalizados}
+          />
+        </div>
+      </label>
+
       {/* Orden de los enlaces de contacto+redes en la tarjeta — todos viven en
           UNA sola fila ("uno junto al otro", nunca separados en bloques); acá
           solo se decide qué pill de contacto va primero dentro de esa fila
@@ -3407,6 +3461,27 @@ export function TarjetaForm({
 
   const contenidoRedes = (
     <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+        <span className="text-xs text-muted-foreground">Color de fondo de los botones</span>
+        <div className="flex items-center gap-2">
+          {colorFondoRedes && (
+            <button
+              type="button"
+              onClick={() => setColorFondoRedes("")}
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Automático
+            </button>
+          )}
+          <ColorPicker
+            value={colorFondoRedes || "#ffffff"}
+            onChange={setColorFondoRedes}
+            onFocus={() => scrollPreviewTo("redes")}
+            recientes={coloresPersonalizados}
+          />
+        </div>
+      </label>
+
       {redes.map((red, index) => {
         const plataformaCfg = obtenerPlataforma(red.plataforma)
         const Icono = SOCIAL_ICONS[red.plataforma]
@@ -4437,6 +4512,73 @@ export function TarjetaForm({
                       key={indiceItem}
                       className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
                     >
+                      {/* Fila-cabecera SIEMPRE visible (resumen + mover ↑/↓ +
+                          eliminar + chevron) — mismo patrón que renderBotonFila,
+                          los campos del ítem viven en el panel colapsable. */}
+                      <div className="flex items-center gap-2">
+                        <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                          {imagenItemMostrada ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- ícono chico, puede ser vista previa local
+                            <img src={imagenItemMostrada} alt="" className="size-full object-cover" />
+                          ) : (
+                            <Images className="size-4 text-muted-foreground" />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                          {item.titulo.trim() || "Sin título"}
+                        </span>
+                        {item.precio.trim() && (
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            ${item.precio.trim()}
+                          </span>
+                        )}
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => moverItemCatalogo(ubicacion, indiceItem, -1)}
+                            disabled={indiceItem === 0}
+                            aria-label="Subir"
+                            className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+                          >
+                            <ChevronUp className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moverItemCatalogo(ubicacion, indiceItem, 1)}
+                            disabled={indiceItem === boton.items.length - 1}
+                            aria-label="Bajar"
+                            className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+                          >
+                            <ChevronDown className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => quitarItemCatalogo(ubicacion, indiceItem)}
+                            aria-label="Quitar ítem"
+                            className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              actualizarItemCatalogo(ubicacion, indiceItem, "expandido", !item.expandido)
+                            }
+                            aria-label={item.expandido ? "Colapsar" : "Expandir"}
+                            className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted"
+                          >
+                            <ChevronDown
+                              className={cn(
+                                "size-3.5 transition-transform duration-200 ease-out",
+                                item.expandido && "rotate-180"
+                              )}
+                            />
+                          </button>
+                        </div>
+                      </div>
+
+                      {item.expandido && (
+                      <div className="flex flex-col gap-2 border-t border-border/60 pt-2">
                       <div className="flex items-center gap-2">
                         <input
                           value={item.titulo}
@@ -4459,14 +4601,6 @@ export function TarjetaForm({
                             className="w-full bg-transparent px-1.5 py-2 text-sm outline-none"
                           />
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => quitarItemCatalogo(ubicacion, indiceItem)}
-                          aria-label="Quitar ítem"
-                          className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
                       </div>
                       <EditorTextoEnriquecido
                         value={item.descripcion}
@@ -4530,6 +4664,8 @@ export function TarjetaForm({
                       <span className="text-[11px] text-muted-foreground">
                         Imagen cuadrada (1:1), mínimo 600×600px para que se vea nítida al ampliarse.
                       </span>
+                      </div>
+                      )}
                     </div>
                   )
                 })}

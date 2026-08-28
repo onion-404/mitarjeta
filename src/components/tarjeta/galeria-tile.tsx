@@ -94,13 +94,20 @@ interface GaleriaTileProps {
  *  foto vertical se ve alto, uno horizontal se ve más bajo (pedido
  *  explícito del cliente — antes todo se recortaba a 1:1 sin importar el
  *  formato original). Mientras se mide la proporción usa 1:1 como
- *  fallback, así no hay un tile roto en el instante inicial. */
+ *  fallback, así no hay un tile roto en el instante inicial.
+ *
+ *  `object-contain` (NO `object-cover`): el archivo se ve SIEMPRE entero
+ *  dentro del tile, nunca recortado (pedido explícito: "que queden
+ *  perfectamente visibles dentro del espacio del reproductor"). Como el
+ *  tile ya toma la proporción real del archivo, en el caso normal el
+ *  contenido llena el tile sin bordes; solo aparece un margen (contra el
+ *  fondo neutro) cuando la proporción real cae fuera del clamp 9:16–16:9. */
 export function GaleriaTile({ archivo }: GaleriaTileProps) {
   const ratio = useProporcionMedia(archivo.url, archivo.tipo)
 
   return (
     <div
-      className="relative w-[220px] shrink-0 snap-center overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] shadow-md dark:border-[rgba(255,255,255,0.1)]"
+      className="relative w-[220px] shrink-0 snap-center overflow-hidden rounded-2xl border border-[rgba(0,0,0,0.05)] bg-black/[0.04] shadow-md dark:border-[rgba(255,255,255,0.1)] dark:bg-white/[0.06]"
       style={{ aspectRatio: ratio ?? 1 }}
     >
       {archivo.tipo === "video" ? (
@@ -110,7 +117,7 @@ export function GaleriaTile({ archivo }: GaleriaTileProps) {
           controls
           playsInline
           preload="none"
-          className="size-full object-cover"
+          className="size-full object-contain"
         />
       ) : (
         <Image
@@ -119,7 +126,7 @@ export function GaleriaTile({ archivo }: GaleriaTileProps) {
           fill
           sizes="220px"
           unoptimized={!esUrlOptimizable(archivo.url)}
-          className="object-cover"
+          className="object-contain"
         />
       )}
     </div>

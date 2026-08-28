@@ -482,6 +482,18 @@ export interface IdentidadVisual {
    *  secundaria bajo el título) — mismo criterio que `colorTitulo`: default
    *  auto-contraste si no está seteado. Gating: personalizacion_libre. */
   colorTextoSecundario?: string
+  /** Color de fondo de los pills de "Canales de contacto" (Llamar/WhatsApp/
+   *  Email/Cómo llegar) y de "Redes sociales" respectivamente — cada uno
+   *  independiente, mismo criterio que `colorTitulo`: sin valor = look
+   *  neutro de siempre (blanco/vidrio translúcido, sin ningún tinte). El
+   *  color del texto se auto-calcula por contraste (`obtenerColorContraste`,
+   *  mismo mecanismo que `colorBotones`/`colorBadges`) — no hay campo de
+   *  texto separado, a diferencia de `Boton.colorTexto`. Gating:
+   *  personalizacion_libre (tier "basica"), sumado a `CAMPOS_COLOR_BASICOS`
+   *  en lib/personalizacion.ts — mismo criterio que `colorTitulo`/
+   *  `colorTextoSecundario`. */
+  colorFondoContacto?: string
+  colorFondoRedes?: string
   /** true = centra el bloque de dirección/horario (ícono+texto de cada
    *  línea) — por default queda alineado a la izquierda (comportamiento de
    *  siempre). Sin gating de plan: es organización visual, mismo criterio

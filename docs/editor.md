@@ -616,6 +616,64 @@
   intactas). Sin efecto para tarjetas sin imagen de fondo ni en desktop.
 - Verificado: `tsc`/`eslint`/`build` limpios. 🔴 No verificado en navegador real.
 
+## Color de fondo de los botones de Contacto y de Redes sociales (2026-08-18)
+- Pedido explícito del cliente: hasta acá ambos grupos de pills (Llamar/WhatsApp/Email/Cómo
+  llegar en "Canales de contacto", y cada red en "Redes sociales") compartían un único look
+  fijo (`accionClase`, blanco/vidrio translúcido, sin ningún tinte posible) — a diferencia de
+  los botones del sistema unificado (`Boton.colorFondo`), acá no había ninguna forma de elegir
+  color.
+- **`IdentidadVisual.colorFondoContacto`/`colorFondoRedes`** (nuevos, independientes entre sí,
+  jsonb, sin migración): mismo criterio que `colorTitulo`/`colorTextoSecundario` — vacío =
+  look neutro de siempre (cero regresión para tarjetas existentes), con valor = fondo del
+  color elegido + texto auto-contrastado (`obtenerColorContraste()`, mismo mecanismo que
+  `colorBotones`/`colorBadges`, sin campo de texto propio a diferencia de `Boton.colorTexto`).
+  Ambos sumados a `CAMPOS_COLOR_BASICOS` (`lib/personalizacion.ts`) — mismo gating que el resto
+  de colores básicos (`personalizacion_libre`), en la práctica nunca bloquea con cualquier plan
+  activo.
+- `tarjeta-card.tsx`: `estiloContacto`/`estiloRedes` calculados una sola vez (mismo patrón que
+  `estiloCta`/`estiloBadge`, con `alfaVidrio`/`estiloVidrio` si `glassmorfismo` está activo) y
+  aplicados vía `style={}` a los 5 `<a>` (4 pills fijos de `RENDER_CONTACTO` + el de
+  `renderRedes()`) — el `className={accionClase}` se mantiene igual (border/shape/hover), el
+  inline style solo pisa background-color/color cuando hay un valor elegido.
+- Editor: un `ColorPicker` en cada sección ("Canales de contacto", arriba del orden de
+  enlaces; "Redes sociales", arriba de la lista) — mismo patrón "swatch + link 'Automático'
+  para resetear" que ya usan `colorTitulo`/`colorTextoSecundario`.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` (42 rutas) limpios. **Verificado en
+  navegador real** sobre una tarjeta real (`bella-studio`, sin guardar los cambios de prueba —
+  confirmado después por consulta directa a la DB que quedó intacta): los 2 color pickers
+  abren, el hex tipeado a mano actualiza el swatch y la vista previa en vivo de inmediato,
+  "Llamar"/"WhatsApp" cambiaron a un fondo navy con texto blanco auto-contrastado mientras un
+  Instagram de prueba tomó un magenta totalmente independiente (confirma que los 2 campos no
+  se pisan entre sí), y el link "Automático" de cada uno revirtió al look neutro de siempre.
+
+## Ítems de catálogo colapsables/reordenables + galería multimedia sin recorte (2026-08-27)
+- **Ítems de un botón "Catálogo" (`ProductoFormState`) ahora colapsables + reordenables**, mismo
+  patrón que las filas de `renderBotonFila`/`renderMultimediaFila` (pedido explícito: "que se
+  puedan colapsar/desplegar, colapsados por default, y reordenar como los otros elementos").
+  - `ProductoFormState.expandido` (nuevo, solo UI del editor, nunca se persiste —
+    `construirBotonFinal`/`construirBotonPreview` no lo leen). `adaptarBotonFormState` lo pone
+    `false` (viene de datos guardados); `agregarItemCatalogo` lo pone `true` (recién agregado,
+    se abre para completarlo). Mismo criterio que `BotonFormState.expandido`.
+  - `moverItemCatalogo(ubicacion, indiceItem, ±1)` — reusa `moverEnArray` + `actualizarEnUbicacion`,
+    igual que `moverBotonEn` para hijos de "opciones".
+  - Cada ítem: fila-cabecera SIEMPRE visible (mini-thumb o ícono `Images` + título/"Sin título"
+    + precio + ↑/↓ + eliminar + chevron); título/precio/descripción/enlace/WhatsApp/imagen/
+    reposicionar viven en el panel `{item.expandido && …}`. El botón "eliminar" pasó de la fila
+    de inputs al grupo de controles de la cabecera.
+  - Los hijos de "Opciones" ya cumplían esto (usan `renderBotonFila` recursivo) — no se tocaron.
+- **Galería de "Contenido multimedia" (`GaleriaTile`) — el archivo se ve ENTERO, sin recorte**
+  (pedido: "imágenes y videos perfectamente visibles dentro del reproductor, se ven cortados").
+  - `object-cover` → `object-contain` en el `<video>` y el `<Image>` del tile; contenedor ganó
+    fondo neutro (`bg-black/[0.04]` / `dark:bg-white/[0.06]`) para el margen que queda cuando la
+    proporción real cae fuera del clamp 9:16–16:9. El tile sigue tomando la proporción real
+    medida (`useProporcionMedia`), así que en el caso normal no hay bordes.
+  - `videoOptimizadoGaleria`/`posterVideoGaleria` (`lib/cloudinary-media.ts`): `c_fill` → `c_fit`
+    — Cloudinary ya no recorta el video/poster a cuadrado, lo mete completo en la caja 440×440
+    respetando proporción. `imagenOptimizadaCuadrada` (ítems de catálogo) sin tocar.
+  - El tipo "video" (embed YouTube/Vimeo en caja `aspect-video`) no se tocó — esos proveedores
+    hacen letterbox propio, no recortan.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` limpios. 🔴 No verificado en navegador real.
+
 ## Convenciones de UI
 - Todo elemento clickeable (`button`/`[role="button"]`) tiene `cursor: pointer` vía una regla
   global en `globals.css` (`@layer base`) — no se setea por className individual. Excepción a

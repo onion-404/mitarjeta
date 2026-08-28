@@ -5,7 +5,7 @@ import { Menu } from "@base-ui/react/menu"
 import type { Session } from "@supabase/supabase-js"
 import { CircleUserRound, LogOut, User, X } from "lucide-react"
 import Image from "next/image"
-import { usePathname, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 import * as React from "react"
 
 import { AuthMethods } from "@/components/auth/auth-methods"
@@ -57,7 +57,6 @@ export function HeaderGlobal({
   nav,
 }: HeaderGlobalProps) {
   const router = useRouter()
-  const pathname = usePathname()
   const [session, setSession] = React.useState<Session | null | undefined>(undefined)
   const [tarjetas, setTarjetas] = React.useState<Tarjeta[] | null>(null)
   const [dialogAbierto, setDialogAbierto] = React.useState(false)
@@ -153,12 +152,21 @@ export function HeaderGlobal({
                 <X className="size-4" />
               </Dialog.Close>
               <Dialog.Title className="text-lg font-semibold text-foreground">
-                Inicia sesión
+                Inicia sesión o regístrate
               </Dialog.Title>
               <Dialog.Description className="mt-1 mb-5 text-sm text-muted-foreground">
-                Para crear o editar tu tarjeta digital.
+                Entra a tu cuenta o créala al instante para armar tu Linkard — es el mismo
+                paso.
               </Dialog.Description>
-              <AuthMethods redirectTo={pathname} />
+              {/* Siempre a /mi-cuenta (no a `pathname`): este es el botón
+                  genérico del header (home y /planes, ver ocultarLoginSinSesion
+                  en el resto de los callers) — tanto si la cuenta ya existía
+                  como si se acaba de crear en este mismo paso, /mi-cuenta es
+                  el destino útil en los dos casos. Los flujos con un
+                  siguiente paso propio (/crear, /planes→/crear) usan su
+                  propio <AuthMethods redirectTo=...> inline, sin pasar por
+                  acá. */}
+              <AuthMethods redirectTo="/mi-cuenta" />
             </Dialog.Popup>
           </Dialog.Portal>
         </Dialog.Root>

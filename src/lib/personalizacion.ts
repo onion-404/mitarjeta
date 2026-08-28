@@ -348,6 +348,8 @@ const CAMPOS_COLOR_BASICOS = [
   "colorBadges",
   "colorTitulo",
   "colorTextoSecundario",
+  "colorFondoContacto",
+  "colorFondoRedes",
 ] as const
 
 export function calcularBloqueos(
