@@ -1280,6 +1280,10 @@ export function TarjetaCard({
           if (!open) setItemCatalogoAbierto(null)
         }}
         estiloCta={estiloCta}
+        acento={colorBotonesFinal}
+        fuenteTitulo={fuenteEncabezado}
+        fuenteCuerpo={fuenteCuerpo}
+        glass={glassmorfismo}
         onAbrirEnlace={() => itemCatalogoActivo && track("click_producto", { producto_titulo: itemCatalogoActivo.titulo })}
       />
     </div>

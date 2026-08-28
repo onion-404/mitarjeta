@@ -689,6 +689,20 @@
     casi sin efecto visible en ítems de catálogo — con `object-contain` la imagen entra
     completa, `objectPosition` solo mueve el margen. No se quitó del editor (inofensivo, y
     sigue aplicando si algún día se vuelve a `object-cover`).
+- **Modal de detalle del ítem de catálogo (`catalogo-item-modal.tsx`) rediseñado con la
+  identidad del dueño** (pedido: "está muy soso/simplón, debe verse llamativo con el toque del
+  owner"). Props nuevas desde `TarjetaCard`: `acento` (`colorBotonesFinal`), `fuenteTitulo`
+  (`fuenteEncabezado`), `fuenteCuerpo`, `glass` (`glassmorfismo`).
+  - Banda de acento a lo ancho arriba (gradiente del color de botones), imagen a sangre con el
+    precio flotando como chip sólido en color de acento + texto auto-contrastado, regla de
+    acento (`h-1 w-10`, mismo lenguaje que la regla de la Bio) antes del título, título en
+    `fuenteTitulo`/`text-xl`, descripción en `fuenteCuerpo`, CTA más grande (`py-3`) con el
+    mismo `estiloCta` de los botones. Sombra del popup teñida con el acento.
+  - `glass` → popup `bg-background/80 backdrop-blur-xl` en vez de sólido. Backdrop más oscuro
+    (`bg-black/50 backdrop-blur-md`).
+  - Texto del cuerpo se queda en tokens neutros (`text-foreground`/`text-muted-foreground`,
+    theme-aware) — NO se pasa `estiloTextoGeneral`: ese color está calculado para contrastar el
+    fondo de la tarjeta, no el fondo neutro del popup.
 - Verificado: `tsc --noEmit`, `eslint` y `npm run build` limpios. 🔴 No verificado en navegador real.
 
 ## Convenciones de UI
