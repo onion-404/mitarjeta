@@ -151,7 +151,7 @@ export function CatalogoItemModal({
                 {item.descripcion?.trim() && (
                   <p
                     style={{ fontFamily: fuenteCuerpo }}
-                    className="mt-3 text-sm leading-relaxed text-muted-foreground"
+                    className="mt-3 text-[15px] leading-relaxed text-[#3f3f46] dark:text-[#e4e4e7]"
                   >
                     {renderizarTextoEnriquecido(item.descripcion)}
                   </p>
