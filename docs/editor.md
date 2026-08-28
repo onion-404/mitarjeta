@@ -669,9 +669,26 @@
     medida (`useProporcionMedia`), así que en el caso normal no hay bordes.
   - `videoOptimizadoGaleria`/`posterVideoGaleria` (`lib/cloudinary-media.ts`): `c_fill` → `c_fit`
     — Cloudinary ya no recorta el video/poster a cuadrado, lo mete completo en la caja 440×440
-    respetando proporción. `imagenOptimizadaCuadrada` (ítems de catálogo) sin tocar.
+    respetando proporción.
   - El tipo "video" (embed YouTube/Vimeo en caja `aspect-video`) no se tocó — esos proveedores
     hacen letterbox propio, no recortan.
+- **Imágenes de ítems de catálogo (grid, lista y modal de detalle) — SIEMPRE completas, nunca
+  recortadas** (pedido explícito: "son imágenes publicitarias, no pueden verse cortadas en
+  ninguna situación"). Segunda mano del mismo lote.
+  - `imagenOptimizadaCuadrada` → renombrada `imagenOptimizadaCatalogo` (`lib/cloudinary-media.ts`);
+    `c_fill` → `c_fit` (entra entera en la caja 320×320 respetando proporción, sin recorte).
+    Call-sites: `tarjeta-card.tsx` (render del tile + `useEffect` de precarga — misma URL, el
+    cache-hit del prefetch se mantiene).
+  - `object-cover` → `object-contain` en el `<Image>` del tile (`renderBotonCatalogo`,
+    `tarjeta-card.tsx`) y en el del modal (`catalogo-item-modal.tsx`). Ambos contenedores
+    ganaron fondo neutro (`bg-[#f4f4f5] dark:bg-[#27272a]`, el mismo del placeholder sin
+    imagen) para el margen que quede cuando la imagen no es cuadrada. Se conserva el marco
+    `aspect-square` (grid/modal) y `size-16` (lista) para que el layout no salte según la
+    proporción del archivo.
+  - Consecuencia aceptada: "Reposicionar" (`imagenPosicion`/`estiloImagenPosicionada`) queda
+    casi sin efecto visible en ítems de catálogo — con `object-contain` la imagen entra
+    completa, `objectPosition` solo mueve el margen. No se quitó del editor (inofensivo, y
+    sigue aplicando si algún día se vuelve a `object-cover`).
 - Verificado: `tsc --noEmit`, `eslint` y `npm run build` limpios. 🔴 No verificado en navegador real.
 
 ## Convenciones de UI

@@ -21,7 +21,7 @@ import {
   recopilarUrlsCatalogo,
   resolverTipografiaBoton,
 } from "@/lib/boton-cta"
-import { imagenOptimizadaCuadrada } from "@/lib/cloudinary-media"
+import { imagenOptimizadaCatalogo } from "@/lib/cloudinary-media"
 import { obtenerColorContraste } from "@/lib/contraste"
 import { esUrlOptimizable, estiloImagenPosicionada } from "@/lib/imagen-posicion"
 import { normalizarMultimedia, resolverEmbedVideo } from "@/lib/multimedia"
@@ -226,7 +226,7 @@ export function TarjetaCard({
       // renderBotonCatalogo — así esto precarga el cache-hit correcto en
       // vez de una URL distinta que el navegador nunca vuelve a pedir.
       const img = new window.Image()
-      img.src = imagenOptimizadaCuadrada(url)
+      img.src = imagenOptimizadaCatalogo(url)
     })
   }, [botonesNormalizados])
   // Un solo Set de ids "abiertos" para cualquier botón colapsable (catálogo u
@@ -784,26 +784,33 @@ export function TarjetaCard({
                 {item.imagenUrl ? (
                   <div
                     className={cn(
-                      "relative shrink-0",
+                      // Fondo neutro detrás de la imagen: son imágenes
+                      // publicitarias y se muestran ENTERAS (object-contain,
+                      // nunca recortadas) — el margen que pueda quedar cuando
+                      // la proporción no es cuadrada se apoya sobre este
+                      // fondo en vez de dejar un hueco transparente.
+                      "relative shrink-0 bg-[#f4f4f5] dark:bg-[#27272a]",
                       boton.vista === "lista1" ? "size-16" : "aspect-square w-full"
                     )}
                   >
                     <Image
                       src={
                         esUrlOptimizable(item.imagenUrl)
-                          ? imagenOptimizadaCuadrada(item.imagenUrl)
+                          ? imagenOptimizadaCatalogo(item.imagenUrl)
                           : item.imagenUrl
                       }
                       alt={item.titulo}
                       fill
-                      // unoptimized siempre: ya viene recortada/optimizada
+                      // unoptimized siempre: ya viene escalada/optimizada
                       // del lado de Cloudinary (misma URL exacta que
                       // precarga el efecto de arriba) — dejar que next/image
                       // la reoptimice de nuevo a través de su propio proxy
                       // sería un segundo resize redundante, y esa URL
                       // distinta rompería el cache-hit del prefetch.
                       unoptimized
-                      className="object-cover"
+                      // object-contain (no cover): la imagen publicitaria se
+                      // ve completa siempre, en grid y en lista.
+                      className="object-contain"
                       style={estiloImagenPosicionada(item.imagenPosicion)}
                     />
                   </div>

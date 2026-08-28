@@ -57,14 +57,19 @@ export function CatalogoItemModal({ item, open, onOpenChange, estiloCta, onAbrir
               </Dialog.Description>
 
               {item.imagenUrl && (
-                <div className="relative mt-8 aspect-square w-full overflow-hidden rounded-2xl">
+                // Imagen publicitaria: se ve SIEMPRE completa, nunca
+                // recortada (pedido explícito). `object-contain` sobre un
+                // fondo neutro — el marco cuadrado se mantiene para que el
+                // layout del modal no salte según la proporción del archivo;
+                // el margen que quede se apoya sobre el fondo.
+                <div className="relative mt-8 aspect-square w-full overflow-hidden rounded-2xl bg-[#f4f4f5] dark:bg-[#27272a]">
                   <Image
                     src={item.imagenUrl}
                     alt={item.titulo}
                     fill
                     sizes="(max-width: 640px) 90vw, 384px"
                     unoptimized={!esUrlOptimizable(item.imagenUrl)}
-                    className="object-cover"
+                    className="object-contain"
                     style={estiloImagenPosicionada(item.imagenPosicion)}
                   />
                 </div>

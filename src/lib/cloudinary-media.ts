@@ -50,16 +50,20 @@ export function posterVideoGaleria(url: string, ladoPx = 440) {
   )
 }
 
-/** Imagen recortada/optimizada por Cloudinary a un cuadrado — mismo
- *  criterio que `videoOptimizadoGaleria`, reusado para ítems de catálogo
- *  (grid o lista, el recorte final siempre termina siendo un cuadrado) en
- *  vez de bajar el archivo a resolución completa para un tile chico.
+/** Imagen de un ítem de catálogo optimizada por Cloudinary — mismo criterio
+ *  que `videoOptimizadoGaleria`: se baja de resolución del lado de Cloudinary
+ *  en vez de bajar el archivo completo para un tile chico. `c_fit` (NO
+ *  `c_fill`): la imagen entra ENTERA dentro de la caja `ladoPx`×`ladoPx`
+ *  respetando su proporción, sin recortar nada — son imágenes publicitarias
+ *  y no pueden verse cortadas en ninguna vista (pedido explícito del
+ *  cliente). El tile/modal la muestra con `object-contain` sobre un fondo
+ *  neutro.
  *  Ventaja extra sobre dejar que el proxy de optimización de next/image lo
  *  resuelva: esta es la URL FINAL, exacta y predecible de antemano — se
  *  puede precargar en segundo plano con `new Image()` y garantizar que
  *  caiga en el mismo cache-hit que el `<Image unoptimized>` real (a
  *  diferencia de `/_next/image?...`, que arma su URL según el `sizes`
  *  resuelto en cada momento, imposible de predecir para precargar). */
-export function imagenOptimizadaCuadrada(url: string, ladoPx = 320) {
-  return insertarTransformacion(url, `f_auto,q_auto,c_fill,w_${ladoPx},h_${ladoPx}`)
+export function imagenOptimizadaCatalogo(url: string, ladoPx = 320) {
+  return insertarTransformacion(url, `f_auto,q_auto,c_fit,w_${ladoPx},h_${ladoPx}`)
 }
