@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import {
   Baloo_2,
   Bebas_Neue,
@@ -116,6 +116,20 @@ export const metadata: Metadata = {
     description:
       "Crea tu tarjeta de presentación o de negocio digital, compartila con un enlace y un QR.",
   },
+  // "Agregar a pantalla de inicio" (2026-09-04) — manifest.ts ya cubre
+  // Android/Chrome; esto completa el lado iOS/Safari, que históricamente
+  // ignoraba parte del manifest y necesita sus propias meta tags para
+  // abrir en modo standalone (sin barra de navegador) en vez de como un
+  // simple bookmark con Safari alrededor.
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Linkard",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#171717",
 };
 
 export default function RootLayout({

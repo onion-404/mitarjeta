@@ -245,3 +245,21 @@
     animation: none;
   }
 }
+
+/* Fase 0 del constructor visual (2026-09-02, tarjeta-form.tsx): en el
+   preview editable del editor, cada elemento con data-campo (banner/avatar/
+   nombre/bio/ubicacion/contacto/redes/video/botones) es clickeable — un
+   clic abre la sección del editor que lo controla. "divisor" (el panel de
+   contenido ENTERO) queda afuera a propósito: el hover ahí no debe competir
+   con el de sus hijos más específicos, que son los que de verdad navegan a
+   algún lado. */
+.tarjeta-preview-editable [data-campo]:not([data-campo="divisor"]) {
+  cursor: pointer;
+  outline: 2px dashed transparent;
+  outline-offset: 3px;
+  border-radius: 0.5rem;
+  transition: outline-color 150ms ease-out;
+}
+.tarjeta-preview-editable [data-campo]:not([data-campo="divisor"]):hover {
+  outline-color: rgba(99, 102, 241, 0.55);
+}

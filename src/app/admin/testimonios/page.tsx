@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, ChevronDown, Loader2, Plus, Star, Trash2, X } from 
 import * as React from "react"
 
 import { Button } from "@/components/ui/button"
+import { ConfirmModal } from "@/components/ui/confirm-modal"
 import { subirImagenCloudinary, validarImagen } from "@/lib/subir-imagen"
 import {
   actualizarTestimonio,
@@ -191,6 +192,10 @@ export default function AdminTestimoniosPage() {
   const [editQuitarFoto, setEditQuitarFoto] = React.useState(false)
   const [guardandoId, setGuardandoId] = React.useState<string | null>(null)
   const [eliminandoId, setEliminandoId] = React.useState<string | null>(null)
+  // Confirmación de borrado (2026-09-04, reemplaza window.confirm).
+  const [confirmando, setConfirmando] = React.useState<{ mensaje: string; accion: () => void } | null>(
+    null
+  )
   const [moviendoId, setMoviendoId] = React.useState<string | null>(null)
 
   function recargar() {
@@ -325,9 +330,7 @@ export default function AdminTestimoniosPage() {
     recargar()
   }
 
-  async function handleEliminar(t: Testimonio) {
-    if (!window.confirm(`¿Eliminar el testimonio de "${t.nombre}"? Esta acción no se puede deshacer.`))
-      return
+  async function ejecutarEliminar(t: Testimonio) {
     setEliminandoId(t.id)
     const { error } = await eliminarTestimonio(t.id)
     setEliminandoId(null)
@@ -336,6 +339,13 @@ export default function AdminTestimoniosPage() {
       setEditForm(null)
       recargar()
     }
+  }
+
+  function handleEliminar(t: Testimonio) {
+    setConfirmando({
+      mensaje: `¿Eliminar el testimonio de "${t.nombre}"? Esta acción no se puede deshacer.`,
+      accion: () => ejecutarEliminar(t),
+    })
   }
 
   async function handleMover(index: number, direccion: -1 | 1) {
@@ -545,6 +555,19 @@ export default function AdminTestimoniosPage() {
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        abierto={Boolean(confirmando)}
+        titulo="Eliminar testimonio"
+        mensaje={confirmando?.mensaje ?? ""}
+        destructivo
+        textoConfirmar="Eliminar"
+        onConfirmar={() => {
+          confirmando?.accion()
+          setConfirmando(null)
+        }}
+        onCancelar={() => setConfirmando(null)}
+      />
     </div>
   )
 }

@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Clock,
   Globe,
+  GripHorizontal,
   Mail,
   MapPin,
   Phone,
@@ -18,6 +19,7 @@ import {
   normalizarBotones,
   obtenerBotonIcono,
   ordenContactoNormalizado,
+  ordenModulosNormalizado,
   recopilarUrlsCatalogo,
   resolverTipografiaBoton,
 } from "@/lib/boton-cta"
@@ -40,6 +42,7 @@ import type {
   BotonWhatsapp,
   DatosContacto,
   IdentidadVisual,
+  ModuloOrdenable,
   ServicioAgendable,
   TarjetaTipo,
 } from "@/lib/types"
@@ -50,6 +53,7 @@ import { FondoImagenRepetido } from "@/components/tarjeta/fondo-imagen-repetido"
 import { GaleriaTile } from "@/components/tarjeta/galeria-tile"
 import { ReservarServicio } from "@/components/tarjeta/reservar-servicio"
 import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
+import { VerificadoBadge } from "@/components/verificado-badge"
 
 // Alto fijo (no atado al alto dinámico del panel) del layer de "imagen de
 // fondo de toda la tarjeta" — ver la nota larga en IdentidadVisual.fondoImagenPosicion
@@ -80,6 +84,23 @@ interface TarjetaCardProps {
   /** Requeridos junto con permitirAgendar para llamar a /api/citas*. */
   tarjetaId?: string
   zonaHoraria?: string
+  /** Constructor visual (2026-09-03) — SOLO lo pasa el preview del editor
+   *  (tarjeta-form.tsx). Habilita: 1) el manija de arrastre en los 4
+   *  bloques reordenables (Ubicación/Contacto+Redes/Multimedia/Botones).
+   *  La tarjeta pública real y el demo del home nunca lo pasan, así que se
+   *  ven exactamente igual que siempre. */
+  modoEdicion?: boolean
+  /** Requerido junto con `modoEdicion` para que el drag-and-drop persista —
+   *  el nuevo orden se escribe en el estado del formulario, nunca acá
+   *  adentro (mismo criterio que el resto de la edición: TarjetaCard es
+   *  puramente controlado). */
+  onReordenarModulos?: (nuevoOrden: ModuloOrdenable[]) => void
+  /** Check exclusivo del panel admin (`tarjetas.verificado`, no vive en
+   *  `identidadVisual` — el dueño no lo puede tocar desde su editor).
+   *  Muestra un ícono de verificación junto al badge "@slug". Default
+   *  `false`: ninguna tarjeta se ve verificada salvo que un admin la marque
+   *  desde `/admin/tarjetas/[id]`. */
+  verificado?: boolean
 }
 
 export function formatDuracion(minutos: number) {
@@ -109,6 +130,60 @@ function soloDigitos(valor: string) {
   return valor.replace(/[^\d]/g, "")
 }
 
+/** Drag-and-drop de los 4 bloques reordenables del constructor visual
+ *  (2026-09-03) — SOLO activo cuando `modoEdicion` (el preview del editor
+ *  la pasa; la tarjeta pública real y el demo del home no, así que este
+ *  hook nunca hace nada ahí). Mismo criterio de Pointer Events que el
+ *  arrastre de los modales flotantes (tarjeta-form.tsx, useArrastreModal):
+ *  funciona igual con mouse/touch/pen, sin librería nueva. A diferencia del
+ *  arrastre libre de un modal, acá el "destino" se resuelve con
+ *  `elementFromPoint` contra `data-modulo-arrastrable` — más simple y
+ *  robusto que medir rects a mano, y es el patrón estándar para listas
+ *  reordenables sin animación FLIP. */
+function useArrastreLista(ordenBase: ModuloOrdenable[], onCommit: (nuevo: ModuloOrdenable[]) => void) {
+  // Un solo estado, DERIVADO (no sincronizado con un efecto): null = no hay
+  // arrastre en curso, se renderiza `ordenBase` tal cual viene del padre.
+  // Con arrastre en curso, `orden` es la reordenación optimista en vivo —
+  // arranca como copia de `ordenBase` en el momento de `iniciar()`.
+  const [estado, setEstado] = React.useState<{ id: ModuloOrdenable; orden: ModuloOrdenable[] } | null>(
+    null
+  )
+
+  function iniciar(id: ModuloOrdenable, e: React.PointerEvent<HTMLElement>) {
+    if (e.button !== undefined && e.button !== 0) return
+    setEstado({ id, orden: ordenBase })
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  function mover(e: React.PointerEvent<HTMLElement>) {
+    if (!estado) return
+    const el = document.elementFromPoint(e.clientX, e.clientY)
+    const destino = el?.closest<HTMLElement>("[data-modulo-arrastrable]")?.dataset
+      .moduloArrastrable as ModuloOrdenable | undefined
+    if (!destino || destino === estado.id) return
+    setEstado((prev) => {
+      if (!prev || !prev.orden.includes(destino)) return prev
+      const sinArrastrado = prev.orden.filter((id) => id !== prev.id)
+      const indice = sinArrastrado.indexOf(destino)
+      sinArrastrado.splice(indice, 0, prev.id)
+      return { id: prev.id, orden: sinArrastrado }
+    })
+  }
+
+  function soltar() {
+    if (estado) onCommit(estado.orden)
+    setEstado(null)
+  }
+
+  return {
+    ordenVivo: estado?.orden ?? ordenBase,
+    arrastrando: estado?.id ?? null,
+    iniciar,
+    mover,
+    soltar,
+  }
+}
+
 // Compartir/QR/contacto viven en un FAB separado (AccionesTarjeta), no
 // adentro de este componente — así el mismo botón sirve tanto para la
 // tarjeta pública real como para el preview "Ver tarjeta" del editor, sin
@@ -124,6 +199,9 @@ export function TarjetaCard({
   permitirAgendar = false,
   tarjetaId,
   zonaHoraria,
+  modoEdicion = false,
+  onReordenarModulos,
+  verificado = false,
 }: TarjetaCardProps) {
   const agendaInteractiva = permitirAgendar && Boolean(tarjetaId) && Boolean(zonaHoraria)
 
@@ -197,7 +275,61 @@ export function TarjetaCard({
     tituloModo,
     tituloImagenUrl,
     tituloImagenAltura,
+    tituloActivo,
+    avatarActivo,
+    bannerActivo,
+    bioActiva,
+    contactoActivo,
+    redesActivo,
+    ubicacionActiva,
+    multimediaActivo,
+    redesSoloIcono,
+    ordenModulos,
   } = identidadVisual
+  // Módulos opcionales (2026-09-02, título sumado 2026-09-04) — sin valor =
+  // `true` (compatibilidad total con tarjetas que nunca tocaron esto). El
+  // único dato sin interruptor propio es el enlace (@slug): es la URL
+  // pública, siempre visible.
+  const tituloEncendida = tituloActivo !== false
+  const avatarEncendido = avatarActivo !== false
+  const bannerEncendido = bannerActivo !== false
+  const bioEncendida = bioActiva !== false
+  const contactoEncendido = contactoActivo !== false
+  const redesEncendidas = redesActivo !== false
+  const ubicacionEncendida = ubicacionActiva !== false
+  const multimediaEncendida = multimediaActivo !== false
+  // Orden de los 4 bloques reordenables (2026-09-03) — ver useArrastreLista
+  // y ordenModulosNormalizado (lib/boton-cta.ts). `ordenVivo` es el orden
+  // REAL a renderizar: igual a `ordenModulosFinal` fuera de un arrastre en
+  // curso, y la reordenación optimista mientras se arrastra.
+  const ordenModulosFinal = ordenModulosNormalizado(ordenModulos, multimediaAlFinal)
+  const { ordenVivo: ordenModulosVivo, arrastrando: moduloArrastrando, iniciar: iniciarArrastreModulo, mover: moverArrastreModulo, soltar: soltarArrastreModulo } =
+    useArrastreLista(ordenModulosFinal, (nuevo) => onReordenarModulos?.(nuevo))
+
+  /** Manija de arrastre de un bloque reordenable — null fuera de
+   *  `modoEdicion` (nunca se monta en la tarjeta pública real). El
+   *  `stopPropagation` del onClick evita que soltar el arrastre justo
+   *  encima de la manija también dispare el clic-para-editar del bloque
+   *  (ver el onClick delegado en tarjeta-form.tsx). */
+  function manijaArrastre(id: ModuloOrdenable): React.ReactNode {
+    if (!modoEdicion) return null
+    return (
+      <div
+        onPointerDown={(e) => iniciarArrastreModulo(id, e)}
+        onPointerMove={moverArrastreModulo}
+        onPointerUp={soltarArrastreModulo}
+        onPointerCancel={soltarArrastreModulo}
+        onClick={(e) => e.stopPropagation()}
+        aria-hidden
+        // Colores en HEX explícitos (no tokens semánticos) — mismo criterio
+        // que el resto de TarjetaCard: los tokens de shadcn resuelven a
+        // oklch/color-mix, que html2canvas (exportador de PDF) no soporta.
+        className="mb-1.5 flex w-full cursor-grab touch-none items-center justify-center rounded-full py-1 text-[#71717a]/40 transition-colors hover:text-[#71717a] active:cursor-grabbing dark:text-[#a1a1aa]/40 dark:hover:text-[#a1a1aa]"
+      >
+        <GripHorizontal className="size-4" />
+      </div>
+    )
+  }
   // Ícono del badge "@enlace" — opcional (default: mostrado, con Sparkles
   // si no se eligió otro, para que una tarjeta vieja sin este campo se
   // vea exactamente igual que siempre).
@@ -309,6 +441,13 @@ export function TarjetaCard({
   // contenedor de miles de píxeles de alto, como acá, hacía que reposicionar
   // verticalmente pareciera no tener ningún efecto real).
   const alturaBanner = bannerAltura ?? 192
+  // Con el banner apagado (bannerEncendido = false) no hay franja que
+  // reservar: ni alto, ni overlap, ni divisor — el panel de contenido
+  // arranca directo. `fondoImagenUrl` es independiente de esto a propósito
+  // (ver doc de `bannerActivo` en lib/types.ts): ninguno de sus layers usa
+  // `alturaBanner` para su propio tamaño, así que apagar el banner nunca
+  // afecta la imagen de fondo de toda la tarjeta.
+  const alturaBannerEfectiva = bannerEncendido ? alturaBanner : 0
 
   // Fondo del panel de contenido (separado del fondo del banner de arriba).
   const fondoTarjetaInline =
@@ -387,7 +526,10 @@ export function TarjetaCard({
     : undefined
 
   const divisorMeta = DIVISORES_BANNER.find((d) => d.id === divisorBanner)
-  const estiloDivisor = divisorMeta?.clipPath ? { clipPath: divisorMeta.clipPath } : undefined
+  // Sin banner no hay nada que "revelar" detrás de la muesca — el
+  // clip-path solo tiene sentido con la franja de banner encendida.
+  const estiloDivisor =
+    bannerEncendido && divisorMeta?.clipPath ? { clipPath: divisorMeta.clipPath } : undefined
 
   // Colores en HEX/RGBA (no oklch/color-mix) para que html2canvas pueda exportar el PDF
   const accionClase = cn(
@@ -407,7 +549,7 @@ export function TarjetaCard({
   // pantalla entera). `100dvh` en vez de `100vh`: en mobile real el
   // toolbar del navegador cambia el alto visible, dvh se ajusta con eso.
   const estiloAltoMinimo = pantallaCompleta
-    ? ({ "--alto-min-divisor": `calc(100dvh - ${alturaBanner}px)` } as React.CSSProperties)
+    ? ({ "--alto-min-divisor": `calc(100dvh - ${alturaBannerEfectiva}px)` } as React.CSSProperties)
     : undefined
 
 
@@ -486,11 +628,12 @@ export function TarjetaCard({
   }
 
   function renderContacto(): React.ReactNode {
+    if (!contactoEncendido) return null
     return ordenContactoNormalizado(ordenContacto).map((id) => RENDER_CONTACTO[id]())
   }
 
   function renderRedes(): React.ReactNode {
-    if (!redes?.length) return null
+    if (!redesEncendidas || !redes?.length) return null
     return redes.map((red) => {
       if (!red.url) return null
       const Icono = SOCIAL_ICONS[red.plataforma] ?? Globe
@@ -504,10 +647,21 @@ export function TarjetaCard({
           target="_blank"
           rel="noopener noreferrer"
           onClick={() => track("click_enlace", { tipo_enlace: "red_social", red: red.plataforma })}
-          className={accionClase}
-          style={estiloRedes}
+          // Modo "solo ícono" (2026-09-03, sin pill/borde desde 2026-09-04):
+          // ícono suelto, sin fondo/borde/blur del pill normal — aria-label
+          // reemplaza el texto visible para no perder accesibilidad.
+          // `colorFondoRedes` deja de significar "fondo del pill" acá (no
+          // hay pill) y pasa a ser el color del ícono en sí.
+          aria-label={redesSoloIcono ? etiqueta : undefined}
+          className={
+            redesSoloIcono
+              ? "inline-flex size-10 items-center justify-center rounded-full text-[#3f3f46] transition-transform duration-200 ease-out hover:scale-110 active:scale-95 dark:text-[#e4e4e7]"
+              : accionClase
+          }
+          style={redesSoloIcono ? (colorFondoRedes ? { color: colorFondoRedes } : undefined) : estiloRedes}
         >
-          <Icono className="size-3.5" /> {etiqueta}
+          <Icono className={redesSoloIcono ? "size-5" : "size-3.5"} />
+          {!redesSoloIcono && etiqueta}
         </a>
       )
     })
@@ -517,11 +671,63 @@ export function TarjetaCard({
    *  dos bloques apilados) — el "arriba/abajo" del editor solo decide el
    *  ORDEN de los ítems dentro de este mismo contenedor, no separa nada. */
   function renderContactoYRedes(): React.ReactNode {
-    if (!(telefonoPrincipal || whatsapp || email || direccionMapsUrl || redes?.length)) return null
+    const hayContacto =
+      contactoEncendido && Boolean(telefonoPrincipal || whatsapp || email || direccionMapsUrl)
+    const hayRedes = redesEncendidas && Boolean(redes?.length)
+    if (!hayContacto && !hayRedes) return null
     return (
-      <div className="mt-5 flex w-full flex-wrap items-center justify-center gap-2">
-        {renderContacto()}
-        {renderRedes()}
+      <div
+        data-modulo-arrastrable="contacto-redes"
+        className={cn("mt-5 w-full", moduloArrastrando === "contacto-redes" && "opacity-40")}
+      >
+        {manijaArrastre("contacto-redes")}
+        <div className="flex w-full flex-wrap items-center justify-center gap-2">
+          {renderContacto()}
+          {renderRedes()}
+        </div>
+      </div>
+    )
+  }
+
+  function renderUbicacion(): React.ReactNode {
+    if (!ubicacionEncendida || !(direccion?.trim() || horarios?.trim())) return null
+    return (
+      // Card con borde propia (mismo lenguaje visual que agenda/servicios/
+      // productos) — antes esto era texto plano centrado pegado debajo de
+      // la Bio, sin ningún límite visual entre ambos: Bio, dirección y
+      // horario se leían como un solo bloque de texto gris. El borde +
+      // fondo tenue separan claramente "esto es un dato estructurado", no
+      // una continuación de la Bio. Alineación izquierda/centro elegible
+      // (`ubicacionCentrada`, 2026-08-12) — izquierda sigue siendo el
+      // default, sin cambios para tarjetas que nunca tocaron este campo.
+      // `whitespace-pre-line` en cada valor: el editor permite hasta 3
+      // líneas por campo.
+      <div
+        data-modulo-arrastrable="ubicacion"
+        className={cn("mt-4 w-full", moduloArrastrando === "ubicacion" && "opacity-40")}
+      >
+        {manijaArrastre("ubicacion")}
+        <div
+          data-campo="ubicacion"
+          style={estiloTextoGeneral}
+          className={cn(
+            "flex w-full flex-col gap-1.5 rounded-xl border border-[rgba(0,0,0,0.05)] bg-[rgba(0,0,0,0.02)] px-3 py-2.5 text-xs text-[#71717a] dark:border-[rgba(255,255,255,0.08)] dark:bg-[rgba(255,255,255,0.03)] dark:text-[#a1a1aa]",
+            ubicacionCentrada ? "items-center text-center" : "items-start text-left"
+          )}
+        >
+          {direccion?.trim() && (
+            <span className="inline-flex items-start gap-1.5">
+              <MapPin className="mt-0.5 size-3.5 shrink-0" />
+              <span className="whitespace-pre-line">{direccion}</span>
+            </span>
+          )}
+          {horarios?.trim() && (
+            <span className="inline-flex items-start gap-1.5">
+              <Clock className="mt-0.5 size-3.5 shrink-0" />
+              <span className="whitespace-pre-line">{horarios}</span>
+            </span>
+          )}
+        </div>
       </div>
     )
   }
@@ -888,9 +1094,17 @@ export function TarjetaCard({
   // propio con `<video>`/`<Image>` nativo da control total sobre cómo se
   // ve, sin ninguna marca de terceros.
   function renderMultimedia(): React.ReactNode {
-    if (!multimediaNormalizada.length) return null
+    if (!multimediaEncendida || !multimediaNormalizada.length) return null
     return (
-      <div data-campo="video" className="mt-5 flex w-full flex-col gap-4">
+      <div
+        data-campo="video"
+        data-modulo-arrastrable="multimedia"
+        className={cn(
+          "mt-5 flex w-full flex-col gap-4",
+          moduloArrastrando === "multimedia" && "opacity-40"
+        )}
+      >
+        {manijaArrastre("multimedia")}
         {multimediaNormalizada.map((item) => {
           if (item.tipo === "video") {
             const embed = resolverEmbedVideo(item.url)
@@ -929,9 +1143,22 @@ export function TarjetaCard({
   function renderBotones(): React.ReactNode {
     if (!botonesNormalizados.length) return null
     return (
-      <div data-campo="botones" className="mt-5 flex w-full flex-col gap-2.5">
+      <div
+        data-campo="botones"
+        data-modulo-arrastrable="botones"
+        className={cn(
+          "mt-5 flex w-full flex-col gap-2.5",
+          moduloArrastrando === "botones" && "opacity-40"
+        )}
+      >
+        {manijaArrastre("botones")}
         {botonesNormalizados.map((boton) => (
-          <React.Fragment key={boton.id}>
+          // Constructor visual (2026-09-03): cada botón de nivel superior es
+          // su propio módulo — data-campo dinámico (`boton-{id}`) para que
+          // el clic delegado del editor abra SU modal, no el de "Botones"
+          // entero. Los hijos de "opciones" quedan fuera a propósito: se
+          // siguen editando dentro del modal del padre, como siempre.
+          <div key={boton.id} data-campo={`boton-${boton.id}`}>
             {boton.tipo === "catalogo"
               ? renderBotonCatalogo(boton)
               : boton.tipo === "opciones"
@@ -939,10 +1166,20 @@ export function TarjetaCard({
                 : boton.tipo === "agenda"
                   ? renderBotonAgenda(boton)
                   : renderBotonSimple(boton)}
-          </React.Fragment>
+          </div>
         ))}
       </div>
     )
+  }
+
+  // Los 4 bloques reordenables (2026-09-03) — recorridos en `ordenModulosVivo`
+  // más abajo. Cada `render*` ya decide su propio null si no hay contenido
+  // (mismo criterio que siempre), así que iterar acá nunca deja huecos.
+  const RENDER_MODULO: Record<ModuloOrdenable, () => React.ReactNode> = {
+    ubicacion: renderUbicacion,
+    "contacto-redes": renderContactoYRedes,
+    multimedia: renderMultimedia,
+    botones: renderBotones,
   }
 
   return (
@@ -1036,33 +1273,40 @@ export function TarjetaCard({
           </div>
         )}
 
-        <div
-          data-campo="banner"
-          className="relative z-10 w-full overflow-hidden"
-          style={{ height: alturaBanner }}
-        >
-          {!tieneFondoImagen &&
-            (bannerUrl ? (
-              <Image
-                src={bannerUrl}
-                alt=""
-                fill
-                priority
-                sizes="(max-width: 640px) 100vw, 384px"
-                unoptimized={!esUrlOptimizable(bannerUrl)}
-                className="object-cover"
-                style={estiloBannerImagen}
-              />
-            ) : (
-              <div
-                className={cn(
-                  "size-full",
-                  !fondoBanner && `bg-gradient-to-br ${GRADIENTE_PLACEHOLDER[tipo]}`
-                )}
-                style={fondoBanner ? { background: fondoBanner } : undefined}
-              />
-            ))}
-        </div>
+        {/* Módulo opcional (2026-09-02): con bannerEncendido=false no se
+            reserva franja/alto/overlap/divisor — el panel de contenido
+            arranca directo. La imagen de fondo de toda la tarjeta
+            (fondoImagenUrl) es independiente y sigue igual, con o sin
+            banner (ver nota en lib/types.ts, IdentidadVisual.bannerActivo). */}
+        {bannerEncendido && (
+          <div
+            data-campo="banner"
+            className="relative z-10 w-full overflow-hidden"
+            style={{ height: alturaBanner }}
+          >
+            {!tieneFondoImagen &&
+              (bannerUrl ? (
+                <Image
+                  src={bannerUrl}
+                  alt=""
+                  fill
+                  priority
+                  sizes="(max-width: 640px) 100vw, 384px"
+                  unoptimized={!esUrlOptimizable(bannerUrl)}
+                  className="object-cover"
+                  style={estiloBannerImagen}
+                />
+              ) : (
+                <div
+                  className={cn(
+                    "size-full",
+                    !fondoBanner && `bg-gradient-to-br ${GRADIENTE_PLACEHOLDER[tipo]}`
+                  )}
+                  style={fondoBanner ? { background: fondoBanner } : undefined}
+                />
+              ))}
+          </div>
+        )}
 
         {/* Avatar: SIEMPRE al frente de todo (banner y tarjeta de
             contenido incluidos), sin excepción — por eso vive como
@@ -1076,24 +1320,30 @@ export function TarjetaCard({
             Posición calculada a mano para calzar con el look de siempre
             (mismo -mt-14 doble que tenía anidado: -56px de "subir sobre
             el banner" + 12px del padding-top del panel + -56px propios =
-            -100px desde el borde inferior del banner). */}
-        <div
-          className="pointer-events-none absolute inset-x-0 z-20 flex justify-center"
-          style={{ top: alturaBanner - 100 }}
-        >
-          <div data-campo="avatar">
-            <AvatarForma
-              forma={avatarForma}
-              tamanoPx={96}
-              imagenUrl={avatarUrl}
-              imagenPosicion={avatarPosicion}
-              alt={nombrePrincipal ?? "Avatar"}
-              iniciales={iniciales(nombrePrincipal)}
-              unoptimized={avatarUrl ? !esUrlOptimizable(avatarUrl) : undefined}
-              priority
-            />
+            -100px desde el borde inferior del banner).
+            Sin banner (bannerEncendido=false) no hay nada que "superponer"
+            — el avatar se renderiza más abajo, adentro del panel, como un
+            elemento normal en el flujo (ver el otro `data-campo="avatar"`
+            justo después de abrir el panel). */}
+        {avatarEncendido && bannerEncendido && (
+          <div
+            className="pointer-events-none absolute inset-x-0 z-20 flex justify-center"
+            style={{ top: alturaBanner - 100 }}
+          >
+            <div data-campo="avatar">
+              <AvatarForma
+                forma={avatarForma}
+                tamanoPx={96}
+                imagenUrl={avatarUrl}
+                imagenPosicion={avatarPosicion}
+                alt={nombrePrincipal ?? "Avatar"}
+                iniciales={iniciales(nombrePrincipal)}
+                unoptimized={avatarUrl ? !esUrlOptimizable(avatarUrl) : undefined}
+                priority
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div
           data-campo="divisor"
@@ -1103,21 +1353,24 @@ export function TarjetaCard({
             ...(tieneFondoImagen ? undefined : { background: fondoTarjetaInline }),
           }}
           className={cn(
-            "relative z-10 -mt-14 border-t px-6 pb-7 pt-3 text-center shadow-[0_-8px_30px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl",
+            "relative z-10 border-t px-6 pb-7 pt-3 text-center shadow-[0_-8px_30px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl",
             // Jerarquía de capas: banner atrás, esta tarjeta de contenido
             // adelante (se superpone al banner con -mt-14, tapándolo salvo
-            // donde el clip-path del divisor la recorta). El avatar va
-            // SIEMPRE más adelante todavía que ambas — por eso ya NO vive
-            // acá adentro (ver el div absoluto z-20 justo arriba de este,
-            // hermano en vez de hijo): un `clip-path` en este div recorta
-            // también a sus descendientes, así que un avatar anidado acá
-            // quedaba recortado exactamente donde coincidía con la muesca
-            // del divisor (bug real reportado — "el avatar queda detrás
-            // del banner"). La FORMA (onda/diagonal/zigzag) es el borde
+            // donde el clip-path del divisor la recorta) — solo con el
+            // banner encendido; sin banner no hay overlap (mt-0). El
+            // avatar va SIEMPRE más adelante todavía que ambas — por eso ya
+            // NO vive acá adentro cuando el banner está prendido (ver el
+            // div absoluto z-20 justo arriba de este, hermano en vez de
+            // hijo): un `clip-path` en este div recorta también a sus
+            // descendientes, así que un avatar anidado acá quedaba
+            // recortado exactamente donde coincidía con la muesca del
+            // divisor (bug real reportado — "el avatar queda detrás del
+            // banner"). La FORMA (onda/diagonal/zigzag) es el borde
             // superior de esta tarjeta — nunca se aplica al banner en sí
             // (el banner nunca lleva clip-path) — y al recortarla queda
             // visible el banner de atrás, tal cual es, sin ninguna capa de
             // color agregada encima (sin colores, solo la forma).
+            bannerEncendido ? "-mt-14" : "mt-0",
             !estiloDivisor && (pantallaCompleta ? "rounded-2xl sm:rounded-t-[2rem]" : "rounded-t-[2rem]"),
             tieneFondoImagen
               ? "border-[rgba(255,255,255,0.3)] bg-[rgba(255,255,255,0.55)] dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(24,24,27,0.55)]"
@@ -1126,65 +1379,92 @@ export function TarjetaCard({
                 : "border-[rgba(255,255,255,0.5)] bg-[rgba(255,255,255,0.85)] dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(24,24,27,0.85)]"
           )}
         >
-          {/* Espaciador: el avatar real ya no vive acá (ver el div
-              absoluto z-20 más arriba) pero el layout del panel sigue
-              necesitando el mismo hueco de siempre arriba del badge/
-              nombre — mismo alto que el wrapper que reemplazó (96px de
-              avatar - 14*4px de margen negativo que tenía = 40px netos). */}
-          <div className="h-10" aria-hidden />
+          {/* Espaciador: solo hace falta con el avatar absoluto de arriba
+              (banner encendido) — reserva el mismo hueco de siempre arriba
+              del badge/nombre (96px de avatar - 14*4px de margen negativo
+              que tenía = 40px netos). Sin banner el avatar vive acá mismo,
+              en el flujo normal, sin overlap que compensar. */}
+          {avatarEncendido && bannerEncendido && <div className="h-10" aria-hidden />}
+
+          {avatarEncendido && !bannerEncendido && (
+            <div data-campo="avatar" className="mx-auto flex justify-center">
+              <AvatarForma
+                forma={avatarForma}
+                tamanoPx={96}
+                imagenUrl={avatarUrl}
+                imagenPosicion={avatarPosicion}
+                alt={nombrePrincipal ?? "Avatar"}
+                iniciales={iniciales(nombrePrincipal)}
+                unoptimized={avatarUrl ? !esUrlOptimizable(avatarUrl) : undefined}
+                priority
+              />
+            </div>
+          )}
 
           {slug?.trim() && (
-            <span
-              style={estiloBadge}
-              className={cn(
-                "mt-3 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium tracking-wide",
-                !estiloBadge &&
-                  "bg-[rgba(24,24,27,0.05)] text-[#71717a] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#a1a1aa]"
-              )}
-            >
-              {IconoBadge && <IconoBadge className="size-3" />}
-              @{slug.trim()}
-            </span>
+            <div className="mt-3 flex items-center justify-center gap-1">
+              <span
+                style={estiloBadge}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium tracking-wide",
+                  !estiloBadge &&
+                    "bg-[rgba(24,24,27,0.05)] text-[#71717a] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#a1a1aa]"
+                )}
+              >
+                {IconoBadge && <IconoBadge className="size-3" />}
+                @{slug.trim()}
+              </span>
+              {/* Verificación (2026-09-04): check exclusivo del panel admin
+                  (tarjetas.verificado) — el dueño no lo puede activar desde
+                  su propio editor. Sello sólido azul + check blanco (mismo
+                  lenguaje que usan la mayoría de las plataformas), sin
+                  copiar el logo de ninguna marca puntual (mismo criterio
+                  que social-icons.tsx) — ver verificado-badge.tsx. */}
+              {verificado && <VerificadoBadge className="size-4 shrink-0" />}
+            </div>
           )}
 
-          {tituloModo === "imagen" && tituloImagenUrl ? (
-            // Logo en vez de texto — a propósito SIN recortar a ninguna
-            // forma (a diferencia del avatar): ancho libre, alto fijo, se
-            // ve "como si fuera texto" en su proporción natural.
-            // eslint-disable-next-line @next/next/no-img-element -- alto variable elegido por el dueño, next/image exige dimensiones fijas
-            <img
-              data-campo="nombre"
-              src={tituloImagenUrl}
-              alt={nombrePrincipal?.trim() || "Logo"}
-              style={{ height: `${tituloImagenAltura ?? 32}px` }}
-              // mx-auto: Tailwind Preflight pone `img { display: block }`
-              // por defecto, así que el `text-center` del panel (que sí
-              // centra el <h1> de texto) no alcanza para centrar un
-              // elemento block — hace falta centrarlo explícito.
-              className="mx-auto mt-2 w-auto max-w-full object-contain"
-            />
-          ) : (
-            // Título opcional (pedido explícito del cliente, 2026-08-16):
-            // en blanco no se reserva ningún hueco — ni el <h1> ni su
-            // margen (mt-2) se renderizan, como si el elemento no
-            // existiera, en vez de mostrar un placeholder tipo "Sin
-            // nombre" u ocupar espacio vacío.
-            nombrePrincipal?.trim() && (
-              <h1
+          {tituloEncendida &&
+            (tituloModo === "imagen" && tituloImagenUrl ? (
+              // Logo en vez de texto — a propósito SIN recortar a ninguna
+              // forma (a diferencia del avatar): ancho libre, alto fijo, se
+              // ve "como si fuera texto" en su proporción natural.
+              // eslint-disable-next-line @next/next/no-img-element -- alto variable elegido por el dueño, next/image exige dimensiones fijas
+              <img
                 data-campo="nombre"
-                style={{
-                  fontFamily: fuenteEncabezado,
-                  ...estiloTextoGeneral,
-                  fontSize: tituloTamano ? `${tituloTamano}px` : undefined,
-                  fontWeight: tituloPeso ?? undefined,
-                  ...(colorTitulo ? { color: colorTitulo } : undefined),
-                }}
-                className="mt-2 text-xl font-semibold text-balance text-[#18181b] dark:text-[#fafafa]"
-              >
-                {nombrePrincipal.trim()}
-              </h1>
-            )
-          )}
+                src={tituloImagenUrl}
+                alt={nombrePrincipal?.trim() || "Logo"}
+                style={{ height: `${tituloImagenAltura ?? 32}px` }}
+                // mx-auto: Tailwind Preflight pone `img { display: block }`
+                // por defecto, así que el `text-center` del panel (que sí
+                // centra el <h1> de texto) no alcanza para centrar un
+                // elemento block — hace falta centrarlo explícito.
+                className="mx-auto mt-2 w-auto max-w-full object-contain"
+              />
+            ) : (
+              // Título opcional (pedido explícito del cliente, 2026-08-16):
+              // en blanco no se reserva ningún hueco — ni el <h1> ni su
+              // margen (mt-2) se renderizan, como si el elemento no
+              // existiera, en vez de mostrar un placeholder tipo "Sin
+              // nombre" u ocupar espacio vacío. Mismo criterio con el
+              // módulo apagado (`tituloActivo=false`, 2026-09-04): el `&&`
+              // de más arriba ya corta todo antes de llegar acá.
+              nombrePrincipal?.trim() && (
+                <h1
+                  data-campo="nombre"
+                  style={{
+                    fontFamily: fuenteEncabezado,
+                    ...estiloTextoGeneral,
+                    fontSize: tituloTamano ? `${tituloTamano}px` : undefined,
+                    fontWeight: tituloPeso ?? undefined,
+                    ...(colorTitulo ? { color: colorTitulo } : undefined),
+                  }}
+                  className="mt-2 text-xl font-semibold text-balance text-[#18181b] dark:text-[#fafafa]"
+                >
+                  {nombrePrincipal.trim()}
+                </h1>
+              )
+            ))}
           {empresa?.trim() && (
             <p
               style={{
@@ -1197,7 +1477,7 @@ export function TarjetaCard({
               {empresa}
             </p>
           )}
-          {puesto?.trim() && (
+          {bioEncendida && puesto?.trim() && (
             // Antes era un párrafo gris chico, del mismo peso visual (o
             // menos) que la dirección/horario de abajo — para un texto
             // relevante (la Bio es la presentación del dueño), eso lee
@@ -1224,52 +1504,9 @@ export function TarjetaCard({
             </div>
           )}
 
-          {(direccion?.trim() || horarios?.trim()) && (
-            // Card con borde propia (mismo lenguaje visual que agenda/
-            // servicios/productos) — antes esto era texto plano centrado
-            // pegado debajo de la Bio, sin ningún límite visual entre
-            // ambos: Bio, dirección y horario se leían como un solo bloque
-            // de texto gris. El borde + fondo tenue separan claramente
-            // "esto es un dato estructurado", no una continuación de la
-            // Bio. Alineación izquierda/centro elegible (`ubicacionCentrada`,
-            // 2026-08-12) — izquierda sigue siendo el default, sin cambios
-            // para tarjetas que nunca tocaron este campo. `whitespace-pre-
-            // line` en cada valor: el editor permite hasta 3 líneas por
-            // campo.
-            <div
-              data-campo="ubicacion"
-              style={estiloTextoGeneral}
-              className={cn(
-                "mt-4 flex w-full flex-col gap-1.5 rounded-xl border border-[rgba(0,0,0,0.05)] bg-[rgba(0,0,0,0.02)] px-3 py-2.5 text-xs text-[#71717a] dark:border-[rgba(255,255,255,0.08)] dark:bg-[rgba(255,255,255,0.03)] dark:text-[#a1a1aa]",
-                ubicacionCentrada ? "items-center text-center" : "items-start text-left"
-              )}
-            >
-              {direccion?.trim() && (
-                <span className="inline-flex items-start gap-1.5">
-                  <MapPin className="mt-0.5 size-3.5 shrink-0" />
-                  <span className="whitespace-pre-line">{direccion}</span>
-                </span>
-              )}
-              {horarios?.trim() && (
-                <span className="inline-flex items-start gap-1.5">
-                  <Clock className="mt-0.5 size-3.5 shrink-0" />
-                  <span className="whitespace-pre-line">{horarios}</span>
-                </span>
-              )}
-            </div>
-          )}
-
-          {renderContactoYRedes()}
-
-          {/* Posición elegible (2026-08-14): por default el contenido
-              multimedia va acá, antes de Botones — con
-              `multimediaAlFinal` se corre a después de Botones/Agenda,
-              como el último bloque de la tarjeta. */}
-          {!multimediaAlFinal && renderMultimedia()}
-
-          {renderBotones()}
-
-          {multimediaAlFinal && renderMultimedia()}
+          {ordenModulosVivo.map((moduloId) => (
+            <React.Fragment key={moduloId}>{RENDER_MODULO[moduloId]()}</React.Fragment>
+          ))}
         </div>
       </article>
 

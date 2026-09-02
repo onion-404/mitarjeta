@@ -15,6 +15,15 @@ export const PLATAFORMAS: PlataformaConfig[] = [
   { id: "youtube", nombre: "YouTube", prefijo: "https://youtube.com/@", placeholder: "canal" },
   { id: "whatsapp", nombre: "WhatsApp", prefijo: "https://wa.me/", placeholder: "5491122334455" },
   { id: "x", nombre: "X / Twitter", prefijo: "https://x.com/", placeholder: "usuario" },
+  { id: "reddit", nombre: "Reddit", prefijo: "https://reddit.com/user/", placeholder: "usuario" },
+  { id: "spotify", nombre: "Spotify", prefijo: "https://open.spotify.com/user/", placeholder: "usuario o playlist" },
+  { id: "github", nombre: "GitHub", prefijo: "https://github.com/", placeholder: "usuario" },
+  { id: "discord", nombre: "Discord", prefijo: "https://discord.gg/", placeholder: "código de invitación" },
+  { id: "twitch", nombre: "Twitch", prefijo: "https://twitch.tv/", placeholder: "usuario" },
+  { id: "pinterest", nombre: "Pinterest", prefijo: "https://pinterest.com/", placeholder: "usuario" },
+  { id: "snapchat", nombre: "Snapchat", prefijo: "https://snapchat.com/add/", placeholder: "usuario" },
+  { id: "telegram", nombre: "Telegram", prefijo: "https://t.me/", placeholder: "usuario o canal" },
+  { id: "threads", nombre: "Threads", prefijo: "https://threads.net/@", placeholder: "usuario" },
   { id: "personalizado", nombre: "Personalizado", prefijo: "", placeholder: "https://tu-enlace.com" },
 ]
 

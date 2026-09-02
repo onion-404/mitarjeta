@@ -8,6 +8,15 @@ export type PlataformaRed =
   | "youtube"
   | "whatsapp"
   | "x"
+  | "reddit"
+  | "spotify"
+  | "github"
+  | "discord"
+  | "twitch"
+  | "pinterest"
+  | "snapchat"
+  | "telegram"
+  | "threads"
   | "personalizado"
 
 export interface RedSocial {
@@ -500,10 +509,12 @@ export interface IdentidadVisual {
    *  que el resto de los campos de "solo alineación/orden" del editor
    *  (ordenContacto, orden de botones). */
   ubicacionCentrada?: boolean
-  /** true = "Contenido multimedia" se renderiza al FINAL de la tarjeta
-   *  (después de Botones/Agenda), en vez de en su posición de siempre
-   *  (justo después de Canales de contacto/redes, antes de Botones).
-   *  Default `false`/sin valor: sin cambios para tarjetas existentes. */
+  /** @deprecated Superado por `ordenModulos` (2026-09-03, ver más abajo) —
+   *  ese campo generaliza la posición de "multimedia" a cualquier lugar
+   *  entre los 4 bloques reordenables, no solo antes/después de Botones.
+   *  Se sigue leyendo SOLO dentro de `ordenModulosNormalizado()`
+   *  (lib/boton-cta.ts) para migrar en memoria una tarjeta que nunca tuvo
+   *  `ordenModulos` guardado — nunca se vuelve a escribir. */
   multimediaAlFinal?: boolean
   /** @deprecated Ver `SeccionOrdenable` — ya no se escribe (Agenda pasó a
    *  ser un botón más dentro de "botones", 2026-08-10). Se sigue leyendo
@@ -539,7 +550,57 @@ export interface IdentidadVisual {
   ogNombre?: string
   ogSubtitulo?: string
   ogBio?: string
+  /** Módulos opcionales (2026-09-02): todo bloque visual de la tarjeta se
+   *  puede apagar sin perder su contenido guardado — el único dato
+   *  realmente obligatorio es el Título (`nombre`) + el enlace (`slug`, no
+   *  vive acá). Sin valor = `true` en los 7 (compatibilidad total: ninguna
+   *  tarjeta existente pierde nada al no haber tocado esto nunca). Apagar
+   *  no borra los campos de esa sección — solo deja de renderizarla, mismo
+   *  criterio que el resto de los toggles de este archivo (ubicacionCentrada,
+   *  multimediaAlFinal, etc.). */
+  /** 2026-09-04: mismo criterio que el resto de este bloque — apaga el
+   *  título (texto o "Título como logo", ver `tituloModo`) SIN borrar el
+   *  dato. Independiente de que `nombre` esté vacío o no (eso ya se
+   *  manejaba aparte, "Título opcional" — ver `tituloModo`/`<h1>` en
+   *  TarjetaCard): con `nombre` cargado Y este campo en `false`, el título
+   *  sigue sin mostrarse. */
+  tituloActivo?: boolean
+  avatarActivo?: boolean
+  /** Apaga TODA la franja de banner (foto/preset/degradé + su alto +
+   *  divisor + el overlap `-mt-14` del panel de contenido) — no la imagen
+   *  de fondo de toda la tarjeta (`fondoImagenUrl`), que es un concepto
+   *  independiente y sigue funcionando igual con esto en `false`. Con el
+   *  banner apagado, el avatar (si está activo) deja de superponerse en
+   *  absoluto y pasa a vivir en el flujo normal, arriba del título. */
+  bannerActivo?: boolean
+  bioActiva?: boolean
+  /** Apaga los 4 pills de "Canales de contacto" (Llamar/WhatsApp/Email/Cómo
+   *  llegar) — independiente de `redesActivo`, aunque ambos compartan la
+   *  misma fila en el render (ver `renderContactoYRedes`, tarjeta-card.tsx). */
+  contactoActivo?: boolean
+  redesActivo?: boolean
+  ubicacionActiva?: boolean
+  multimediaActivo?: boolean
+  /** true = los pills de "Redes sociales" muestran SOLO el ícono (círculo
+   *  compacto, sin la etiqueta de texto al lado) — mismo dato, look más
+   *  denso. Default `false`/sin valor: pill con ícono + nombre, como
+   *  siempre. No afecta a "Canales de contacto" (Llamar/WhatsApp/Email/
+   *  Cómo llegar), que sigue mostrando su etiqueta siempre. */
+  redesSoloIcono?: boolean
+  /** Orden de los 4 bloques de contenido reordenables por drag-and-drop en
+   *  el constructor visual (2026-09-03) — generaliza y REEMPLAZA
+   *  `multimediaAlFinal` (@deprecated arriba). Avatar/Banner/Identidad
+   *  quedan FUERA a propósito: son estructurales (overlap `-mt-14`
+   *  calculado a mano, avatar absoluto superpuesto al banner —
+   *  reordenarlos requeriría rehacer esa matemática, fuera de alcance de
+   *  esta feature). "contacto-redes" mueve Contacto y Redes JUNTOS: ambos
+   *  comparten una sola fila en el render (`renderContactoYRedes`), no son
+   *  bloques separados. Sin valor = orden de siempre (`ORDEN_MODULOS_
+   *  DEFAULT`, ver lib/boton-cta.ts), salvo migración de `multimediaAlFinal`. */
+  ordenModulos?: ModuloOrdenable[]
 }
+
+export type ModuloOrdenable = "ubicacion" | "contacto-redes" | "multimedia" | "botones"
 
 export type MetodoPago = "mercado_pago" | "transferencia"
 export type EstadoPago = "pendiente" | "aprobado" | "rechazado"
@@ -570,6 +631,14 @@ export interface Tarjeta {
    *  `obtenerSlotsDisponibles`, lib/agenda.ts). No se borra la columna
    *  (mismo criterio que el resto de campos deprecados del proyecto). */
   intervalo_agenda_minutos: number
+  /** 2026-09-04: check exclusivo del panel admin (`/admin/tarjetas/[id]`,
+   *  `POST /api/admin/verificar-tarjeta`) — el dueño de la tarjeta no lo
+   *  puede tocar desde su editor, a propósito (no vive en
+   *  `identidad_visual`, que el dueño sí controla). Muestra un ícono de
+   *  verificación junto al badge "@slug" en la tarjeta pública. Default
+   *  `false` en la columna — ninguna tarjeta existente aparece verificada
+   *  al agregar esto. */
+  verificado: boolean
   created_at: string
 }
 

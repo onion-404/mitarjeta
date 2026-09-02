@@ -1,19 +1,29 @@
 "use client"
 
-import { Accordion } from "@base-ui/react/accordion"
-import { Drawer } from "@base-ui/react/drawer"
+import { Dialog } from "@base-ui/react/dialog"
 import {
-  AlertTriangle,
   ArrowRight,
+  BarChart3,
   Check,
   ChevronDown,
   ChevronUp,
+  CircleUserRound,
+  CreditCard,
   FileText,
+  GripVertical,
+  Image as ImageIcon,
   Images,
+  Layers,
+  LayoutGrid,
   Loader2,
+  MapPin,
   Moon,
   Move,
+  Palette,
+  PencilLine,
+  Phone,
   Plus,
+  Share2,
   Sun,
   Trash2,
   Video,
@@ -25,6 +35,7 @@ import * as React from "react"
 import { AccionesTarjeta } from "@/components/tarjeta/acciones-tarjeta"
 import { AgendaServicios } from "@/components/tarjeta/agenda-servicios"
 import { EstadisticasTarjeta } from "@/components/tarjeta/estadisticas-tarjeta"
+import { AlertaModal } from "@/components/ui/alerta-modal"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { CandadoPlan } from "@/components/tarjeta/candado-plan"
@@ -34,8 +45,8 @@ import { EditorTextoEnriquecido } from "@/components/tarjeta/editor-texto-enriqu
 import { FondoImagenRepetido } from "@/components/tarjeta/fondo-imagen-repetido"
 import { OpcionPersonalizacion, SwatchDivisor, SwatchForma } from "@/components/tarjeta/opcion-personalizacion"
 import { PlantillasGaleria } from "@/components/tarjeta/plantillas-galeria"
-import { SOCIAL_ICONS } from "@/components/tarjeta/social-icons"
 import { ReposicionarImagen } from "@/components/tarjeta/reposicionar-imagen"
+import { SelectorPlataformaRed } from "@/components/tarjeta/selector-plataforma-red"
 import { SelectorTipografia } from "@/components/tarjeta/selector-tipografia"
 import { TarjetaCard } from "@/components/tarjeta/tarjeta-card"
 import { TarjetaQr } from "@/components/tarjeta/tarjeta-qr"
@@ -47,6 +58,7 @@ import {
   construirUrlWhatsapp,
   normalizarBotones,
   ordenContactoNormalizado,
+  ordenModulosNormalizado,
 } from "@/lib/boton-cta"
 import { posterVideoGaleria } from "@/lib/cloudinary-media"
 import { validarCupon } from "@/lib/cupones"
@@ -64,7 +76,7 @@ import {
   estaBloqueada,
   type Plantilla,
 } from "@/lib/personalizacion"
-import { PLATAFORMAS, obtenerPlataforma } from "@/lib/redes"
+import { obtenerPlataforma } from "@/lib/redes"
 import { subirImagenCloudinary, validarImagen, validarVideo } from "@/lib/subir-imagen"
 import { supabase } from "@/lib/supabase"
 import { getLimiteCambioSlug, type LimiteCambioSlug } from "@/lib/tarjetas"
@@ -81,6 +93,7 @@ import type {
   DivisorBanner,
   EstiloTipografia,
   IdentidadVisual,
+  ModuloOrdenable,
   MultimediaItem,
   MultimediaTipo,
   PeriodicidadSuscripcion,
@@ -421,8 +434,33 @@ function moverEnArray<T>(lista: T[], index: number, direccion: -1 | 1): T[] {
 const FEATURES_TIPOGRAFIA_BOTON = { personalizacion_libre: true, personalizacion_avanzada: true }
 
 const TOPE_BOTONES = 8
+// Subido de 5 a 8 (2026-09-04) al sumar 7 redes nuevas — con 16 plataformas
+// disponibles, 5 quedaba corto para alguien que realmente las use todas
+// (ej. un creador: Instagram+TikTok+YouTube+X+Twitch+Discord).
+const TOPE_REDES = 8
 const TOPE_HIJOS_OPCIONES = 6
 const TOPE_ITEMS_CATALOGO = 12
+
+// Constructor visual (2026-09-02): mapea cada `data-campo` del preview real
+// (tarjeta-card.tsx) al id del MÓDULO que lo controla — clic en un elemento
+// del preview abre el modal flotante de ese módulo en vez de que el dueño
+// tenga que adivinar dónde vive. "divisor" queda afuera a propósito: es el
+// panel de contenido ENTERO (contenedor de casi todo lo demás), así que un
+// clic en un hueco sin nada más específico no abre ningún modal.
+const CAMPO_A_SECCION: Record<string, string> = {
+  banner: "banner",
+  avatar: "avatar",
+  nombre: "identidad",
+  bio: "identidad",
+  ubicacion: "ubicacion",
+  // Unificado (2026-09-04): "contacto" y "redes" comparten un solo módulo
+  // — mismo id que usa el bloque reordenable "contacto-redes" (ver
+  // ModuloOrdenable, lib/types.ts), sincronía a propósito.
+  contacto: "contacto-redes",
+  redes: "contacto-redes",
+  video: "multimedia",
+  botones: "botones",
+}
 
 /** Colores de fondo/borde en uso en un botón y (recursivamente) en sus
  *  hijos — alimenta la lista de "Tus colores" del ColorPicker en toda la
@@ -481,19 +519,167 @@ function SelectorTipoBoton({
 const inputClase =
   "w-full rounded-xl border border-border bg-white/70 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none backdrop-blur transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-zinc-900/60"
 const labelClase = "text-sm font-medium text-foreground"
-const panelClase =
-  "rounded-3xl border border-black/5 bg-white/70 shadow-[0_10px_40px_-25px_rgba(0,0,0,0.4)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/50 overflow-hidden"
-const triggerClase =
-  "group flex w-full items-center justify-between gap-2 px-5 py-4 text-left text-sm font-semibold text-foreground transition-colors duration-200 ease-out data-panel-open:bg-[var(--acento-bg)]"
-const panelInnerClase =
-  "h-[var(--accordion-panel-height)] overflow-hidden transition-[height] duration-200 ease-out data-ending-style:h-0 data-starting-style:h-0"
-const tabMovilClase =
-  "shrink-0 rounded-full border border-border px-3.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-const drawerBackdropClase =
-  "fixed inset-0 z-50 bg-black/40 backdrop-blur-sm transition-opacity duration-200 ease-out data-ending-style:opacity-0 data-starting-style:opacity-0 dark:bg-black/60"
-const drawerViewportClase = "fixed inset-0 z-50 flex items-end justify-center"
-const drawerPopupClase =
-  "w-full max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-border bg-background pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-300 ease-out [transform:translateY(var(--drawer-swipe-movement-y))] data-ending-style:[transform:translateY(100%)] data-starting-style:[transform:translateY(100%)]"
+// Constructor visual (2026-09-02, reemplaza el acordeón desktop + tabs/
+// drawer mobile de siempre): cada módulo se edita en su propio modal
+// flotante (pedido explícito: "me gustan los modales flotantes", estilo
+// Divi — módulos independientes, agregados/seleccionados desde modales).
+// En `lg:` el modal se corre a la derecha (donde vivía el formulario de
+// siempre) con backdrop transparente — la vista previa sigue visible e
+// interactiva mientras se edita, en vez de taparla como en mobile (donde sí
+// tiene sentido un backdrop real: el preview ya ocupa toda la pantalla
+// detrás). El mismo componente sirve para TODO — módulos del canvas
+// (Avatar, Banner, Identidad, etc.) y los globales sin posición en la
+// tarjeta (Tema, Imagen OG, Estadísticas, Tu plan, Compartir).
+const dialogBackdropClase =
+  "fixed inset-0 z-50 bg-black/45 backdrop-blur-sm transition-opacity duration-200 ease-out data-ending-style:opacity-0 data-starting-style:opacity-0 dark:bg-black/70 lg:bg-transparent lg:backdrop-blur-none"
+const dialogPopupClase =
+  "fixed top-1/2 left-1/2 z-50 flex max-h-[85vh] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl transition-all duration-200 ease-out data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0 lg:left-auto lg:right-8 lg:top-1/2 lg:translate-x-0"
+const botonModuloClase =
+  "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-white/70 px-3.5 py-1.5 text-xs font-medium text-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted dark:bg-zinc-900/50"
+
+/** Arrastre libre de un modal flotante por su cabecera — funciona igual con
+ *  mouse/touch/pen (Pointer Events unificados, sin librería nueva). El
+ *  offset es un delta desde la posición anclada por CSS (dialogPopupClase),
+ *  aplicado como `transform: translate()` — la propiedad CSS nativa
+ *  `translate` que ya usan las clases de Tailwind (`-translate-x-1/2`, etc.)
+ *  es independiente de `transform` y compone con ella sin pisarla (mismo
+ *  criterio que la animación `fan-in` de globals.css). Clampeado contra el
+ *  viewport (medido una sola vez al empezar el arrastre, contra el rect
+ *  real del popup) para que nunca se pueda perder el modal fuera de
+ *  pantalla. Se resetea a {0,0} cada vez que el modal se cierra, así el
+ *  próximo módulo abre siempre en su posición anclada de siempre. */
+function useArrastreModal(popupRef: React.RefObject<HTMLDivElement | null>) {
+  const [offset, setOffset] = React.useState({ x: 0, y: 0 })
+  const arrastre = React.useRef<{
+    startX: number
+    startY: number
+    baseX: number
+    baseY: number
+    minX: number
+    maxX: number
+    minY: number
+    maxY: number
+  } | null>(null)
+
+  function resetear() {
+    setOffset({ x: 0, y: 0 })
+  }
+
+  function iniciar(e: React.PointerEvent<HTMLElement>) {
+    // Solo arrastra con el botón principal (mouse) — touch/pen no traen
+    // `button` distinto de 0, así que esto no los bloquea.
+    if (e.button !== undefined && e.button !== 0) return
+    const el = popupRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const margen = 16
+    arrastre.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      baseX: offset.x,
+      baseY: offset.y,
+      minX: offset.x + (margen - rect.left),
+      maxX: offset.x + (window.innerWidth - margen - rect.right),
+      minY: offset.y + (margen - rect.top),
+      maxY: offset.y + (window.innerHeight - margen - rect.bottom),
+    }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  function mover(e: React.PointerEvent<HTMLElement>) {
+    const a = arrastre.current
+    if (!a) return
+    const nx = a.baseX + (e.clientX - a.startX)
+    const ny = a.baseY + (e.clientY - a.startY)
+    const [loX, hiX] = a.minX <= a.maxX ? [a.minX, a.maxX] : [a.maxX, a.minX]
+    const [loY, hiY] = a.minY <= a.maxY ? [a.minY, a.maxY] : [a.maxY, a.minY]
+    setOffset({ x: Math.min(Math.max(nx, loX), hiX), y: Math.min(Math.max(ny, loY), hiY) })
+  }
+
+  function soltar() {
+    arrastre.current = null
+  }
+
+  return { offset, resetear, iniciar, mover, soltar }
+}
+
+/** Modal flotante de un único módulo — cabecera arrastrable (mouse/touch)
+ *  con título + cerrar, contenido scrolleable. Definido a nivel de módulo
+ *  (no adentro de TarjetaForm): no depende de closures del formulario, así
+ *  que no hace falta recrearlo en cada render. */
+function ModuloFlotante({
+  abierto,
+  onCerrar,
+  titulo,
+  onEliminar,
+  children,
+}: {
+  abierto: boolean
+  onCerrar: () => void
+  titulo: string
+  /** Presente solo en módulos opcionales — el trash de la cabecera lo
+   *  apaga (mismo switch que el manager de "Módulos", ver MODULOS_CANVAS)
+   *  y cierra el modal. Ausente/undefined = módulo fijo, sin esta opción. */
+  onEliminar?: () => void
+  children: React.ReactNode
+}) {
+  const popupRef = React.useRef<HTMLDivElement>(null)
+  const { offset, resetear, iniciar, mover, soltar } = useArrastreModal(popupRef)
+
+  React.useEffect(() => {
+    if (!abierto) resetear()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resetear es estable (setState), solo debe correr cuando cambia `abierto`
+  }, [abierto])
+
+  return (
+    <Dialog.Root open={abierto} onOpenChange={(open) => !open && onCerrar()}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className={dialogBackdropClase} />
+        <Dialog.Popup
+          ref={popupRef}
+          className={dialogPopupClase}
+          style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
+        >
+          <div
+            onPointerDown={iniciar}
+            onPointerMove={mover}
+            onPointerUp={soltar}
+            onPointerCancel={soltar}
+            className="flex shrink-0 cursor-grab touch-none items-center justify-between border-b border-border px-5 py-3.5 select-none active:cursor-grabbing"
+          >
+            <div className="flex min-w-0 items-center gap-2 pr-2">
+              <GripVertical className="size-4 shrink-0 text-muted-foreground/40" aria-hidden />
+              <Dialog.Title className="truncate text-sm font-semibold text-foreground">
+                {titulo}
+              </Dialog.Title>
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              {onEliminar && (
+                <button
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={onEliminar}
+                  aria-label={`Quitar ${titulo}`}
+                  className="rounded-full p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              )}
+              <Dialog.Close
+                onPointerDown={(e) => e.stopPropagation()}
+                aria-label="Cerrar"
+                className="rounded-full p-1.5 text-muted-foreground hover:bg-muted"
+              >
+                <X className="size-4" />
+              </Dialog.Close>
+            </div>
+          </div>
+          <div className="overflow-y-auto overscroll-contain">{children}</div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
 
 function redesValidas(redes: RedSocial[]) {
   return redes.filter((red) => {
@@ -727,11 +913,11 @@ export function TarjetaForm({
     visualInicial?.ubicacionCentrada ?? false
   )
 
-  // Posición de "Contenido multimedia" — en su lugar de siempre (default) o
-  // al final de la tarjeta, después de Botones/Agenda.
-  const [multimediaAlFinal, setMultimediaAlFinal] = React.useState(
-    visualInicial?.multimediaAlFinal ?? false
-  )
+  // Posición de "Contenido multimedia" — @deprecated (2026-09-03): ya no es
+  // un toggle propio, superado por `ordenModulos` (arrastrás el bloque
+  // completo donde quieras en el preview). El valor viejo se sigue leyendo
+  // UNA vez, solo como fallback de migración, en el inicializador de
+  // `ordenModulos` de acá abajo — nunca más se vuelve a escribir.
 
   // Ícono del badge "@enlace" — opcional, con el mismo set curado que los
   // botones CTA (BOTON_ICONOS). Activo por defecto (compatibilidad: toda
@@ -740,6 +926,27 @@ export function TarjetaForm({
     visualInicial?.badgeIconoActivo ?? true
   )
   const [badgeIconoId, setBadgeIconoId] = React.useState(visualInicial?.badgeIconoId ?? "sparkles")
+
+  // Módulos opcionales (2026-09-02): todo bloque visual se puede apagar sin
+  // perder su contenido guardado — Título y enlace (@usuario) son los
+  // únicos que no tienen interruptor (ver lib/types.ts). Default `true` en
+  // los 7 = cero regresión para tarjetas que nunca tocaron esto.
+  const [tituloActivo, setTituloActivo] = React.useState(visualInicial?.tituloActivo ?? true)
+  const [avatarActivo, setAvatarActivo] = React.useState(visualInicial?.avatarActivo ?? true)
+  const [bannerActivo, setBannerActivo] = React.useState(visualInicial?.bannerActivo ?? true)
+  const [bioActiva, setBioActiva] = React.useState(visualInicial?.bioActiva ?? true)
+  const [contactoActivo, setContactoActivo] = React.useState(visualInicial?.contactoActivo ?? true)
+  const [redesActivo, setRedesActivo] = React.useState(visualInicial?.redesActivo ?? true)
+  const [ubicacionActiva, setUbicacionActiva] = React.useState(visualInicial?.ubicacionActiva ?? true)
+  const [multimediaActivo, setMultimediaActivo] = React.useState(visualInicial?.multimediaActivo ?? true)
+  const [redesSoloIcono, setRedesSoloIcono] = React.useState(visualInicial?.redesSoloIcono ?? false)
+  // Orden de los 4 bloques reordenables por drag-and-drop en el preview
+  // (2026-09-03) — el drag vive en TarjetaCard (modoEdicion), que solo
+  // AVISA el nuevo orden acá vía onReordenarModulos; el estado real de
+  // guardado vive en el formulario, como todo lo demás.
+  const [ordenModulos, setOrdenModulos] = React.useState<ModuloOrdenable[]>(() =>
+    ordenModulosNormalizado(visualInicial?.ordenModulos, visualInicial?.multimediaAlFinal)
+  )
 
   // --- Personalización avanzada (gating por plan, ver lib/personalizacion.ts) ---
   const [colorBotones, setColorBotones] = React.useState(
@@ -937,6 +1144,12 @@ export function TarjetaForm({
   /** Breve estado visual (check verde) que se muestra en el botón justo
    * después de guardar con éxito, antes de redirigir o abrir el modal. */
   const [guardadoExito, setGuardadoExito] = React.useState(false)
+  // Modal (2026-09-04, reemplaza el toast que se autodesvanecía — pedido
+  // explícito: "cualquier notificación o alerta aparezca como modal, no
+  // como elemento de la ui en general") — mismo nombre `toast`/
+  // `mostrarToast` a propósito (todos los call-sites existentes siguen
+  // funcionando igual), solo cambió CÓMO se muestra: AlertaModal en vez de
+  // un `<div>` flotante con auto-dismiss.
   const [toast, setToast] = React.useState<{
     tipo: "advertencia" | "error" | "exito"
     mensaje: string
@@ -944,13 +1157,20 @@ export function TarjetaForm({
 
   function mostrarToast(tipo: "advertencia" | "error" | "exito", mensaje: string) {
     setToast({ tipo, mensaje })
-    window.setTimeout(() => {
-      setToast((actual) => (actual?.mensaje === mensaje ? null : actual))
-    }, 5000)
   }
 
   function mostrarErrorArchivo(mensaje: string) {
     mostrarToast("advertencia", mensaje)
+  }
+
+  /** Trash de la cabecera de un módulo opcional (ModuloFlotante) — apaga el
+   *  mismo switch que el manager de "Módulos" (nunca borra contenido, solo
+   *  deja de renderizarlo) y avisa cómo revertirlo. Tipado laxo a propósito
+   *  (no `ModuloCanvas`, definido más abajo junto a MODULOS_CANVAS): solo
+   *  necesita título + el setter del toggle. */
+  function ocultarModulo(modulo: { titulo: string; onToggle?: (activo: boolean) => void }) {
+    modulo.onToggle?.(false)
+    mostrarToast("exito", `${modulo.titulo} ocultado — reactívalo cuando quieras desde "Módulos".`)
   }
 
   // Enlace personalizado — obligatorio al crear, y editable siempre (con
@@ -987,8 +1207,19 @@ export function TarjetaForm({
   }, [esEdicion, tarjeta])
   const [vista, setVista] = React.useState<"editar" | "ver">("editar")
 
-  // Tab/drawer móvil (patrón Linktree): id de la sección abierta, o null.
-  const [tabMovilAbierto, setTabMovilAbierto] = React.useState<string | null>(null)
+  // Constructor visual (2026-09-02, reemplaza el acordeón desktop + tabs/
+  // drawer mobile de siempre): id del ÚNICO módulo abierto en su modal
+  // flotante, o null — mismo mecanismo en desktop y mobile, sin distinción
+  // (a diferencia del `scrollPreviewTo`/accordion viejo). "modulos" es un
+  // valor especial: abre el manager con TODOS los módulos (fijos y
+  // opcionales, prendidos o no), no un módulo de contenido en sí.
+  const [moduloAbierto, setModuloAbierto] = React.useState<string | null>(null)
+
+  /** Clic en un elemento del preview → abre el modal flotante del módulo
+   *  que lo controla (ver CAMPO_A_SECCION y MODULOS_CANVAS más abajo). */
+  function seleccionarBloqueDesdePreview(campoId: string) {
+    setModuloAbierto(campoId)
+  }
   const [agendaServiciosPreview, setAgendaServiciosPreview] = React.useState<ServicioAgendable[]>(
     []
   )
@@ -1115,7 +1346,7 @@ export function TarjetaForm({
 
   function agregarRed() {
     setRedes((prev) =>
-      prev.length >= 5 ? prev : [...prev, { plataforma: "instagram", label: "", url: "" }]
+      prev.length >= TOPE_REDES ? prev : [...prev, { plataforma: "instagram", label: "", url: "" }]
     )
   }
 
@@ -1350,15 +1581,21 @@ export function TarjetaForm({
     }
   }
 
-  function agregarBoton(tipo: BotonTipo) {
+  /** Devuelve el id del botón recién creado (o `undefined` si no se pudo
+   *  agregar) — el constructor visual lo usa para abrir directo el modal
+   *  flotante del botón nuevo (ver moduloAbierto = `boton-${id}` más abajo),
+   *  sin paso intermedio. */
+  function agregarBoton(tipo: BotonTipo): string | undefined {
     // Agenda es singleton (ver quitarBotonEn) — `normalizarBotones()` ya
     // garantiza que exista siempre uno, nunca se agrega manualmente desde
     // acá (tampoco se ofrece en SelectorTipoBoton, esto es solo defensivo).
-    if (tipo === "agenda") return
-    if (botones.length >= TOPE_BOTONES) return
-    if (tipo === "catalogo" && catalogoBloqueado) return
-    if (tipo === "archivo" && !archivoDisponible) return
-    setBotones((prev) => [...prev, crearBotonNuevo(tipo)])
+    if (tipo === "agenda") return undefined
+    if (botones.length >= TOPE_BOTONES) return undefined
+    if (tipo === "catalogo" && catalogoBloqueado) return undefined
+    if (tipo === "archivo" && !archivoDisponible) return undefined
+    const nuevo = crearBotonNuevo(tipo)
+    setBotones((prev) => [...prev, nuevo])
+    return nuevo.id
   }
 
   function agregarBotonHijo(indicePadre: number, tipo: Exclude<BotonTipo, "opciones" | "agenda">) {
@@ -2111,7 +2348,6 @@ export function TarjetaForm({
       colorFondoContacto: colorFondoContacto || undefined,
       colorFondoRedes: colorFondoRedes || undefined,
       ubicacionCentrada: ubicacionCentrada || undefined,
-      multimediaAlFinal: multimediaAlFinal || undefined,
       ordenContacto,
       tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
       tituloImagenUrl: tituloModo === "imagen" ? tituloImagenUrlFinal : undefined,
@@ -2122,6 +2358,16 @@ export function TarjetaForm({
       ogNombre: ogTipo !== "ninguna" ? ogNombre.trim() || undefined : undefined,
       ogSubtitulo: ogTipo !== "ninguna" ? ogSubtitulo.trim() || undefined : undefined,
       ogBio: ogTipo !== "ninguna" ? ogBio.trim() || undefined : undefined,
+      tituloActivo,
+      avatarActivo,
+      bannerActivo,
+      bioActiva,
+      contactoActivo,
+      redesActivo,
+      ubicacionActiva,
+      multimediaActivo,
+      redesSoloIcono: redesSoloIcono || undefined,
+      ordenModulos,
     }
 
     if (bloqueosGuardado.length > 0) {
@@ -2366,13 +2612,22 @@ export function TarjetaForm({
     colorFondoContacto: colorFondoContacto || undefined,
     colorFondoRedes: colorFondoRedes || undefined,
     ubicacionCentrada: ubicacionCentrada || undefined,
-    multimediaAlFinal: multimediaAlFinal || undefined,
     ordenContacto,
     tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
     tituloImagenUrl: tituloModo === "imagen" ? tituloImagenMostrada || undefined : undefined,
     tituloImagenAltura: tituloModo === "imagen" && tituloImagenAltura !== 32 ? tituloImagenAltura : undefined,
     badgeIconoActivo,
     badgeIconoId: badgeIconoActivo ? badgeIconoId : undefined,
+    tituloActivo,
+    avatarActivo,
+    bannerActivo,
+    bioActiva,
+    contactoActivo,
+    redesActivo,
+    ubicacionActiva,
+    multimediaActivo,
+    redesSoloIcono: redesSoloIcono || undefined,
+    ordenModulos,
   }
 
   const bloqueosGuardado = calcularBloqueos(
@@ -2753,6 +3008,10 @@ export function TarjetaForm({
             en la tarjeta — TarjetaCard directamente no renderiza el <h1>
             (ver tarjeta-card.tsx), como si el elemento no existiera. */}
       </label>
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+        <span className="text-xs text-muted-foreground">Mostrar título en la tarjeta</span>
+        <Switch checked={tituloActivo} onCheckedChange={setTituloActivo} />
+      </label>
       <label className="flex flex-col gap-1.5">
         <span className={labelClase}>Rol o descripción</span>
         <input
@@ -2777,6 +3036,10 @@ export function TarjetaForm({
           placeholder="Cuéntanos en pocas palabras quién eres o qué haces."
           className={cn(inputClase, "resize-none")}
         />
+      </label>
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+        <span className="text-xs text-muted-foreground">Mostrar bio en la tarjeta</span>
+        <Switch checked={bioActiva} onCheckedChange={setBioActiva} />
       </label>
 
       {/* Tipografía + color/tamaño/peso del título — antes vivía en "Colores
@@ -3067,8 +3330,17 @@ export function TarjetaForm({
     </div>
   )
 
-  const contenidoAvatarYBanner = (
+  // Avatar y Banner (2026-09-02): antes vivían en UNA sección — se separan
+  // en dos módulos propios del constructor visual (cada uno con su
+  // interruptor, su modal flotante y su tarjeta en el manager de
+  // "Módulos"), aunque bajo el capó sigan siendo parte del mismo layer de
+  // TarjetaCard (ver nota en lib/types.ts, IdentidadVisual.bannerActivo).
+  const contenidoAvatarModulo = (
     <div className="flex flex-col gap-5 px-5 pb-5 pt-1">
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+        <span className="text-xs text-muted-foreground">Mostrar avatar en la tarjeta</span>
+        <Switch checked={avatarActivo} onCheckedChange={setAvatarActivo} />
+      </label>
       <div className="flex flex-col gap-1.5">
         <span className={labelClase}>Foto de perfil</span>
         <div className="flex items-center gap-3">
@@ -3138,7 +3410,18 @@ export function TarjetaForm({
           })}
         </div>
       </div>
+    </div>
+  )
 
+  const contenidoBannerModulo = (
+    <div className="flex flex-col gap-5 px-5 pb-5 pt-1">
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+        <span className="text-xs text-muted-foreground">Mostrar banner (foto/color arriba del avatar)</span>
+        <Switch checked={bannerActivo} onCheckedChange={setBannerActivo} />
+      </label>
+
+      {bannerActivo && (
+      <>
       <div
         className={cn(
           "flex flex-col gap-2 transition-opacity",
@@ -3226,6 +3509,8 @@ export function TarjetaForm({
           className="w-full cursor-pointer accent-foreground"
         />
       </label>
+      </>
+      )}
 
       <div className="flex flex-col gap-2 rounded-xl border border-border bg-background/50 p-3">
         <span className={cn(labelClase, "flex items-center gap-1.5")}>
@@ -3298,6 +3583,7 @@ export function TarjetaForm({
         )}
       </div>
 
+      {bannerActivo && (
       <div className="flex flex-col gap-2">
         <span className={labelClase}>Divisor banner → tarjeta</span>
         <div className="grid grid-cols-4 gap-2">
@@ -3322,6 +3608,7 @@ export function TarjetaForm({
           })}
         </div>
       </div>
+      )}
 
       {bannerMostrado && (
         <ReposicionarImagen
@@ -3353,8 +3640,17 @@ export function TarjetaForm({
     </div>
   )
 
-  const contenidoContacto = (
+  // Contacto y Redes sociales (2026-09-04): antes eran 2 módulos separados
+  // — se unifican en UNO solo (misma fila en el render público de siempre,
+  // ver renderContactoYRedes en tarjeta-card.tsx, ahora también un solo
+  // módulo del constructor visual con id "contacto-redes"). Cada mitad
+  // conserva su propio switch/color/orden — solo comparten modal.
+  const contenidoContactoYRedes = (
     <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+        <span className="text-xs text-muted-foreground">Mostrar canales de contacto en la tarjeta</span>
+        <Switch checked={contactoActivo} onCheckedChange={setContactoActivo} />
+      </label>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
           <span className={labelClase}>Teléfono</span>
@@ -3456,11 +3752,16 @@ export function TarjetaForm({
           )
         })}
       </div>
-    </div>
-  )
 
-  const contenidoRedes = (
-    <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+      <div className="flex flex-col gap-3 border-t border-border/60 pt-4">
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+        <span className="text-xs text-muted-foreground">Mostrar redes sociales en la tarjeta</span>
+        <Switch checked={redesActivo} onCheckedChange={setRedesActivo} />
+      </label>
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+        <span className="text-xs text-muted-foreground">Mostrar solo el ícono (sin el nombre de la red)</span>
+        <Switch checked={redesSoloIcono} onCheckedChange={setRedesSoloIcono} />
+      </label>
       <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
         <span className="text-xs text-muted-foreground">Color de fondo de los botones</span>
         <div className="flex items-center gap-2">
@@ -3484,7 +3785,6 @@ export function TarjetaForm({
 
       {redes.map((red, index) => {
         const plataformaCfg = obtenerPlataforma(red.plataforma)
-        const Icono = SOCIAL_ICONS[red.plataforma]
         const sufijo =
           red.plataforma === "personalizado"
             ? red.url
@@ -3496,21 +3796,11 @@ export function TarjetaForm({
             className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-background/50 p-3"
           >
             <div className="flex items-center gap-2">
-              <Icono className="size-4 shrink-0 text-muted-foreground" />
-              <select
+              <SelectorPlataformaRed
                 value={red.plataforma}
-                onChange={(e) =>
-                  actualizarRedPlataforma(index, e.target.value as PlataformaRed)
-                }
+                onChange={(plataforma) => actualizarRedPlataforma(index, plataforma)}
                 onFocus={() => scrollPreviewTo("redes")}
-                className={cn(inputClase, "w-auto flex-1")}
-              >
-                {PLATAFORMAS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombre}
-                  </option>
-                ))}
-              </select>
+              />
               <button
                 type="button"
                 onClick={() => moverRed(index, -1)}
@@ -3574,7 +3864,7 @@ export function TarjetaForm({
         )
       })}
 
-      {redes.length < 5 && (
+      {redes.length < TOPE_REDES && (
         <Button
           type="button"
           variant="outline"
@@ -3585,11 +3875,16 @@ export function TarjetaForm({
           <Plus className="size-3.5" /> Agregar red
         </Button>
       )}
+      </div>
     </div>
   )
 
   const contenidoUbicacion = (
     <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+        <span className="text-xs text-muted-foreground">Mostrar ubicación y horario en la tarjeta</span>
+        <Switch checked={ubicacionActiva} onCheckedChange={setUbicacionActiva} />
+      </label>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
           <span className={labelClase}>Dirección física</span>
@@ -3788,40 +4083,19 @@ export function TarjetaForm({
 
   const contenidoMultimedia = (
     <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+        <span className="text-xs text-muted-foreground">Mostrar contenido multimedia en la tarjeta</span>
+        <Switch checked={multimediaActivo} onCheckedChange={setMultimediaActivo} />
+      </label>
       <p className="text-xs text-muted-foreground">
         Agrega videos (YouTube o Vimeo) o una galería de imágenes/videos propios en un slide
         horizontal.
       </p>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted-foreground">Posición en la tarjeta</span>
-        <div className="inline-flex rounded-full border border-border p-0.5">
-          <button
-            type="button"
-            onClick={() => setMultimediaAlFinal(false)}
-            className={cn(
-              "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-              !multimediaAlFinal
-                ? "bg-foreground text-background"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Donde está ahora
-          </button>
-          <button
-            type="button"
-            onClick={() => setMultimediaAlFinal(true)}
-            className={cn(
-              "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-              multimediaAlFinal
-                ? "bg-foreground text-background"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Al final, después de los botones
-          </button>
-        </div>
-      </div>
+      <p className="rounded-xl border border-dashed border-border bg-background/40 px-3 py-2 text-xs text-muted-foreground">
+        Arrastrá este bloque en la vista previa (agarrando el ⠿ que aparece arriba) para
+        reordenarlo respecto a Ubicación, Contacto/Redes y Botones.
+      </p>
 
       {multimedia.map((item, indice) => renderMultimediaFila(item, indice, multimedia.length))}
 
@@ -4971,33 +5245,123 @@ export function TarjetaForm({
     </>
   )
 
-  interface Seccion {
+  interface ModuloCanvas {
     id: string
     titulo: string
+    icono: React.ComponentType<{ className?: string }>
+    contenido: React.ReactNode
+    /** Módulos "fijos" no se pueden apagar/quitar — siempre están puestos
+     *  (Título/bio/enlace y Botones, que siempre tiene al menos Agenda). */
+    fijo?: boolean
+    activo?: boolean
+    onToggle?: (activo: boolean) => void
+  }
+
+  // Constructor visual (2026-09-02): cada bloque de la tarjeta es un módulo
+  // independiente — se selecciona haciendo clic en su elemento real dentro
+  // del preview (ver CAMPO_A_SECCION) y se edita en su propio modal
+  // flotante (ModuloFlotante), nunca en un formulario largo compartido.
+  const MODULOS_CANVAS: ModuloCanvas[] = [
+    {
+      id: "identidad",
+      titulo: "Título, bio y enlace",
+      icono: PencilLine,
+      contenido: contenidoDatosEsenciales,
+      fijo: true,
+    },
+    {
+      id: "avatar",
+      titulo: "Avatar",
+      icono: CircleUserRound,
+      contenido: contenidoAvatarModulo,
+      activo: avatarActivo,
+      onToggle: setAvatarActivo,
+    },
+    {
+      id: "banner",
+      titulo: "Banner",
+      icono: ImageIcon,
+      contenido: contenidoBannerModulo,
+      activo: bannerActivo,
+      onToggle: setBannerActivo,
+    },
+    {
+      // Unificado (2026-09-04): antes eran 2 módulos separados — ver la
+      // nota junto a `contenidoContactoYRedes` más arriba. `activo`/
+      // `onToggle` combinan los 2 switches internos en uno solo para el
+      // manager de "Módulos" (apagar acá apaga los dos; cada uno se puede
+      // reactivar individualmente adentro del modal).
+      id: "contacto-redes",
+      titulo: "Contacto y redes sociales",
+      icono: Phone,
+      contenido: contenidoContactoYRedes,
+      activo: contactoActivo || redesActivo,
+      onToggle: (activo) => {
+        setContactoActivo(activo)
+        setRedesActivo(activo)
+      },
+    },
+    {
+      id: "ubicacion",
+      titulo: "Ubicación y negocio",
+      icono: MapPin,
+      contenido: contenidoUbicacion,
+      activo: ubicacionActiva,
+      onToggle: setUbicacionActiva,
+    },
+    {
+      id: "multimedia",
+      titulo: "Contenido multimedia",
+      icono: Video,
+      contenido: contenidoMultimedia,
+      activo: multimediaActivo,
+      onToggle: setMultimediaActivo,
+    },
+    // "Agenda" (2026-08-10) ya no es su propio módulo — es un botón más
+    // dentro de "Botones" (ver renderBotonFila, tipo "agenda"), siempre
+    // presente (singleton, normalizarBotones lo sintetiza si hace falta) —
+    // por eso "Botones" es "fijo": el contenedor en el preview SIEMPRE
+    // tiene algo que mostrar/clickear, aunque el dueño nunca haya agregado
+    // un botón propio.
+    { id: "botones", titulo: "Botones", icono: LayoutGrid, contenido: contenidoBotones, fijo: true },
+  ]
+
+  interface ModuloGlobal {
+    id: string
+    titulo: string
+    icono: React.ComponentType<{ className?: string }>
     contenido: React.ReactNode
   }
 
-  const SECCIONES: Seccion[] = [
-    { id: "plantillas", titulo: "Plantillas", contenido: contenidoPlantillas },
-    { id: "datos", titulo: "Datos esenciales", contenido: contenidoDatosEsenciales },
-    { id: "colores", titulo: "Colores y tipografía", contenido: contenidoColoresYTipografia },
-    { id: "avatar-banner", titulo: "Avatar y banner", contenido: contenidoAvatarYBanner },
-    { id: "contacto", titulo: "Canales de contacto", contenido: contenidoContacto },
-    { id: "redes", titulo: "Redes sociales", contenido: contenidoRedes },
-    { id: "ubicacion", titulo: "Ubicación y negocio", contenido: contenidoUbicacion },
-    { id: "multimedia", titulo: "Contenido multimedia", contenido: contenidoMultimedia },
-    // "Agenda" (2026-08-10) ya no es su propia pestaña — es un botón más
-    // dentro de "Botones" (ver renderBotonFila, tipo "agenda"), siempre
-    // presente (singleton) y editable ahí mismo. "Orden de secciones"
-    // desapareció por completo: era solo para elegir Agenda-antes-o-
-    // después-de-Botones, y ahora ambos viven en la misma lista
-    // reordenable (ver SeccionOrdenable, lib/types.ts).
-    { id: "botones", titulo: "Botones", contenido: contenidoBotones },
-    { id: "imagen-og", titulo: "Imagen OG", contenido: contenidoImagenOg },
+  // Sin posición en la tarjeta (tema/ajustes/meta) — accesibles siempre
+  // desde la barra de control, no desde un clic en el preview.
+  const MODULOS_GLOBALES: ModuloGlobal[] = [
+    { id: "plantillas", titulo: "Plantillas", icono: LayoutGrid, contenido: contenidoPlantillas },
+    { id: "colores", titulo: "Colores y tipografía", icono: Palette, contenido: contenidoColoresYTipografia },
+    { id: "imagen-og", titulo: "Imagen OG", icono: ImageIcon, contenido: contenidoImagenOg },
     ...(esEdicion && tarjeta
-      ? [{ id: "metricas", titulo: "Estadísticas", contenido: contenidoMetricas }]
+      ? [{ id: "metricas", titulo: "Estadísticas", icono: BarChart3, contenido: contenidoMetricas }]
+      : []),
+    ...(mostrarSeccionPago
+      ? [{ id: "pago", titulo: "Tu plan", icono: CreditCard, contenido: contenidoResumenPago }]
+      : []),
+    ...(esEdicion && tarjeta
+      ? [
+          {
+            id: "compartir",
+            titulo: "Compartir",
+            icono: Share2,
+            contenido: (
+              <div className="flex flex-col gap-5 px-5 py-4">
+                <TarjetaQr slug={slugGuardado} variant="inline" />
+                <CompartirTarjeta slug={slugGuardado} titulo={nombre || "Linkard"} variant="inline" />
+              </div>
+            ),
+          },
+        ]
       : []),
   ]
+
 
   return (
     <div className="relative flex flex-1 flex-col overflow-clip bg-gradient-to-b from-indigo-50 via-white to-white dark:from-zinc-950 dark:via-black dark:to-black">
@@ -5012,25 +5376,12 @@ export function TarjetaForm({
         style={{ backgroundColor: colorSecundario }}
       />
 
-      {toast && (
-        <div
-          className={cn(
-            "fixed inset-x-0 top-4 z-50 mx-auto flex w-fit max-w-[90vw] animate-in items-center gap-2 rounded-full border px-4 py-2.5 text-center text-sm font-medium shadow-lg backdrop-blur fade-in slide-in-from-top-2 duration-300",
-            toast.tipo === "advertencia"
-              ? "border-amber-200 bg-amber-50/95 text-amber-700 dark:border-amber-900 dark:bg-amber-950/95 dark:text-amber-300"
-              : toast.tipo === "exito"
-                ? "border-emerald-200 bg-emerald-50/95 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/95 dark:text-emerald-300"
-                : "border-red-200 bg-red-50/95 text-red-700 dark:border-red-900 dark:bg-red-950/95 dark:text-red-300"
-          )}
-        >
-          {toast.tipo === "exito" ? (
-            <Check className="size-4 shrink-0" />
-          ) : (
-            <AlertTriangle className="size-4 shrink-0" />
-          )}
-          {toast.mensaje}
-        </div>
-      )}
+      <AlertaModal
+        abierto={Boolean(toast)}
+        onCerrar={() => setToast(null)}
+        tipo={toast?.tipo ?? "exito"}
+        mensaje={toast?.mensaje ?? ""}
+      />
 
       {/* Encabezado (título, banners, toggle ver/editar): solo desktop. En
           mobile el preview ocupa toda la pantalla y esta información no
@@ -5125,8 +5476,28 @@ export function TarjetaForm({
               <div className="hidden lg:absolute lg:left-1/2 lg:top-2 lg:z-10 lg:block lg:h-6 lg:w-28 lg:-translate-x-1/2 lg:rounded-full lg:bg-neutral-800" />
               <div
                 ref={previewRef}
+                // Constructor visual (2026-09-02): cada elemento con
+                // data-campo del preview es un módulo clickeable — sube por
+                // delegación hasta el ancestro con ese atributo y abre el
+                // modal flotante de ESE módulo (ver seleccionarBloqueDesde
+                // Preview, CAMPO_A_SECCION y MODULOS_CANVAS). El
+                // preventDefault evita que un clic en un pill real (tel:/
+                // wa.me/mailto/redes) navegue afuera del editor — acá el
+                // preview es para EDITAR, no para usar la tarjeta.
+                onClick={(e) => {
+                  const el = (e.target as HTMLElement).closest<HTMLElement>("[data-campo]")
+                  const campo = el?.dataset.campo
+                  // Botones de nivel superior (2026-09-03): data-campo
+                  // dinámico `boton-{id}` — es el id del módulo en sí, no
+                  // necesita pasar por CAMPO_A_SECCION (que solo mapea los
+                  // valores fijos del resto de los bloques).
+                  const moduloId = campo?.startsWith("boton-") ? campo : campo ? CAMPO_A_SECCION[campo] : undefined
+                  if (!moduloId) return
+                  e.preventDefault()
+                  seleccionarBloqueDesdePreview(moduloId)
+                }}
                 className={cn(
-                  "size-full overflow-y-auto lg:rounded-[2rem]",
+                  "tarjeta-preview-editable size-full overflow-y-auto lg:rounded-[2rem]",
                   temaModo === "oscuro" ? "bg-neutral-950" : "bg-white"
                 )}
               >
@@ -5137,44 +5508,58 @@ export function TarjetaForm({
                   slug={slugPersonalizado.trim() || tarjeta?.slug}
                   agendaServicios={agendaServiciosPreview}
                   className="w-full min-w-0 rounded-none border-0 shadow-none"
+                  modoEdicion
+                  onReordenarModulos={setOrdenModulos}
                 />
               </div>
             </div>
           </div>
         </div>
 
-        {/* Formulario desktop: exactamente el accordion de siempre. */}
+        {/* Barra de control desktop — reemplaza el acordeón de siempre. Los
+            módulos del CANVAS (Avatar, Banner, Identidad, Contacto, Redes,
+            Ubicación, Multimedia, Botones) no tienen botón acá: se
+            seleccionan clickeando su elemento real en la vista previa de
+            arriba (ver el onClick del preview). Acá solo viven "Título, bio
+            y enlace" (fijo, sin posición clickeable garantizada si el
+            título está vacío — ver nota en MODULOS_CANVAS) y los módulos
+            globales sin posición en la tarjeta (Tema/Imagen OG/etc.). */}
         <form
           id="tarjeta-form"
           onSubmit={handleGuardar}
-          className="relative z-10 hidden flex-col gap-6 lg:flex"
+          className="relative z-10 hidden flex-col gap-4 lg:flex"
         >
-          <Accordion.Root
-            defaultValue={["datos"]}
-            className="flex flex-col gap-3"
-            style={{ "--acento-bg": `${colorSecundario || "#71717a"}1a` } as React.CSSProperties}
-          >
-            {SECCIONES.map((seccion) => (
-              <Accordion.Item key={seccion.id} value={seccion.id} className={panelClase}>
-                <Accordion.Header>
-                  <Accordion.Trigger className={triggerClase}>
-                    {seccion.titulo}
-                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-panel-open:rotate-180" />
-                  </Accordion.Trigger>
-                </Accordion.Header>
-                <Accordion.Panel className={panelInnerClase}>{seccion.contenido}</Accordion.Panel>
-              </Accordion.Item>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setModuloAbierto("identidad")}
+              className={botonModuloClase}
+            >
+              <PencilLine className="size-3.5" /> Título, bio y enlace
+            </button>
+            {MODULOS_GLOBALES.map((modulo) => (
+              <button
+                key={modulo.id}
+                type="button"
+                onClick={() => setModuloAbierto(modulo.id)}
+                className={botonModuloClase}
+              >
+                <modulo.icono className="size-3.5" /> {modulo.titulo}
+              </button>
             ))}
-          </Accordion.Root>
+            <button
+              type="button"
+              onClick={() => setModuloAbierto("modulos")}
+              className={cn(botonModuloClase, "border-dashed")}
+            >
+              <Layers className="size-3.5" /> Módulos
+            </button>
+          </div>
 
-          {mostrarSeccionPago && (
-            <fieldset className={cn(panelClase, "flex flex-col gap-3 p-5")}>
-              <legend className="mb-1 px-1 text-sm font-semibold text-foreground">
-                Tu plan
-              </legend>
-              {contenidoResumenPago}
-            </fieldset>
-          )}
+          <p className="text-xs text-muted-foreground">
+            Haz clic en cualquier elemento de la vista previa para editarlo — avatar, banner,
+            botones, redes, todo se edita directo ahí.
+          </p>
 
           {contenidoAvisoBloqueos}
           {saveError && <p className="text-sm text-destructive">{saveError}</p>}
@@ -5192,8 +5577,9 @@ export function TarjetaForm({
           </Button>
         </form>
 
-        {/* Barra fija + tabs: solo mobile. El submit apunta a #tarjeta-form
-            vía el atributo `form`, aunque el <form> esté oculto en mobile. */}
+        {/* Barra fija: mobile, mismos botones que la de arriba. El submit
+            apunta a #tarjeta-form vía el atributo `form`, aunque el <form>
+            esté oculto en mobile. */}
         <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col gap-2 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] pt-2.5 backdrop-blur lg:hidden">
           {personalizacionBloqueaGuardado && <div className="px-4">{contenidoAvisoBloqueos}</div>}
           {saveError && <p className="px-4 text-xs text-destructive">{saveError}</p>}
@@ -5212,130 +5598,138 @@ export function TarjetaForm({
             </Button>
           </div>
           <nav className="flex gap-1.5 overflow-x-auto px-4 pb-2.5">
-            {SECCIONES.map((seccion) => (
+            <button
+              type="button"
+              onClick={() => setModuloAbierto("identidad")}
+              className={botonModuloClase}
+            >
+              <PencilLine className="size-3.5" /> Título y bio
+            </button>
+            {MODULOS_GLOBALES.map((modulo) => (
               <button
-                key={seccion.id}
+                key={modulo.id}
                 type="button"
-                onClick={() => setTabMovilAbierto(seccion.id)}
-                className={tabMovilClase}
+                onClick={() => setModuloAbierto(modulo.id)}
+                className={botonModuloClase}
               >
-                {seccion.titulo}
+                <modulo.icono className="size-3.5" /> {modulo.titulo}
               </button>
             ))}
-            {mostrarSeccionPago && (
-              <button
-                type="button"
-                onClick={() => setTabMovilAbierto("pago")}
-                className={tabMovilClase}
-              >
-                Tu plan
-              </button>
-            )}
-            {esEdicion && tarjeta && (
-              <button
-                type="button"
-                onClick={() => setTabMovilAbierto("compartir")}
-                className={tabMovilClase}
-              >
-                Compartir
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setModuloAbierto("modulos")}
+              className={cn(botonModuloClase, "border-dashed")}
+            >
+              <Layers className="size-3.5" /> Módulos
+            </button>
           </nav>
         </div>
 
-        {/* Drawers mobile: un Drawer por sección, mismo `seccion.contenido`
-            que usa el accordion de desktop (nada duplicado). */}
-        {SECCIONES.map((seccion) => (
-          <Drawer.Root
-            key={seccion.id}
-            open={tabMovilAbierto === seccion.id}
-            onOpenChange={(open) => setTabMovilAbierto(open ? seccion.id : null)}
+        {/* Modales flotantes — un módulo a la vez. Los del canvas se abren
+            clickeando el elemento real en el preview; los globales, desde
+            los botones de la barra de arriba. */}
+        {MODULOS_CANVAS.map((modulo) => (
+          <ModuloFlotante
+            key={modulo.id}
+            abierto={moduloAbierto === modulo.id}
+            onCerrar={() => setModuloAbierto(null)}
+            titulo={modulo.titulo}
+            onEliminar={modulo.fijo ? undefined : () => ocultarModulo(modulo)}
           >
-            <Drawer.Portal>
-              <Drawer.Backdrop className={drawerBackdropClase} />
-              <Drawer.Viewport className={drawerViewportClase}>
-                <Drawer.Popup className={drawerPopupClase}>
-                  <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border" />
-                  <div className="flex items-center justify-between px-5 py-3">
-                    <Drawer.Title className="text-sm font-semibold text-foreground">
-                      {seccion.titulo}
-                    </Drawer.Title>
-                    <Drawer.Close
-                      aria-label="Cerrar"
-                      className="rounded-full p-1.5 text-muted-foreground hover:bg-muted"
-                    >
-                      <X className="size-4" />
-                    </Drawer.Close>
-                  </div>
-                  {seccion.contenido}
-                </Drawer.Popup>
-              </Drawer.Viewport>
-            </Drawer.Portal>
-          </Drawer.Root>
+            {modulo.contenido}
+          </ModuloFlotante>
+        ))}
+        {/* Cada botón de nivel superior es TAMBIÉN su propio módulo
+            independiente (2026-09-03) — clic en el botón real del preview
+            abre directo este modal, sin pasar por el manager de "Botones"
+            entero. Sin onEliminar: la fila de renderBotonFila ya trae su
+            propio 🗑 (deshabilitado para Agenda, que es singleton). */}
+        {botones.map((boton, index) => (
+          <ModuloFlotante
+            key={`boton-${boton.id}`}
+            abierto={moduloAbierto === `boton-${boton.id}`}
+            onCerrar={() => setModuloAbierto(null)}
+            titulo={boton.titulo.trim() || `${ETIQUETA_TIPO_BOTON[boton.tipo]} sin título`}
+          >
+            <div className="p-3">
+              {renderBotonFila(boton, { indice: index }, index, botones.length)}
+            </div>
+          </ModuloFlotante>
+        ))}
+        {MODULOS_GLOBALES.map((modulo) => (
+          <ModuloFlotante
+            key={modulo.id}
+            abierto={moduloAbierto === modulo.id}
+            onCerrar={() => setModuloAbierto(null)}
+            titulo={modulo.titulo}
+          >
+            {modulo.contenido}
+          </ModuloFlotante>
         ))}
 
-        {mostrarSeccionPago && (
-          <Drawer.Root
-            open={tabMovilAbierto === "pago"}
-            onOpenChange={(open) => setTabMovilAbierto(open ? "pago" : null)}
-          >
-            <Drawer.Portal>
-              <Drawer.Backdrop className={drawerBackdropClase} />
-              <Drawer.Viewport className={drawerViewportClase}>
-                <Drawer.Popup className={drawerPopupClase}>
-                  <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border" />
-                  <div className="flex items-center justify-between px-5 py-3">
-                    <Drawer.Title className="text-sm font-semibold text-foreground">
-                      Tu plan
-                    </Drawer.Title>
-                    <Drawer.Close
-                      aria-label="Cerrar"
-                      className="rounded-full p-1.5 text-muted-foreground hover:bg-muted"
+        {/* "Módulos": manager con TODOS los módulos del canvas, fijos y
+            opcionales — nunca aparece vacío (a diferencia del picker
+            "agregar" viejo, que solo listaba los apagados y confundía
+            cuando ya estaban todos prendidos por default). El switch de
+            cada tarjeta prende/apaga sin salir del panel; clickear la
+            tarjeta (fuera del switch) abre directo su modal de edición,
+            esté prendido o apagado — permite completar contenido de un
+            módulo antes de mostrarlo. */}
+        <ModuloFlotante
+          abierto={moduloAbierto === "modulos"}
+          onCerrar={() => setModuloAbierto(null)}
+          titulo="Módulos de tu tarjeta"
+        >
+          <div className="grid grid-cols-2 gap-2.5 p-5 sm:grid-cols-3">
+            {MODULOS_CANVAS.map((modulo) => {
+              const prendido = modulo.fijo || modulo.activo
+              return (
+                <div
+                  key={modulo.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setModuloAbierto(modulo.id)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return
+                    e.preventDefault()
+                    setModuloAbierto(modulo.id)
+                  }}
+                  className={cn(
+                    "group relative flex flex-col items-center gap-2 rounded-2xl border-2 p-4 text-center text-xs font-medium transition-colors duration-200 ease-out",
+                    prendido
+                      ? "border-border bg-background hover:border-foreground/50"
+                      : "border-dashed border-border/70 bg-background/40 text-muted-foreground hover:border-foreground/50 hover:text-foreground"
+                  )}
+                >
+                  {modulo.fijo ? (
+                    <span className="absolute right-2 top-2 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      Fijo
+                    </span>
+                  ) : (
+                    <span
+                      className="absolute right-2 top-2"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <X className="size-4" />
-                    </Drawer.Close>
-                  </div>
-                  <div className="px-5 pb-5">{contenidoResumenPago}</div>
-                </Drawer.Popup>
-              </Drawer.Viewport>
-            </Drawer.Portal>
-          </Drawer.Root>
-        )}
-
-        {esEdicion && tarjeta && (
-          <Drawer.Root
-            open={tabMovilAbierto === "compartir"}
-            onOpenChange={(open) => setTabMovilAbierto(open ? "compartir" : null)}
-          >
-            <Drawer.Portal>
-              <Drawer.Backdrop className={drawerBackdropClase} />
-              <Drawer.Viewport className={drawerViewportClase}>
-                <Drawer.Popup className={drawerPopupClase}>
-                  <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-border" />
-                  <div className="flex items-center justify-between px-5 py-3">
-                    <Drawer.Title className="text-sm font-semibold text-foreground">
-                      Compartir
-                    </Drawer.Title>
-                    <Drawer.Close
-                      aria-label="Cerrar"
-                      className="rounded-full p-1.5 text-muted-foreground hover:bg-muted"
-                    >
-                      <X className="size-4" />
-                    </Drawer.Close>
-                  </div>
-                  <div className="flex flex-col gap-5 px-5 pb-5">
-                    <TarjetaQr slug={slugGuardado} variant="inline" />
-                    <CompartirTarjeta
-                      slug={slugGuardado}
-                      titulo={nombre || "Linkard"}
-                      variant="inline"
-                    />
-                  </div>
-                </Drawer.Popup>
-              </Drawer.Viewport>
-            </Drawer.Portal>
-          </Drawer.Root>
-        )}
+                      <Switch
+                        checked={Boolean(modulo.activo)}
+                        onCheckedChange={(activo) => modulo.onToggle?.(activo)}
+                      />
+                    </span>
+                  )}
+                  <span
+                    className={cn(
+                      "flex size-9 items-center justify-center rounded-full transition-colors duration-200 ease-out",
+                      prendido ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    <modulo.icono className="size-4" />
+                  </span>
+                  <span className="text-foreground">{modulo.titulo}</span>
+                </div>
+              )
+            })}
+          </div>
+        </ModuloFlotante>
       </div>
 
       {avatarMostrado && (

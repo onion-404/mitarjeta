@@ -5,6 +5,7 @@ import { CreditCard, Layers, Loader2, Pencil, Plus } from "lucide-react"
 import Link from "next/link"
 import * as React from "react"
 
+import { InstalarAppCard } from "@/components/panel/instalar-app-card"
 import { buttonVariants } from "@/components/ui/button"
 import { getTarjetasDeUsuario, nombrePrincipalDeTarjeta } from "@/lib/tarjetas"
 import { supabase } from "@/lib/supabase"
@@ -48,6 +49,8 @@ export default function MiCuentaPage() {
         <h1 className="text-2xl font-semibold text-foreground">Resumen</h1>
         <p className="mt-1 text-sm text-muted-foreground">{session?.user.email}</p>
       </div>
+
+      <InstalarAppCard />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <div className="relative overflow-hidden rounded-3xl border border-black/5 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">

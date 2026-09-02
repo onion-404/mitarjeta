@@ -1,11 +1,15 @@
 "use client"
 
-import { AlertTriangle, ArrowLeft, Check, Loader2 } from "lucide-react"
+import { ArrowLeft, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { use } from "react"
 import * as React from "react"
 
+import { AlertaModal } from "@/components/ui/alerta-modal"
 import { Button } from "@/components/ui/button"
+import { ConfirmModal } from "@/components/ui/confirm-modal"
+import { Switch } from "@/components/ui/switch"
+import { VerificadoBadge } from "@/components/verificado-badge"
 import { getPlanesActivos, getPlanPorId } from "@/lib/planes"
 import { supabase } from "@/lib/supabase"
 import {
@@ -57,6 +61,17 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
 
   // --- Cancelar suscripción manual (libera la tarjeta para repagar) ---
   const [cancelando, setCancelando] = React.useState(false)
+
+  // --- Verificación (ícono junto al @slug en la tarjeta pública) ---
+  const [verificando, setVerificando] = React.useState(false)
+
+  // Confirmaciones (2026-09-04, reemplaza window.confirm — "cualquier
+  // notificación o alerta aparezca como modal") — una sola instancia de
+  // ConfirmModal para las 2 acciones de esta página que lo necesitan.
+  const [confirmando, setConfirmando] = React.useState<{
+    mensaje: string
+    accion: () => void
+  } | null>(null)
 
   const cargar = React.useCallback(async () => {
     const [t, planes] = await Promise.all([getTarjetaPorId(id), getPlanesActivos()])
@@ -133,16 +148,8 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
     await cargar()
   }
 
-  async function handleCancelarSuscripcion() {
+  async function ejecutarCancelarSuscripcion() {
     if (!suscripcion) return
-    if (
-      !window.confirm(
-        'Cancelar esta suscripción manual va a dejar la tarjeta SIN plan activo — se ve "temporalmente inactiva" para cualquier visitante hasta que se active otra (Stripe o una manual nueva). ¿Continuar?'
-      )
-    ) {
-      return
-    }
-
     setMensaje(null)
     setCancelando(true)
     const { data: sessionData } = await supabase.auth.getSession()
@@ -163,22 +170,41 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
     await cargar()
   }
 
-  async function handleReasignar(event: React.FormEvent) {
-    event.preventDefault()
+  function handleCancelarSuscripcion() {
+    if (!suscripcion) return
+    setConfirmando({
+      mensaje:
+        'Cancelar esta suscripción manual va a dejar la tarjeta SIN plan activo — se ve "temporalmente inactiva" para cualquier visitante hasta que se active otra (Stripe o una manual nueva). ¿Continuar?',
+      accion: ejecutarCancelarSuscripcion,
+    })
+  }
+
+  async function handleVerificar(siguiente: boolean) {
+    if (!tarjeta) return
     setMensaje(null)
+    setVerificando(true)
+    const { data: sessionData } = await supabase.auth.getSession()
+    const accessToken = sessionData.session?.access_token
+    const res = await fetch("/api/admin/verificar-tarjeta", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ tarjetaId: id, verificado: siguiente }),
+    })
+    const data = (await res.json()) as { error?: string }
+    setVerificando(false)
 
-    if (!emailReasignar.trim()) {
-      setMensaje({ tipo: "error", texto: "Ingresa el email de la cuenta destino." })
+    if (!res.ok) {
+      setMensaje({ tipo: "error", texto: data.error ?? "No pudimos actualizar la verificación." })
       return
     }
-    if (
-      !window.confirm(
-        `¿Reasignar esta tarjeta a ${emailReasignar.trim()}? El dueño actual dejará de tener acceso.`
-      )
-    ) {
-      return
-    }
+    setMensaje({
+      tipo: "exito",
+      texto: siguiente ? "Tarjeta marcada como verificada." : "Se quitó la verificación.",
+    })
+    await cargar()
+  }
 
+  async function ejecutarReasignar() {
     setReasignando(true)
     const { data: sessionData } = await supabase.auth.getSession()
     const accessToken = sessionData.session?.access_token
@@ -197,6 +223,19 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
     setMensaje({ tipo: "exito", texto: `Tarjeta reasignada a ${data.email}.` })
     setEmailReasignar("")
     await cargar()
+  }
+
+  function handleReasignar(event: React.FormEvent) {
+    event.preventDefault()
+    setMensaje(null)
+    if (!emailReasignar.trim()) {
+      setMensaje({ tipo: "error", texto: "Ingresa el email de la cuenta destino." })
+      return
+    }
+    setConfirmando({
+      mensaje: `¿Reasignar esta tarjeta a ${emailReasignar.trim()}? El dueño actual dejará de tener acceso.`,
+      accion: ejecutarReasignar,
+    })
   }
 
   if (tarjeta === undefined) {
@@ -230,8 +269,9 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
         >
           <ArrowLeft className="size-4" /> Volver al listado
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold text-foreground">
+        <h1 className="mt-2 flex items-center gap-1.5 text-2xl font-semibold text-foreground">
           {nombrePrincipalDeTarjeta(tarjeta)}
+          {tarjeta.verificado && <VerificadoBadge className="size-5 shrink-0" />}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           <Link href={`/${tarjeta.slug}`} target="_blank" className="underline underline-offset-2">
@@ -244,23 +284,12 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
         </p>
       </div>
 
-      {mensaje && (
-        <div
-          className={cn(
-            "flex items-center gap-2 rounded-xl border p-3 text-sm",
-            mensaje.tipo === "error"
-              ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-              : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
-          )}
-        >
-          {mensaje.tipo === "error" ? (
-            <AlertTriangle className="size-4 shrink-0" />
-          ) : (
-            <Check className="size-4 shrink-0" />
-          )}
-          {mensaje.texto}
-        </div>
-      )}
+      <AlertaModal
+        abierto={Boolean(mensaje)}
+        onCerrar={() => setMensaje(null)}
+        tipo={mensaje?.tipo ?? "exito"}
+        mensaje={mensaje?.texto ?? ""}
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-zinc-900">
@@ -400,7 +429,39 @@ export default function AdminTarjetaDetallePage({ params }: AdminTarjetaDetalleP
             </Button>
           </form>
         </div>
+
+        <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+            <VerificadoBadge className="size-4" />
+            Verificación
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Muestra un ícono de verificación junto al @{tarjeta.slug} en la tarjeta pública. Nada
+            que ver con el plan — es un check exclusivo tuyo, el dueño no lo puede activar desde
+            su editor.
+          </p>
+          <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+            <span className="text-sm font-medium text-foreground">Tarjeta verificada</span>
+            <Switch
+              checked={tarjeta.verificado}
+              onCheckedChange={handleVerificar}
+              disabled={verificando}
+            />
+          </label>
+        </div>
       </div>
+
+      <ConfirmModal
+        abierto={Boolean(confirmando)}
+        mensaje={confirmando?.mensaje ?? ""}
+        destructivo
+        textoConfirmar="Continuar"
+        onConfirmar={() => {
+          confirmando?.accion()
+          setConfirmando(null)
+        }}
+        onCancelar={() => setConfirmando(null)}
+      />
     </div>
   )
 }

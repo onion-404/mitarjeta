@@ -67,6 +67,7 @@ import type {
   DatosContacto,
   EstiloTipografia,
   IdentidadVisual,
+  ModuloOrdenable,
   SeccionOrdenable,
 } from "@/lib/types"
 
@@ -357,6 +358,45 @@ export function ordenContactoNormalizado(orden?: ContactoOrdenable[]): ContactoO
   const conocidos = orden.filter((id) => ORDEN_CONTACTO_DEFAULT.includes(id))
   const faltantes = ORDEN_CONTACTO_DEFAULT.filter((id) => !conocidos.includes(id))
   return [...conocidos, ...faltantes]
+}
+
+// ============================================================================
+// Orden de los 4 bloques de contenido reordenables por drag-and-drop en el
+// constructor visual (2026-09-03) — mismo patrón tolerante-hacia-adelante que
+// ordenContactoNormalizado, pero moviendo BLOQUES enteros entre sí (Avatar/
+// Banner/Identidad quedan afuera, son estructurales — ver IdentidadVisual.
+// ordenModulos en lib/types.ts).
+// ============================================================================
+export const MODULOS_ORDENABLES: { id: ModuloOrdenable; etiqueta: string }[] = [
+  { id: "ubicacion", etiqueta: "Ubicación y negocio" },
+  { id: "contacto-redes", etiqueta: "Contacto y redes" },
+  { id: "multimedia", etiqueta: "Contenido multimedia" },
+  { id: "botones", etiqueta: "Botones" },
+]
+
+export const ORDEN_MODULOS_DEFAULT: ModuloOrdenable[] = [
+  "ubicacion",
+  "contacto-redes",
+  "multimedia",
+  "botones",
+]
+
+/** Sin `orden` guardado, migra en memoria desde `multimediaAlFinal`
+ *  (@deprecated, lib/types.ts) — nunca vuelve a escribirse. Con `orden`
+ *  guardado, tolerante hacia adelante: descarta ids que ya no existen y
+ *  agrega al final cualquier bloque nuevo que esa tarjeta nunca reordenó. */
+export function ordenModulosNormalizado(
+  orden: ModuloOrdenable[] | undefined,
+  multimediaAlFinalLegacy: boolean | undefined
+): ModuloOrdenable[] {
+  if (orden && orden.length > 0) {
+    const conocidos = orden.filter((id) => ORDEN_MODULOS_DEFAULT.includes(id))
+    const faltantes = ORDEN_MODULOS_DEFAULT.filter((id) => !conocidos.includes(id))
+    return [...conocidos, ...faltantes]
+  }
+  return multimediaAlFinalLegacy
+    ? ["ubicacion", "contacto-redes", "botones", "multimedia"]
+    : ORDEN_MODULOS_DEFAULT
 }
 
 // ============================================================================

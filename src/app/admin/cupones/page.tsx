@@ -4,6 +4,7 @@ import { ChevronDown, Loader2, Plus, Trash2 } from "lucide-react"
 import * as React from "react"
 
 import { Button } from "@/components/ui/button"
+import { ConfirmModal } from "@/components/ui/confirm-modal"
 import { getAfiliados } from "@/lib/afiliados"
 import {
   actualizarCupon,
@@ -114,6 +115,10 @@ export default function AdminCuponesPage() {
   const [editForm, setEditForm] = React.useState<FormularioCupon | null>(null)
   const [guardandoId, setGuardandoId] = React.useState<number | null>(null)
   const [eliminandoId, setEliminandoId] = React.useState<number | null>(null)
+  // Confirmación de borrado (2026-09-04, reemplaza window.confirm).
+  const [confirmando, setConfirmando] = React.useState<{ mensaje: string; accion: () => void } | null>(
+    null
+  )
 
   function recargar() {
     getCupones().then(setCupones)
@@ -193,14 +198,7 @@ export default function AdminCuponesPage() {
     }
   }
 
-  async function handleEliminar(cupon: Cupon) {
-    const usos = rendimientoPorCodigo.get(cupon.codigo)?.usosTotal ?? 0
-    const mensaje =
-      usos > 0
-        ? `Este cupón tiene ${usos} uso${usos === 1 ? "" : "s"} registrado${usos === 1 ? "" : "s"}. Se va a borrar el cupón, pero el historial de uso y las métricas del afiliado se conservan. ¿Continuar?`
-        : `¿Eliminar el cupón "${cupon.codigo}"? Esta acción no se puede deshacer.`
-    if (!window.confirm(mensaje)) return
-
+  async function ejecutarEliminar(cupon: Cupon) {
     setEliminandoId(cupon.id)
     const { error } = await eliminarCupon(cupon.id)
     setEliminandoId(null)
@@ -209,6 +207,15 @@ export default function AdminCuponesPage() {
       setEditForm(null)
       recargar()
     }
+  }
+
+  function handleEliminar(cupon: Cupon) {
+    const usos = rendimientoPorCodigo.get(cupon.codigo)?.usosTotal ?? 0
+    const mensaje =
+      usos > 0
+        ? `Este cupón tiene ${usos} uso${usos === 1 ? "" : "s"} registrado${usos === 1 ? "" : "s"}. Se va a borrar el cupón, pero el historial de uso y las métricas del afiliado se conservan. ¿Continuar?`
+        : `¿Eliminar el cupón "${cupon.codigo}"? Esta acción no se puede deshacer.`
+    setConfirmando({ mensaje, accion: () => ejecutarEliminar(cupon) })
   }
 
   return (
@@ -498,6 +505,19 @@ export default function AdminCuponesPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        abierto={Boolean(confirmando)}
+        titulo="Eliminar cupón"
+        mensaje={confirmando?.mensaje ?? ""}
+        destructivo
+        textoConfirmar="Eliminar"
+        onConfirmar={() => {
+          confirmando?.accion()
+          setConfirmando(null)
+        }}
+        onCancelar={() => setConfirmando(null)}
+      />
     </div>
   )
 }

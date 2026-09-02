@@ -79,6 +79,7 @@ export function TarjetaPublica({ tarjeta, slug, agendaServicios }: TarjetaPublic
             permitirAgendar
             tarjetaId={tarjeta.id}
             zonaHoraria={tarjeta.zona_horaria}
+            verificado={tarjeta.verificado}
             pantallaCompleta
             className={cn("relative", tieneFondoImagen && "rounded-b-none")}
           />
