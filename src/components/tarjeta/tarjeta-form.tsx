@@ -2,21 +2,28 @@
 
 import { Dialog } from "@base-ui/react/dialog"
 import {
+  ArrowLeft,
   ArrowRight,
   BarChart3,
+  Calendar,
   Check,
   ChevronDown,
   ChevronUp,
   CircleUserRound,
   CreditCard,
+  Eye,
+  EyeOff,
   FileText,
   GripVertical,
   Image as ImageIcon,
   Images,
   Layers,
   LayoutGrid,
+  Link2,
+  ListTree,
   Loader2,
   MapPin,
+  MessageCircle,
   Moon,
   Move,
   Palette,
@@ -232,6 +239,15 @@ const ETIQUETA_TIPO_BOTON: Record<BotonTipo, string> = {
   catalogo: "Catálogo",
   archivo: "Archivo",
   agenda: "Agenda",
+}
+
+const ICONO_TIPO_BOTON: Record<BotonTipo, React.ComponentType<{ className?: string }>> = {
+  enlace: Link2,
+  whatsapp: MessageCircle,
+  opciones: ListTree,
+  catalogo: Images,
+  archivo: FileText,
+  agenda: Calendar,
 }
 
 /** Convierte un `Boton` ya normalizado (`normalizarBotones()`, ver
@@ -459,7 +475,11 @@ const CAMPO_A_SECCION: Record<string, string> = {
   contacto: "contacto-redes",
   redes: "contacto-redes",
   video: "multimedia",
-  botones: "botones",
+  // "botones" (el contenedor, data-campo="botones") queda SIN mapeo a
+  // propósito (2026-09-05): ya no existe un módulo "Botones" bundled — un
+  // clic en el contenedor que no caiga en ningún botón puntual (data-campo
+  // dinámico `boton-{id}`, manejado aparte en el onClick del preview) no
+  // abre nada, mismo criterio que "divisor".
 }
 
 /** Colores de fondo/borde en uso en un botón y (recursivamente) en sus
@@ -678,6 +698,105 @@ function ModuloFlotante({
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
+  )
+}
+
+/** Fila del panel "Capas" (2026-09-05, estilo Divi: outline/layer manager
+ *  con ver-y-reordenar-y-ocultar) — un componente único reusado tanto para
+ *  los 6 bloques estructurales/reordenables como para cada botón
+ *  individual, con las mismas 4 acciones posibles: seleccionar (clic en la
+ *  fila → abre su modal), reordenar (↑/↓, opcional), mostrar/ocultar
+ *  (ojo, opcional — módulos "fijos" muestran una etiqueta en vez del ojo,
+ *  no se pueden ocultar) y eliminar (🗑, opcional, solo para botones no-
+ *  singleton). Nada de esto depende de un mecanismo de arrastre nuevo: ↑/↓
+ *  reusan las mismas funciones que ya mueven bloques/botones en el resto
+ *  del editor. */
+function CapaFila({
+  icono: Icono,
+  titulo,
+  onClick,
+  fijo,
+  activo,
+  onToggle,
+  onSubir,
+  onBajar,
+  disabledSubir,
+  disabledBajar,
+  onEliminar,
+}: {
+  icono: React.ComponentType<{ className?: string }>
+  titulo: string
+  onClick: () => void
+  fijo?: boolean
+  activo?: boolean
+  onToggle?: (activo: boolean) => void
+  onSubir?: () => void
+  onBajar?: () => void
+  disabledSubir?: boolean
+  disabledBajar?: boolean
+  onEliminar?: () => void
+}) {
+  return (
+    <div className="flex items-center gap-1 rounded-xl border border-border bg-background/50 py-1.5 pl-3 pr-1.5">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex min-w-0 flex-1 items-center gap-2.5 py-1 text-left"
+      >
+        <Icono className="size-4 shrink-0 text-muted-foreground" />
+        <span className="truncate text-sm font-medium text-foreground">{titulo}</span>
+      </button>
+      <div className="flex shrink-0 items-center gap-0.5">
+        {(onSubir || onBajar) && (
+          <>
+            <button
+              type="button"
+              onClick={onSubir}
+              disabled={disabledSubir}
+              aria-label={`Subir ${titulo}`}
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+            >
+              <ChevronUp className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onBajar}
+              disabled={disabledBajar}
+              aria-label={`Bajar ${titulo}`}
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+            >
+              <ChevronDown className="size-3.5" />
+            </button>
+          </>
+        )}
+        {fijo ? (
+          <span className="mx-1 shrink-0 rounded-full bg-muted px-2 py-1 text-[10px] font-medium text-muted-foreground">
+            Fijo
+          </span>
+        ) : (
+          onToggle && (
+            <button
+              type="button"
+              onClick={() => onToggle(!activo)}
+              aria-label={activo ? `Ocultar ${titulo}` : `Mostrar ${titulo}`}
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
+            >
+              {activo ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+            </button>
+          )
+        )}
+        {onEliminar && (
+          <button
+            type="button"
+            onClick={onEliminar}
+            aria-label={`Quitar ${titulo}`}
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -947,6 +1066,20 @@ export function TarjetaForm({
   const [ordenModulos, setOrdenModulos] = React.useState<ModuloOrdenable[]>(() =>
     ordenModulosNormalizado(visualInicial?.ordenModulos, visualInicial?.multimediaAlFinal)
   )
+
+  /** Reordenar dos bloques entre sí desde el panel "Capas" (2026-09-05) —
+   *  mismo array que ya mueve el drag-and-drop del preview, esto es solo
+   *  otra forma de tocarlo (flechas en vez de arrastre). */
+  function moverModulo(id: ModuloOrdenable, direccion: -1 | 1) {
+    setOrdenModulos((prev) => {
+      const i = prev.indexOf(id)
+      const j = i + direccion
+      if (i < 0 || j < 0 || j >= prev.length) return prev
+      const copia = [...prev]
+      ;[copia[i], copia[j]] = [copia[j], copia[i]]
+      return copia
+    })
+  }
 
   // --- Personalización avanzada (gating por plan, ver lib/personalizacion.ts) ---
   const [colorBotones, setColorBotones] = React.useState(
@@ -4963,53 +5096,76 @@ export function TarjetaForm({
     )
   }
 
-  const contenidoBotones = (
-    <div className="flex flex-col gap-3 px-5 pb-5 pt-1">
-      <p className="text-xs text-muted-foreground">
-        Elige el tipo de botón: enlace directo, WhatsApp, un menú de opciones, un catálogo de
-        productos o servicios, o un archivo descargable.
-      </p>
-
-      {botones.map((boton, index) => renderBotonFila(boton, { indice: index }, index, botones.length))}
-
-      {botones.length < TOPE_BOTONES && (
-        <SelectorTipoBoton
-          opciones={[
-            { tipo: "enlace", etiqueta: "Enlace", disponible: true },
-            { tipo: "whatsapp", etiqueta: "WhatsApp", disponible: true },
-            { tipo: "opciones", etiqueta: "Opciones", disponible: true },
-            {
-              tipo: "catalogo",
-              etiqueta: "Catálogo",
-              disponible: !catalogoBloqueado,
-              plan: catalogoPlanNecesario,
-            },
-            { tipo: "archivo", etiqueta: "Archivo", disponible: archivoDisponible, plan: "growth" },
-          ]}
-          onElegir={agregarBoton}
-        />
-      )}
-
-      {itemEnReposicion && (
-        <ReposicionarImagen
-          abierto={Boolean(reposicionandoItemCatalogo)}
-          imagenUrl={imagenItemEnReposicion}
-          valorInicial={itemEnReposicion.imagenPosicion}
-          alto={280}
-          onCancelar={() => setReposicionandoItemCatalogo(null)}
-          onConfirmar={(pos) => {
-            if (!reposicionandoItemCatalogo) return
-            actualizarItemCatalogo(
-              reposicionandoItemCatalogo.ubicacion,
-              reposicionandoItemCatalogo.indiceItem,
-              "imagenPosicion",
-              pos
-            )
-            setReposicionandoItemCatalogo(null)
-          }}
-        />
+  // "Agregar botón" (2026-09-05, reemplaza el viejo contenidoBotones
+  // bundled — pedido explícito: "los botones deben ser módulos
+  // independientes") — segundo nivel del picker "+ Agregar módulo": elegir
+  // un tipo acá crea el botón Y abre directo su propio modal
+  // (`boton-{id}`), nunca una lista compartida. La lista de botones
+  // existentes vive en el panel "Capas", no acá.
+  const contenidoAgregarBoton = (
+    <div className="flex flex-col gap-3 p-5">
+      <button
+        type="button"
+        onClick={() => setModuloAbierto("agregar")}
+        className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="size-3.5" /> Volver
+      </button>
+      {botones.length < TOPE_BOTONES ? (
+        <>
+          <p className="text-xs text-muted-foreground">
+            Elige el tipo de botón: enlace directo, WhatsApp, un menú de opciones, un catálogo de
+            productos o servicios, o un archivo descargable.
+          </p>
+          <SelectorTipoBoton
+            opciones={[
+              { tipo: "enlace", etiqueta: "Enlace", disponible: true },
+              { tipo: "whatsapp", etiqueta: "WhatsApp", disponible: true },
+              { tipo: "opciones", etiqueta: "Opciones", disponible: true },
+              {
+                tipo: "catalogo",
+                etiqueta: "Catálogo",
+                disponible: !catalogoBloqueado,
+                plan: catalogoPlanNecesario,
+              },
+              { tipo: "archivo", etiqueta: "Archivo", disponible: archivoDisponible, plan: "growth" },
+            ]}
+            onElegir={(tipo) => {
+              const id = agregarBoton(tipo)
+              if (id) setModuloAbierto(`boton-${id}`)
+            }}
+          />
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Llegaste al máximo de {TOPE_BOTONES} botones.
+        </p>
       )}
     </div>
+  )
+
+  // El modal de "reposicionar imagen" de un ítem de catálogo ya no vive
+  // adentro de un módulo de botones bundled (ese ya no existe) — queda
+  // como un modal global aparte, montado una sola vez, disparado desde
+  // cualquiera de los modales individuales de botones tipo "catálogo".
+  const contenidoReposicionarItemCatalogo = itemEnReposicion && (
+    <ReposicionarImagen
+      abierto={Boolean(reposicionandoItemCatalogo)}
+      imagenUrl={imagenItemEnReposicion}
+      valorInicial={itemEnReposicion.imagenPosicion}
+      alto={280}
+      onCancelar={() => setReposicionandoItemCatalogo(null)}
+      onConfirmar={(pos) => {
+        if (!reposicionandoItemCatalogo) return
+        actualizarItemCatalogo(
+          reposicionandoItemCatalogo.ubicacion,
+          reposicionandoItemCatalogo.indiceItem,
+          "imagenPosicion",
+          pos
+        )
+        setReposicionandoItemCatalogo(null)
+      }}
+    />
   )
 
   const contenidoImagenOg = (
@@ -5317,13 +5473,13 @@ export function TarjetaForm({
       activo: multimediaActivo,
       onToggle: setMultimediaActivo,
     },
-    // "Agenda" (2026-08-10) ya no es su propio módulo — es un botón más
-    // dentro de "Botones" (ver renderBotonFila, tipo "agenda"), siempre
-    // presente (singleton, normalizarBotones lo sintetiza si hace falta) —
-    // por eso "Botones" es "fijo": el contenedor en el preview SIEMPRE
-    // tiene algo que mostrar/clickear, aunque el dueño nunca haya agregado
-    // un botón propio.
-    { id: "botones", titulo: "Botones", icono: LayoutGrid, contenido: contenidoBotones, fijo: true },
+    // "Botones" ya NO es una entrada acá (2026-09-05, pedido explícito:
+    // "los botones deben ser módulos independientes") — cada botón es su
+    // propio módulo, con su propio modal (ver el `.map(botones...)` más
+    // abajo, junto a MODULOS_CANVAS.map). Se agregan/reordenan/ocultan
+    // desde el panel "Capas" o el picker "+ Agregar módulo", nunca como un
+    // grupo bundled. "Agenda" sigue siendo un botón más (singleton,
+    // normalizarBotones lo sintetiza si hace falta).
   ]
 
   interface ModuloGlobal {
@@ -5549,10 +5705,10 @@ export function TarjetaForm({
             ))}
             <button
               type="button"
-              onClick={() => setModuloAbierto("modulos")}
+              onClick={() => setModuloAbierto("capas")}
               className={cn(botonModuloClase, "border-dashed")}
             >
-              <Layers className="size-3.5" /> Módulos
+              <Layers className="size-3.5" /> Capas
             </button>
           </div>
 
@@ -5617,10 +5773,10 @@ export function TarjetaForm({
             ))}
             <button
               type="button"
-              onClick={() => setModuloAbierto("modulos")}
+              onClick={() => setModuloAbierto("capas")}
               className={cn(botonModuloClase, "border-dashed")}
             >
-              <Layers className="size-3.5" /> Módulos
+              <Layers className="size-3.5" /> Capas
             </button>
           </nav>
         </div>
@@ -5667,70 +5823,173 @@ export function TarjetaForm({
           </ModuloFlotante>
         ))}
 
-        {/* "Módulos": manager con TODOS los módulos del canvas, fijos y
-            opcionales — nunca aparece vacío (a diferencia del picker
-            "agregar" viejo, que solo listaba los apagados y confundía
-            cuando ya estaban todos prendidos por default). El switch de
-            cada tarjeta prende/apaga sin salir del panel; clickear la
-            tarjeta (fuera del switch) abre directo su modal de edición,
-            esté prendido o apagado — permite completar contenido de un
-            módulo antes de mostrarlo. */}
+        {/* "Capas": outline/layer manager estilo Divi (2026-09-05, pedido
+            explícito) — TODOS los módulos en su orden real, uno por fila:
+            seleccionar (clic), reordenar (↑/↓, reusa moverModulo/
+            moverBotonEn — el mismo array que ya mueve el drag-and-drop del
+            preview), mostrar/ocultar (ojo) y eliminar (🗑, solo botones no-
+            singleton). Cada botón es su propia fila — nunca aparecen
+            agrupados bajo un "Botones" genérico. */}
         <ModuloFlotante
-          abierto={moduloAbierto === "modulos"}
+          abierto={moduloAbierto === "capas"}
           onCerrar={() => setModuloAbierto(null)}
-          titulo="Módulos de tu tarjeta"
+          titulo="Capas de tu tarjeta"
         >
-          <div className="grid grid-cols-2 gap-2.5 p-5 sm:grid-cols-3">
-            {MODULOS_CANVAS.map((modulo) => {
-              const prendido = modulo.fijo || modulo.activo
-              return (
-                <div
-                  key={modulo.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setModuloAbierto(modulo.id)}
-                  onKeyDown={(e) => {
-                    if (e.key !== "Enter" && e.key !== " ") return
-                    e.preventDefault()
-                    setModuloAbierto(modulo.id)
-                  }}
-                  className={cn(
-                    "group relative flex flex-col items-center gap-2 rounded-2xl border-2 p-4 text-center text-xs font-medium transition-colors duration-200 ease-out",
-                    prendido
-                      ? "border-border bg-background hover:border-foreground/50"
-                      : "border-dashed border-border/70 bg-background/40 text-muted-foreground hover:border-foreground/50 hover:text-foreground"
-                  )}
-                >
-                  {modulo.fijo ? (
-                    <span className="absolute right-2 top-2 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      Fijo
-                    </span>
-                  ) : (
-                    <span
-                      className="absolute right-2 top-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Switch
-                        checked={Boolean(modulo.activo)}
-                        onCheckedChange={(activo) => modulo.onToggle?.(activo)}
-                      />
-                    </span>
-                  )}
-                  <span
-                    className={cn(
-                      "flex size-9 items-center justify-center rounded-full transition-colors duration-200 ease-out",
-                      prendido ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
-                    )}
-                  >
-                    <modulo.icono className="size-4" />
-                  </span>
-                  <span className="text-foreground">{modulo.titulo}</span>
-                </div>
-              )
-            })}
+          <div className="flex flex-col gap-4 p-5">
+            <div className="flex flex-col gap-1.5">
+              <CapaFila
+                icono={PencilLine}
+                titulo="Título, bio y enlace"
+                fijo
+                onClick={() => setModuloAbierto("identidad")}
+              />
+              <CapaFila
+                icono={CircleUserRound}
+                titulo="Avatar"
+                activo={avatarActivo}
+                onToggle={setAvatarActivo}
+                onClick={() => setModuloAbierto("avatar")}
+              />
+              <CapaFila
+                icono={ImageIcon}
+                titulo="Banner"
+                activo={bannerActivo}
+                onToggle={setBannerActivo}
+                onClick={() => setModuloAbierto("banner")}
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5 border-t border-border/60 pt-4">
+              <p className="text-xs font-medium text-muted-foreground">
+                Contenido — también se arrastra directo en la vista previa
+              </p>
+              {ordenModulos.map((moduloId, indice) => {
+                if (moduloId === "botones") {
+                  return botones.map((boton, i) => (
+                    <CapaFila
+                      key={boton.id}
+                      icono={ICONO_TIPO_BOTON[boton.tipo] ?? Link2}
+                      titulo={boton.titulo.trim() || `${ETIQUETA_TIPO_BOTON[boton.tipo]} sin título`}
+                      fijo={boton.tipo === "agenda"}
+                      onClick={() => setModuloAbierto(`boton-${boton.id}`)}
+                      onSubir={() => moverBotonEn({ indice: i }, -1)}
+                      onBajar={() => moverBotonEn({ indice: i }, 1)}
+                      disabledSubir={i === 0}
+                      disabledBajar={i === botones.length - 1}
+                      onEliminar={boton.tipo === "agenda" ? undefined : () => quitarBotonEn({ indice: i })}
+                    />
+                  ))
+                }
+                const meta = MODULOS_CANVAS.find((m) => m.id === moduloId)
+                if (!meta) return null
+                return (
+                  <CapaFila
+                    key={moduloId}
+                    icono={meta.icono}
+                    titulo={meta.titulo}
+                    activo={meta.activo}
+                    onToggle={meta.onToggle}
+                    onClick={() => setModuloAbierto(meta.id)}
+                    onSubir={() => moverModulo(moduloId, -1)}
+                    onBajar={() => moverModulo(moduloId, 1)}
+                    disabledSubir={indice === 0}
+                    disabledBajar={indice === ordenModulos.length - 1}
+                  />
+                )
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setModuloAbierto("agregar")}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2.5 text-sm font-medium text-foreground transition-colors hover:border-foreground hover:bg-muted"
+            >
+              <Plus className="size-4" /> Agregar módulo
+            </button>
           </div>
         </ModuloFlotante>
+
+        {/* "+ Agregar módulo": los opcionales que están apagados hoy +
+            "Botones" como categoría propia (2026-09-05, pedido explícito:
+            "que al apretarlo muestre los tipos de botones, pero cada botón
+            debe ser independiente uno de otro") — elegir un módulo simple
+            lo prende y abre directo su modal; "Botones" pasa al segundo
+            nivel (agregar-boton) en vez de agregar nada todavía. */}
+        <ModuloFlotante
+          abierto={moduloAbierto === "agregar"}
+          onCerrar={() => setModuloAbierto(null)}
+          titulo="Agregar módulo"
+        >
+          <div className="grid grid-cols-2 gap-2.5 p-5 sm:grid-cols-3">
+            {MODULOS_CANVAS.filter((modulo) => !modulo.fijo && !modulo.activo).map((modulo) => (
+              <button
+                key={modulo.id}
+                type="button"
+                onClick={() => {
+                  modulo.onToggle?.(true)
+                  setModuloAbierto(modulo.id)
+                }}
+                className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-border/70 bg-background/40 p-4 text-center text-xs font-medium text-muted-foreground transition-colors duration-200 ease-out hover:border-foreground/50 hover:bg-background hover:text-foreground"
+              >
+                <span className="flex size-9 items-center justify-center rounded-full bg-muted">
+                  <modulo.icono className="size-4" />
+                </span>
+                {modulo.titulo}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setModuloAbierto("agregar-boton")}
+              className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-border/70 bg-background/40 p-4 text-center text-xs font-medium text-muted-foreground transition-colors duration-200 ease-out hover:border-foreground/50 hover:bg-background hover:text-foreground"
+            >
+              <span className="flex size-9 items-center justify-center rounded-full bg-muted">
+                <LayoutGrid className="size-4" />
+              </span>
+              Botones
+            </button>
+            {MODULOS_CANVAS.every((modulo) => modulo.fijo || modulo.activo) && (
+              <p className="col-span-2 py-2 text-center text-xs text-muted-foreground sm:col-span-3">
+                Ya agregaste todos los módulos de contenido — siempre podés sumar más botones.
+              </p>
+            )}
+          </div>
+        </ModuloFlotante>
+
+        <ModuloFlotante
+          abierto={moduloAbierto === "agregar-boton"}
+          onCerrar={() => setModuloAbierto(null)}
+          titulo="Agregar botón"
+        >
+          {contenidoAgregarBoton}
+        </ModuloFlotante>
+        {contenidoReposicionarItemCatalogo}
       </div>
+
+      {/* "+" flotante y llamativo sobre el propio canvas (2026-09-05,
+          pedido explícito) — mismo destino que el botón "Agregar módulo"
+          de la barra de control, pero puesto directo sobre la vista
+          previa para que agregar un módulo se sienta parte del canvas, no
+          escondido en un menú. Oculto en modo "Ver tarjeta" (desktop):
+          ahí el grid editable entero se oculta, no tendría nada que
+          abrir. `fixed` a propósito (no anidado en el mockup del
+          teléfono): evita cualquier recorte por el `overflow-hidden` del
+          marco y funciona idéntico en mobile/desktop sin casos
+          especiales — en desktop el preview vive en la mitad derecha de
+          la pantalla, así que igual queda pegado al canvas. */}
+      {!(esEdicion && vista === "ver") && (
+        <button
+          type="button"
+          onClick={() => setModuloAbierto("agregar")}
+          aria-label="Agregar módulo"
+          className="fixed bottom-24 right-5 z-30 flex size-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-fuchsia-600 text-white shadow-xl transition-transform duration-200 ease-out hover:scale-105 active:scale-95 lg:bottom-10 lg:right-10"
+        >
+          <span
+            aria-hidden
+            className="absolute inset-0 rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 opacity-40 motion-safe:animate-ping"
+          />
+          <Plus className="relative size-6" />
+        </button>
+      )}
 
       {avatarMostrado && (
         <ReposicionarImagen
