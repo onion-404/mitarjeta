@@ -733,6 +733,30 @@
   con actualización en vivo, y los 10 íconos nuevos presentes y con la etiqueta correcta en el
   picker de un botón real — sin guardar el draft de prueba.
 
+## Línea decorativa antes de la bio: opcional + ancho/alto/color/forma (2026-09-05)
+- Pedido explícito: la regla corta que separaba el título/rol de la bio (fija desde su
+  introducción) pasa a ser opcional y personalizable, mismo criterio que el resto de "Estilo
+  de la bio". Campos nuevos en `IdentidadVisual`: `bioDivisorActivo` (interruptor, mismo
+  patrón `undefined`/`true` = mostrada que `bioActiva`), `bioDivisorAncho`/`bioDivisorAltura`
+  (px, defaults 32/2 = el `w-8 h-0.5` fijo de siempre), `bioDivisorColor` (default: color de
+  botones de la tarjeta, igual que siempre) y `bioDivisorForma` (tipo `BioDivisorForma`).
+- **Forma**: `"pastilla" | "cuadrada" | "punteada"` (`BIO_DIVISOR_FORMAS` en
+  `lib/personalizacion.ts`, mismo patrón `{id, etiqueta, tier}` que `FORMAS_AVATAR`/
+  `ESTILOS_TIPOGRAFIA`, pero las 3 en tier "basica" — a diferencia de las formas de avatar,
+  ninguna necesita clip-path ni wrapper de escala, así que no hay motivo para reservar una
+  como "avanzada"). "Punteada" se renderiza distinto de las otras 2 en `TarjetaCard`: alto 0 +
+  `border-top` a rayas (`borderTopWidth`/`borderTopStyle: dashed`) en vez de una barra sólida
+  con `background-color`, porque una barra `h-Npx` con relleno sólido no puede verse punteada.
+  Selector: 3 botones tipo pastilla (mismo patrón que "Título como" texto/imagen), no
+  `OpcionPersonalizacion`/swatch — 3 opciones de texto simple no ameritan esa maquinaria.
+- Gating: `personalizacion_libre` para ancho/alto/forma (mismo criterio que `tituloTamano`/
+  `tituloPeso`), `bioDivisorColor` sumado a `CAMPOS_COLOR_BASICOS`. El interruptor on/off no
+  tiene gating (mismo criterio que `bioActiva`/`tituloActivo`).
+- Controles en "Título, bio y enlace", debajo del color de la bio.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` limpios, más verificación en vivo
+  contra una tarjeta real: apagar el interruptor quita la línea del preview al instante, forma
+  "Punteada" se ve punteada de verdad — sin guardar el draft de prueba.
+
 ## Convenciones de UI
 - Todo elemento clickeable (`button`/`[role="button"]`) tiene `cursor: pointer` vía una regla
   global en `globals.css` (`@layer base`) — no se setea por className individual. Excepción a

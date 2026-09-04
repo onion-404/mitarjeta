@@ -79,6 +79,7 @@ import {
   normalizarMultimedia,
 } from "@/lib/multimedia"
 import {
+  BIO_DIVISOR_FORMAS,
   DIVISORES_BANNER,
   FORMAS_AVATAR,
   calcularBloqueos,
@@ -92,6 +93,7 @@ import { getLimiteCambioSlug, type LimiteCambioSlug } from "@/lib/tarjetas"
 import { cn } from "@/lib/utils"
 import type {
   AvatarForma,
+  BioDivisorForma,
   Boton,
   BotonHijo,
   BotonTipo,
@@ -1012,6 +1014,16 @@ export function TarjetaForm({
   const [bioTamano, setBioTamano] = React.useState(visualInicial?.bioTamano ?? 15)
   const [bioAltoLinea, setBioAltoLinea] = React.useState(visualInicial?.bioAltoLinea ?? 1.625)
   const [colorBio, setColorBio] = React.useState(visualInicial?.colorBio ?? "")
+  // Línea decorativa entre el título/rol y la bio — opcional (pedido
+  // explícito) + ancho/alto/color/forma, mismo criterio que el resto de
+  // "estilo de la bio" de arriba.
+  const [bioDivisorActivo, setBioDivisorActivo] = React.useState(visualInicial?.bioDivisorActivo ?? true)
+  const [bioDivisorAncho, setBioDivisorAncho] = React.useState(visualInicial?.bioDivisorAncho ?? 32)
+  const [bioDivisorAltura, setBioDivisorAltura] = React.useState(visualInicial?.bioDivisorAltura ?? 2)
+  const [bioDivisorColor, setBioDivisorColor] = React.useState(visualInicial?.bioDivisorColor ?? "")
+  const [bioDivisorForma, setBioDivisorForma] = React.useState<BioDivisorForma>(
+    visualInicial?.bioDivisorForma ?? "pastilla"
+  )
   // Color de la línea "Rol o descripción" (empresa) — mismo criterio que
   // colorTitulo: vacío = auto-contraste.
   const [colorTextoSecundario, setColorTextoSecundario] = React.useState(
@@ -2507,6 +2519,11 @@ export function TarjetaForm({
       bioTamano: bioTamano !== 15 ? bioTamano : undefined,
       bioAltoLinea: bioAltoLinea !== 1.625 ? bioAltoLinea : undefined,
       colorBio: colorBio || undefined,
+      bioDivisorActivo,
+      bioDivisorAncho: bioDivisorAncho !== 32 ? bioDivisorAncho : undefined,
+      bioDivisorAltura: bioDivisorAltura !== 2 ? bioDivisorAltura : undefined,
+      bioDivisorColor: bioDivisorColor || undefined,
+      bioDivisorForma: bioDivisorForma !== "pastilla" ? bioDivisorForma : undefined,
       badgeIconoActivo,
       badgeIconoId: badgeIconoActivo ? badgeIconoId : undefined,
       ogTipo: ogTipo !== "personalizada" ? ogTipo : undefined,
@@ -2775,6 +2792,11 @@ export function TarjetaForm({
     bioTamano: bioTamano !== 15 ? bioTamano : undefined,
     bioAltoLinea: bioAltoLinea !== 1.625 ? bioAltoLinea : undefined,
     colorBio: colorBio || undefined,
+    bioDivisorActivo,
+    bioDivisorAncho: bioDivisorAncho !== 32 ? bioDivisorAncho : undefined,
+    bioDivisorAltura: bioDivisorAltura !== 2 ? bioDivisorAltura : undefined,
+    bioDivisorColor: bioDivisorColor || undefined,
+    bioDivisorForma: bioDivisorForma !== "pastilla" ? bioDivisorForma : undefined,
     badgeIconoActivo,
     badgeIconoId: badgeIconoActivo ? badgeIconoId : undefined,
     tituloActivo,
@@ -3253,6 +3275,86 @@ export function TarjetaForm({
             />
           </div>
         </label>
+
+        {/* Línea decorativa entre el título/rol y la bio — opcional (pedido
+            explícito) + ancho/alto/color/forma. */}
+        <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+          <span className="text-xs text-muted-foreground">Línea antes de la bio</span>
+          <Switch checked={bioDivisorActivo} onCheckedChange={setBioDivisorActivo} />
+        </label>
+
+        {bioDivisorActivo && (
+          <>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted-foreground">Ancho de la línea ({bioDivisorAncho}px)</span>
+                <input
+                  type="range"
+                  min={16}
+                  max={120}
+                  value={bioDivisorAncho}
+                  onChange={(e) => setBioDivisorAncho(Number(e.target.value))}
+                  onFocus={() => scrollPreviewTo("bio")}
+                  className="w-full cursor-pointer accent-foreground"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted-foreground">Alto de la línea ({bioDivisorAltura}px)</span>
+                <input
+                  type="range"
+                  min={2}
+                  max={8}
+                  value={bioDivisorAltura}
+                  onChange={(e) => setBioDivisorAltura(Number(e.target.value))}
+                  onFocus={() => scrollPreviewTo("bio")}
+                  className="w-full cursor-pointer accent-foreground"
+                />
+              </label>
+            </div>
+
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+              <span className="text-xs text-muted-foreground">Color de la línea</span>
+              <div className="flex items-center gap-2">
+                {bioDivisorColor && (
+                  <button
+                    type="button"
+                    onClick={() => setBioDivisorColor("")}
+                    className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  >
+                    Automático
+                  </button>
+                )}
+                <ColorPicker
+                  value={bioDivisorColor || colorBotones || "#a1a1aa"}
+                  onChange={setBioDivisorColor}
+                  onFocus={() => scrollPreviewTo("bio")}
+                  recientes={coloresPersonalizados}
+                />
+              </div>
+            </label>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Forma</span>
+              <div className="inline-flex rounded-full border border-border p-0.5">
+                {BIO_DIVISOR_FORMAS.map((forma) => (
+                  <button
+                    key={forma.id}
+                    type="button"
+                    onClick={() => setBioDivisorForma(forma.id)}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                      bioDivisorForma === forma.id
+                        ? "bg-foreground text-background"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {forma.etiqueta}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Orden entre el badge "@usuario" y el título/logo — el avatar queda

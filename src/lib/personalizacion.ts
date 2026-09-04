@@ -1,5 +1,5 @@
 import { obtenerColorContraste } from "@/lib/contraste"
-import type { AvatarForma, DivisorBanner, EstiloTipografia, IdentidadVisual } from "@/lib/types"
+import type { AvatarForma, BioDivisorForma, DivisorBanner, EstiloTipografia, IdentidadVisual } from "@/lib/types"
 
 // ============================================================================
 // esTarjetaOscura — mismo criterio de contraste que ya usa TarjetaCard para
@@ -182,6 +182,25 @@ export const ESTILOS_TIPOGRAFIA: EstiloTipografiaMeta[] = [
 ]
 
 // ============================================================================
+// Forma de la línea decorativa entre el título/rol y la bio (ver
+// IdentidadVisual.bioDivisorForma) — "pastilla" es el rounded-full fijo de
+// siempre. Las 3 comparten tier "basica" (personalizacion_libre): a
+// diferencia de las formas de avatar, ninguna necesita clip-path/wrapper de
+// escala, así que no hay motivo para reservar ninguna como "avanzada".
+// ============================================================================
+export interface BioDivisorFormaMeta {
+  id: BioDivisorForma
+  etiqueta: string
+  tier: TierPersonalizacion
+}
+
+export const BIO_DIVISOR_FORMAS: BioDivisorFormaMeta[] = [
+  { id: "pastilla", etiqueta: "Pastilla", tier: "basica" },
+  { id: "cuadrada", etiqueta: "Cuadrada", tier: "basica" },
+  { id: "punteada", etiqueta: "Punteada", tier: "basica" },
+]
+
+// ============================================================================
 // Plantillas — cada una es solo un bundle de los campos ya definidos, nada
 // de campos bespoke nuevos ("glow"/"doble anillo" de los briefs se logran
 // combinando color + la técnica de anillo con clip-path de arriba, no son
@@ -351,6 +370,7 @@ const CAMPOS_COLOR_BASICOS = [
   "colorFondoContacto",
   "colorFondoRedes",
   "colorBio",
+  "bioDivisorColor",
 ] as const
 
 export function calcularBloqueos(
@@ -403,6 +423,24 @@ export function calcularBloqueos(
   if (draft.bioAltoLinea !== undefined) {
     const b = estaBloqueada("basica", draft.bioAltoLinea, base.bioAltoLinea, features)
     if (b) bloqueos.push({ ...b, campo: "Alto de línea de la bio", valorEtiqueta: String(draft.bioAltoLinea) })
+  }
+
+  if (draft.bioDivisorAncho !== undefined) {
+    const b = estaBloqueada("basica", draft.bioDivisorAncho, base.bioDivisorAncho, features)
+    if (b) bloqueos.push({ ...b, campo: "Ancho del divisor de la bio", valorEtiqueta: `${draft.bioDivisorAncho}px` })
+  }
+
+  if (draft.bioDivisorAltura !== undefined) {
+    const b = estaBloqueada("basica", draft.bioDivisorAltura, base.bioDivisorAltura, features)
+    if (b) bloqueos.push({ ...b, campo: "Alto del divisor de la bio", valorEtiqueta: `${draft.bioDivisorAltura}px` })
+  }
+
+  if (draft.bioDivisorForma) {
+    const meta = BIO_DIVISOR_FORMAS.find((f) => f.id === draft.bioDivisorForma)
+    if (meta) {
+      const b = estaBloqueada(meta.tier, draft.bioDivisorForma, base.bioDivisorForma ?? "pastilla", features)
+      if (b) bloqueos.push({ ...b, campo: "Forma del divisor de la bio", valorEtiqueta: meta.etiqueta })
+    }
   }
 
   if (draft.bannerAltura !== undefined) {

@@ -248,6 +248,11 @@ export function TarjetaCard({
     bioTamano,
     bioAltoLinea,
     colorBio,
+    bioDivisorActivo,
+    bioDivisorAncho,
+    bioDivisorAltura,
+    bioDivisorColor,
+    bioDivisorForma,
     colorBotones,
     colorBadges,
     modoColorAvanzado,
@@ -299,6 +304,7 @@ export function TarjetaCard({
   const avatarEncendido = avatarActivo !== false
   const bannerEncendido = bannerActivo !== false
   const bioEncendida = bioActiva !== false
+  const bioDivisorEncendido = bioDivisorActivo !== false
   const contactoEncendido = contactoActivo !== false
   const redesEncendidas = redesActivo !== false
   const ubicacionEncendida = ubicacionActiva !== false
@@ -1512,11 +1518,31 @@ export function TarjetaCard({
             // el dato de ubicación (que además ahora vive en su propia
             // card, ver más abajo).
             <div className="mt-3 flex flex-col items-center gap-1.5">
-              <span
-                aria-hidden
-                className="h-0.5 w-8 rounded-full"
-                style={{ backgroundColor: colorBotonesFinal || "#a1a1aa" }}
-              />
+              {bioDivisorEncendido &&
+                (bioDivisorForma === "punteada" ? (
+                  // Punteada: ancho de línea 0 + borde superior a rayas, en
+                  // vez de una barra sólida (mismo ancho/alto que las otras
+                  // 2 formas, pero con `border-dashed` en vez de `bg`).
+                  <span
+                    aria-hidden
+                    style={{
+                      width: `${bioDivisorAncho ?? 32}px`,
+                      borderTopWidth: `${bioDivisorAltura ?? 2}px`,
+                      borderTopStyle: "dashed",
+                      borderTopColor: bioDivisorColor || colorBotonesFinal || "#a1a1aa",
+                    }}
+                  />
+                ) : (
+                  <span
+                    aria-hidden
+                    style={{
+                      width: `${bioDivisorAncho ?? 32}px`,
+                      height: `${bioDivisorAltura ?? 2}px`,
+                      backgroundColor: bioDivisorColor || colorBotonesFinal || "#a1a1aa",
+                    }}
+                    className={bioDivisorForma === "cuadrada" ? undefined : "rounded-full"}
+                  />
+                ))}
               <p
                 data-campo="bio"
                 style={{

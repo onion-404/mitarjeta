@@ -62,6 +62,10 @@ export type EstiloTipografia =
 // "recta" = el rounded-t-[2rem] que ya existe hoy, sin cambios. Las otras 3
 // usan clip-path, ver lib/personalizacion.ts.
 export type DivisorBanner = "recta" | "onda" | "diagonal" | "zigzag"
+// Forma de la línea decorativa entre el título/rol y la bio (ver
+// IdentidadVisual.bioDivisorForma) — "pastilla" = el rounded-full fijo de
+// siempre, ver BIO_DIVISOR_FORMAS en lib/personalizacion.ts.
+export type BioDivisorForma = "pastilla" | "cuadrada" | "punteada"
 
 export interface Producto {
   titulo: string
@@ -488,6 +492,27 @@ export interface IdentidadVisual {
    *  `colorTitulo`) si no está seteado. Gating: personalizacion_libre,
    *  sumado a `CAMPOS_COLOR_BASICOS` en lib/personalizacion.ts. */
   colorBio?: string
+  /** Interruptor de la línea decorativa entre el título/rol y la bio (regla
+   *  corta antes del texto) — mismo criterio que `bioActiva`: sin valor =
+   *  mostrada (compatibilidad: toda tarjeta vieja la tenía siempre puesta).
+   *  `false` = oculta. Sin gating de plan. */
+  bioDivisorActivo?: boolean
+  /** Ancho de la línea en px — rango sugerido en el editor 16-120, default:
+   *  32 (equivalente al `w-8` fijo de siempre) si no está seteado. Gating:
+   *  personalizacion_libre. */
+  bioDivisorAncho?: number
+  /** Alto (grosor) de la línea en px — rango sugerido en el editor 2-8,
+   *  default: 2 (equivalente al `h-0.5` fijo de siempre) si no está
+   *  seteado. Gating: personalizacion_libre. */
+  bioDivisorAltura?: number
+  /** Color de la línea — default: color de botones de la tarjeta (mismo
+   *  que siempre) si no está seteado. Gating: personalizacion_libre,
+   *  sumado a `CAMPOS_COLOR_BASICOS` en lib/personalizacion.ts. */
+  bioDivisorColor?: string
+  /** Forma de la línea (ver `BioDivisorForma`) — default: "pastilla"
+   *  (equivalente al `rounded-full` fijo de siempre) si no está seteado.
+   *  Gating: personalizacion_libre. */
+  bioDivisorForma?: BioDivisorForma
   /** @deprecated Título de la sección "Servicios" del modelo viejo — pasó
    *  primero a vivir por sección en `DatosContacto.seccionesServicios[].
    *  titulo`, y esa a su vez fue absorbida por botones `tipo: "catalogo"`
