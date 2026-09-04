@@ -304,6 +304,12 @@ export type SeccionOrdenable = "agenda" | "botones"
  *  siempre. */
 export type ContactoOrdenable = "telefono" | "whatsapp" | "email" | "ubicacion"
 
+/** El badge "@usuario" y el título/logo (bloque de identidad, debajo del
+ *  avatar) — el dueño reordena ENTRE ELLOS DOS con ↑/↓ (mismo patrón que
+ *  `ContactoOrdenable`). Avatar queda afuera: siempre va primero, es
+ *  estructural. Sin este campo, orden fijo de siempre (usuario → título). */
+export type IdentidadOrdenable = "usuario" | "titulo"
+
 // Tipo único de tarjeta (2026-08-01): el editor ya no distingue
 // personal/empresarial (ver tarjeta-form.tsx) — todos estos campos son
 // comunes a cualquier tarjeta. `nombre` = "Título", `empresa` = "Rol o
@@ -469,6 +475,19 @@ export interface IdentidadVisual {
    *  400-800, default: 600 (equivalente al `font-semibold` fijo de siempre)
    *  si no está seteado. Gating: personalizacion_libre. */
   tituloPeso?: number
+  /** Tamaño de fuente de la bio en px — rango sugerido en el editor 13-22,
+   *  default: 15 (equivalente al `text-[15px]` fijo de siempre) si no está
+   *  seteado. Gating: personalizacion_libre, mismo criterio que
+   *  `tituloTamano`. */
+  bioTamano?: number
+  /** Alto de línea de la bio — rango sugerido en el editor 1.2-2.2, default:
+   *  1.625 (equivalente al `leading-relaxed` fijo de siempre) si no está
+   *  seteado. Gating: personalizacion_libre. */
+  bioAltoLinea?: number
+  /** Color del texto de la bio — default: auto-contraste (mismo criterio que
+   *  `colorTitulo`) si no está seteado. Gating: personalizacion_libre,
+   *  sumado a `CAMPOS_COLOR_BASICOS` en lib/personalizacion.ts. */
+  colorBio?: string
   /** @deprecated Título de la sección "Servicios" del modelo viejo — pasó
    *  primero a vivir por sección en `DatosContacto.seccionesServicios[].
    *  titulo`, y esa a su vez fue absorbida por botones `tipo: "catalogo"`
@@ -534,6 +553,12 @@ export interface IdentidadVisual {
   tituloImagenUrl?: string
   /** Alto del logo en px — rango sugerido en el editor 24-80, default 32. */
   tituloImagenAltura?: number
+  /** Orden entre el badge "@usuario" y el título/logo (ver
+   *  `IdentidadOrdenable`) — el dueño lo reordena con flechas ↑/↓ en
+   *  "Título, bio y enlace". Sin este campo, orden fijo de siempre (usuario
+   *  arriba, título/logo debajo). Sin gating de plan: es organización
+   *  visual, mismo criterio que `ordenContacto`/`ubicacionCentrada`. */
+  ordenIdentidad?: IdentidadOrdenable[]
   /** Tipo de imagen OG (miniatura al compartir el link, [slug]/opengraph-
    *  image.tsx) — INDEPENDIENTE de lo que se ve en la tarjeta real. Sin
    *  valor = "personalizada" (comportamiento de siempre: banner 1200x630

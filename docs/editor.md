@@ -705,6 +705,34 @@
     fondo de la tarjeta, no el fondo neutro del popup.
 - Verificado: `tsc --noEmit`, `eslint` y `npm run build` limpios. 🔴 No verificado en navegador real.
 
+## Más íconos de rubro, estilo de la bio y orden usuario/título (2026-09-05)
+- **10 íconos nuevos en `BOTON_ICONOS`** (`lib/boton-cta.ts`, set compartido por el ícono de CTA
+  y el ícono del badge "@usuario") — pedido explícito: ropa, tejidos, tienda en línea, "etc.".
+  Sin ícono literal de "estambre/tejido" en lucide-react (se comprobó contra el export
+  completo) — `Spool` (carrete de hilo) es el más cercano para costura/tejido/manualidades.
+  Nuevos: `ropa` (Shirt), `tejido` (Spool), `tienda-online` (Globe), `joyeria` (Gem), `calzado`
+  (Footprints), `floristeria` (Flower2), `bebes` (Baby), `tecnologia` (Laptop), `finanzas`
+  (CreditCard), `viajes` (Plane).
+- **Estilo de la bio** — `IdentidadVisual.bioTamano`/`bioAltoLinea`/`colorBio`, mismo patrón que
+  tamaño/peso/color del título (`tituloTamano`/`tituloPeso`/`colorTitulo`). Defaults calzan con
+  el look fijo de siempre (15px / `leading-relaxed` = 1.625 / auto-contraste) para no mover
+  ninguna tarjeta existente. Gating: personalizacion_libre (`colorBio` sumado a
+  `CAMPOS_COLOR_BASICOS` en `lib/personalizacion.ts`). Controles en "Título, bio y enlace",
+  justo debajo del switch "Mostrar bio en la tarjeta".
+- **Orden entre el badge "@usuario" y el título/logo** — `IdentidadVisual.ordenIdentidad` +
+  tipo `IdentidadOrdenable` (`"usuario" | "titulo"`), mismo patrón tolerante-hacia-adelante que
+  `ordenContacto`/`ContactoOrdenable` (`IDENTIDAD_ORDENABLES`/`ordenIdentidadNormalizado()` en
+  `lib/boton-cta.ts`), reordenado con flechas ↑/↓ en "Título, bio y enlace". El avatar queda
+  afuera: es estructural, siempre va primero. En `TarjetaCard`, ambos bloques se renderizan
+  mapeando `ordenIdentidadNormalizado(ordenIdentidad)`; el que quede primero usa `mt-3` (aire
+  que dejaba siempre el avatar arriba) y el segundo `mt-2` (aire que dejaba siempre el título
+  debajo del usuario), para que reordenar no cambie el espaciado visual de siempre.
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` limpios, más verificación en vivo
+  (`localhost:3000/editar`, apuntando a la única Supabase de producción) contra una tarjeta
+  real: reorden usuario/título con actualización en vivo del preview, slider de tamaño de bio
+  con actualización en vivo, y los 10 íconos nuevos presentes y con la etiqueta correcta en el
+  picker de un botón real — sin guardar el draft de prueba.
+
 ## Convenciones de UI
 - Todo elemento clickeable (`button`/`[role="button"]`) tiene `cursor: pointer` vía una regla
   global en `globals.css` (`@layer base`) — no se setea por className individual. Excepción a

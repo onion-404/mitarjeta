@@ -1,5 +1,6 @@
 import {
   Award,
+  Baby,
   Beef,
   BookOpen,
   Beer,
@@ -11,18 +12,24 @@ import {
   Car,
   ChefHat,
   Coffee,
+  CreditCard,
   CupSoda,
   Download,
   Dumbbell,
   Fish,
+  Flower2,
+  Footprints,
   Gavel,
+  Gem,
   Gift,
+  Globe,
   GraduationCap,
   Hammer,
   HardHat,
   Heart,
   Home,
   IceCreamCone,
+  Laptop,
   Leaf,
   Link2,
   Mail,
@@ -34,14 +41,17 @@ import {
   PawPrint,
   Phone,
   Pizza,
+  Plane,
   Play,
   Salad,
   Sandwich,
   Scissors,
+  Shirt,
   ShoppingBag,
   ShoppingCart,
   Soup,
   Sparkles,
+  Spool,
   Star,
   Stethoscope,
   Store,
@@ -66,6 +76,7 @@ import type {
   ContactoOrdenable,
   DatosContacto,
   EstiloTipografia,
+  IdentidadOrdenable,
   IdentidadVisual,
   ModuloOrdenable,
   SeccionOrdenable,
@@ -145,6 +156,20 @@ export const BOTON_ICONOS: BotonIconoMeta[] = [
   { id: "vino", etiqueta: "Vinería", Icono: Wine },
   { id: "carrito", etiqueta: "Compras", Icono: ShoppingCart },
   { id: "tienda-fisica", etiqueta: "Tienda física", Icono: Store },
+  // Más rubros (2026-09-05, pedido explícito: ropa, tejidos, tienda en
+  // línea, "etc.") — sin ícono literal de "estambre/tejido" en lucide-react
+  // (se comprobó contra el export completo), Spool (carrete de hilo) es el
+  // más cercano disponible para costura/tejido/manualidades.
+  { id: "ropa", etiqueta: "Ropa/Moda", Icono: Shirt },
+  { id: "tejido", etiqueta: "Tejido/Costura", Icono: Spool },
+  { id: "tienda-online", etiqueta: "Tienda en línea", Icono: Globe },
+  { id: "joyeria", etiqueta: "Joyería", Icono: Gem },
+  { id: "calzado", etiqueta: "Calzado", Icono: Footprints },
+  { id: "floristeria", etiqueta: "Floristería", Icono: Flower2 },
+  { id: "bebes", etiqueta: "Bebés y niños", Icono: Baby },
+  { id: "tecnologia", etiqueta: "Tecnología", Icono: Laptop },
+  { id: "finanzas", etiqueta: "Finanzas/Pagos", Icono: CreditCard },
+  { id: "viajes", etiqueta: "Viajes", Icono: Plane },
 ]
 
 export function obtenerBotonIcono(iconoId: string | undefined): BotonIconoMeta | undefined {
@@ -357,6 +382,30 @@ export function ordenContactoNormalizado(orden?: ContactoOrdenable[]): ContactoO
   if (!orden || orden.length === 0) return ORDEN_CONTACTO_DEFAULT
   const conocidos = orden.filter((id) => ORDEN_CONTACTO_DEFAULT.includes(id))
   const faltantes = ORDEN_CONTACTO_DEFAULT.filter((id) => !conocidos.includes(id))
+  return [...conocidos, ...faltantes]
+}
+
+// ============================================================================
+// Orden entre el badge "@usuario" y el título/logo (2026-09-05) — mismo
+// patrón tolerante-hacia-adelante que ordenContactoNormalizado, acotado a
+// estos 2 bloques (el avatar queda afuera, siempre va primero).
+// ============================================================================
+export interface IdentidadOrdenableMeta {
+  id: IdentidadOrdenable
+  etiqueta: string
+}
+
+export const IDENTIDAD_ORDENABLES: IdentidadOrdenableMeta[] = [
+  { id: "usuario", etiqueta: "Usuario (@enlace)" },
+  { id: "titulo", etiqueta: "Título/Logo" },
+]
+
+export const ORDEN_IDENTIDAD_DEFAULT: IdentidadOrdenable[] = ["usuario", "titulo"]
+
+export function ordenIdentidadNormalizado(orden?: IdentidadOrdenable[]): IdentidadOrdenable[] {
+  if (!orden || orden.length === 0) return ORDEN_IDENTIDAD_DEFAULT
+  const conocidos = orden.filter((id) => ORDEN_IDENTIDAD_DEFAULT.includes(id))
+  const faltantes = ORDEN_IDENTIDAD_DEFAULT.filter((id) => !conocidos.includes(id))
   return [...conocidos, ...faltantes]
 }
 

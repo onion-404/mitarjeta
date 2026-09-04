@@ -19,6 +19,7 @@ import {
   normalizarBotones,
   obtenerBotonIcono,
   ordenContactoNormalizado,
+  ordenIdentidadNormalizado,
   ordenModulosNormalizado,
   recopilarUrlsCatalogo,
   resolverTipografiaBoton,
@@ -244,6 +245,9 @@ export function TarjetaCard({
     colorTitulo,
     tituloTamano,
     tituloPeso,
+    bioTamano,
+    bioAltoLinea,
+    colorBio,
     colorBotones,
     colorBadges,
     modoColorAvanzado,
@@ -275,6 +279,7 @@ export function TarjetaCard({
     tituloModo,
     tituloImagenUrl,
     tituloImagenAltura,
+    ordenIdentidad,
     tituloActivo,
     avatarActivo,
     bannerActivo,
@@ -1401,70 +1406,88 @@ export function TarjetaCard({
             </div>
           )}
 
-          {slug?.trim() && (
-            <div className="mt-3 flex items-center justify-center gap-1">
-              <span
-                style={estiloBadge}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium tracking-wide",
-                  !estiloBadge &&
-                    "bg-[rgba(24,24,27,0.05)] text-[#71717a] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#a1a1aa]"
-                )}
-              >
-                {IconoBadge && <IconoBadge className="size-3" />}
-                @{slug.trim()}
-              </span>
-              {/* Verificación (2026-09-04): check exclusivo del panel admin
-                  (tarjetas.verificado) — el dueño no lo puede activar desde
-                  su propio editor. Sello sólido azul + check blanco (mismo
-                  lenguaje que usan la mayoría de las plataformas), sin
-                  copiar el logo de ninguna marca puntual (mismo criterio
-                  que social-icons.tsx) — ver verificado-badge.tsx. */}
-              {verificado && <VerificadoBadge className="size-4 shrink-0" />}
-            </div>
-          )}
+          {/* Usuario (@enlace) y título/logo son reordenables ENTRE ELLOS
+              (2026-09-05, ver IdentidadVisual.ordenIdentidad) — el avatar
+              queda afuera, siempre va primero. El que quede primero de los
+              dos usa mt-3 (mismo aire que dejaba siempre el avatar arriba),
+              el segundo mt-2 (mismo aire que dejaba siempre el título debajo
+              del usuario) — así el reorden no cambia el espaciado visual. */}
+          {ordenIdentidadNormalizado(ordenIdentidad).map((bloqueId, index) => {
+            const margenSuperior = index === 0 ? "mt-3" : "mt-2"
 
-          {tituloEncendida &&
-            (tituloModo === "imagen" && tituloImagenUrl ? (
-              // Logo en vez de texto — a propósito SIN recortar a ninguna
-              // forma (a diferencia del avatar): ancho libre, alto fijo, se
-              // ve "como si fuera texto" en su proporción natural.
-              // eslint-disable-next-line @next/next/no-img-element -- alto variable elegido por el dueño, next/image exige dimensiones fijas
-              <img
-                data-campo="nombre"
-                src={tituloImagenUrl}
-                alt={nombrePrincipal?.trim() || "Logo"}
-                style={{ height: `${tituloImagenAltura ?? 32}px` }}
-                // mx-auto: Tailwind Preflight pone `img { display: block }`
-                // por defecto, así que el `text-center` del panel (que sí
-                // centra el <h1> de texto) no alcanza para centrar un
-                // elemento block — hace falta centrarlo explícito.
-                className="mx-auto mt-2 w-auto max-w-full object-contain"
-              />
-            ) : (
-              // Título opcional (pedido explícito del cliente, 2026-08-16):
-              // en blanco no se reserva ningún hueco — ni el <h1> ni su
-              // margen (mt-2) se renderizan, como si el elemento no
-              // existiera, en vez de mostrar un placeholder tipo "Sin
-              // nombre" u ocupar espacio vacío. Mismo criterio con el
-              // módulo apagado (`tituloActivo=false`, 2026-09-04): el `&&`
-              // de más arriba ya corta todo antes de llegar acá.
-              nombrePrincipal?.trim() && (
-                <h1
-                  data-campo="nombre"
-                  style={{
-                    fontFamily: fuenteEncabezado,
-                    ...estiloTextoGeneral,
-                    fontSize: tituloTamano ? `${tituloTamano}px` : undefined,
-                    fontWeight: tituloPeso ?? undefined,
-                    ...(colorTitulo ? { color: colorTitulo } : undefined),
-                  }}
-                  className="mt-2 text-xl font-semibold text-balance text-[#18181b] dark:text-[#fafafa]"
-                >
-                  {nombrePrincipal.trim()}
-                </h1>
+            if (bloqueId === "usuario") {
+              return (
+                slug?.trim() && (
+                  <div key="usuario" className={cn(margenSuperior, "flex items-center justify-center gap-1")}>
+                    <span
+                      style={estiloBadge}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium tracking-wide",
+                        !estiloBadge &&
+                          "bg-[rgba(24,24,27,0.05)] text-[#71717a] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#a1a1aa]"
+                      )}
+                    >
+                      {IconoBadge && <IconoBadge className="size-3" />}
+                      @{slug.trim()}
+                    </span>
+                    {/* Verificación (2026-09-04): check exclusivo del panel admin
+                        (tarjetas.verificado) — el dueño no lo puede activar desde
+                        su propio editor. Sello sólido azul + check blanco (mismo
+                        lenguaje que usan la mayoría de las plataformas), sin
+                        copiar el logo de ninguna marca puntual (mismo criterio
+                        que social-icons.tsx) — ver verificado-badge.tsx. */}
+                    {verificado && <VerificadoBadge className="size-4 shrink-0" />}
+                  </div>
+                )
               )
-            ))}
+            }
+
+            return (
+              tituloEncendida &&
+              (tituloModo === "imagen" && tituloImagenUrl ? (
+                // Logo en vez de texto — a propósito SIN recortar a ninguna
+                // forma (a diferencia del avatar): ancho libre, alto fijo, se
+                // ve "como si fuera texto" en su proporción natural.
+                // eslint-disable-next-line @next/next/no-img-element -- alto variable elegido por el dueño, next/image exige dimensiones fijas
+                <img
+                  key="titulo"
+                  data-campo="nombre"
+                  src={tituloImagenUrl}
+                  alt={nombrePrincipal?.trim() || "Logo"}
+                  style={{ height: `${tituloImagenAltura ?? 32}px` }}
+                  // mx-auto: Tailwind Preflight pone `img { display: block }`
+                  // por defecto, así que el `text-center` del panel (que sí
+                  // centra el <h1> de texto) no alcanza para centrar un
+                  // elemento block — hace falta centrarlo explícito.
+                  className={cn(margenSuperior, "mx-auto w-auto max-w-full object-contain")}
+                />
+              ) : (
+                // Título opcional (pedido explícito del cliente, 2026-08-16):
+                // en blanco no se reserva ningún hueco — ni el <h1> ni su
+                // margen se renderizan, como si el elemento no existiera, en
+                // vez de mostrar un placeholder tipo "Sin nombre" u ocupar
+                // espacio vacío. Mismo criterio con el módulo apagado
+                // (`tituloActivo=false`, 2026-09-04): el `&&` de más arriba
+                // ya corta todo antes de llegar acá.
+                nombrePrincipal?.trim() && (
+                  <h1
+                    key="titulo"
+                    data-campo="nombre"
+                    style={{
+                      fontFamily: fuenteEncabezado,
+                      ...estiloTextoGeneral,
+                      fontSize: tituloTamano ? `${tituloTamano}px` : undefined,
+                      fontWeight: tituloPeso ?? undefined,
+                      ...(colorTitulo ? { color: colorTitulo } : undefined),
+                    }}
+                    className={cn(margenSuperior, "text-xl font-semibold text-balance text-[#18181b] dark:text-[#fafafa]")}
+                  >
+                    {nombrePrincipal.trim()}
+                  </h1>
+                )
+              ))
+            )
+          })}
           {empresa?.trim() && (
             <p
               style={{
@@ -1496,7 +1519,13 @@ export function TarjetaCard({
               />
               <p
                 data-campo="bio"
-                style={{ fontFamily: fuenteCuerpo, ...estiloTextoGeneral }}
+                style={{
+                  fontFamily: fuenteCuerpo,
+                  ...estiloTextoGeneral,
+                  fontSize: bioTamano ? `${bioTamano}px` : undefined,
+                  lineHeight: bioAltoLinea ?? undefined,
+                  ...(colorBio ? { color: colorBio } : undefined),
+                }}
                 className="max-w-xs text-[15px] leading-relaxed font-medium whitespace-pre-line text-[#3f3f46] dark:text-[#e4e4e7]"
               >
                 {puesto}

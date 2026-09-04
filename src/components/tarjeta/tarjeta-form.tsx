@@ -62,9 +62,11 @@ import {
   BOTON_ICONOS,
   BOTON_TEXTURAS,
   CONTACTO_ORDENABLES,
+  IDENTIDAD_ORDENABLES,
   construirUrlWhatsapp,
   normalizarBotones,
   ordenContactoNormalizado,
+  ordenIdentidadNormalizado,
   ordenModulosNormalizado,
 } from "@/lib/boton-cta"
 import { posterVideoGaleria } from "@/lib/cloudinary-media"
@@ -99,6 +101,7 @@ import type {
   DatosContacto,
   DivisorBanner,
   EstiloTipografia,
+  IdentidadOrdenable,
   IdentidadVisual,
   ModuloOrdenable,
   MultimediaItem,
@@ -994,6 +997,21 @@ export function TarjetaForm({
   const [tituloImagenAltura, setTituloImagenAltura] = React.useState(
     visualInicial?.tituloImagenAltura ?? 32
   )
+  // Orden entre el badge "@usuario" y el título/logo — el avatar queda
+  // afuera, siempre va primero. Ver IdentidadOrdenable/IDENTIDAD_ORDENABLES.
+  const [ordenIdentidad, setOrdenIdentidad] = React.useState<IdentidadOrdenable[]>(() =>
+    ordenIdentidadNormalizado(visualInicial?.ordenIdentidad)
+  )
+  function moverIdentidad(index: number, direccion: -1 | 1) {
+    setOrdenIdentidad((prev) => moverEnArray(prev, index, direccion))
+  }
+  // Tamaño/alto de línea/color de la bio — mismo criterio que
+  // colorTitulo/tituloTamano: defaults calzan con el look fijo de siempre
+  // (15px / leading-relaxed / auto-contraste) para que una tarjeta sin estos
+  // campos seteados se vea exactamente igual que antes de esta feature.
+  const [bioTamano, setBioTamano] = React.useState(visualInicial?.bioTamano ?? 15)
+  const [bioAltoLinea, setBioAltoLinea] = React.useState(visualInicial?.bioAltoLinea ?? 1.625)
+  const [colorBio, setColorBio] = React.useState(visualInicial?.colorBio ?? "")
   // Color de la línea "Rol o descripción" (empresa) — mismo criterio que
   // colorTitulo: vacío = auto-contraste.
   const [colorTextoSecundario, setColorTextoSecundario] = React.useState(
@@ -2485,6 +2503,10 @@ export function TarjetaForm({
       tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
       tituloImagenUrl: tituloModo === "imagen" ? tituloImagenUrlFinal : undefined,
       tituloImagenAltura: tituloModo === "imagen" && tituloImagenAltura !== 32 ? tituloImagenAltura : undefined,
+      ordenIdentidad,
+      bioTamano: bioTamano !== 15 ? bioTamano : undefined,
+      bioAltoLinea: bioAltoLinea !== 1.625 ? bioAltoLinea : undefined,
+      colorBio: colorBio || undefined,
       badgeIconoActivo,
       badgeIconoId: badgeIconoActivo ? badgeIconoId : undefined,
       ogTipo: ogTipo !== "personalizada" ? ogTipo : undefined,
@@ -2749,6 +2771,10 @@ export function TarjetaForm({
     tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
     tituloImagenUrl: tituloModo === "imagen" ? tituloImagenMostrada || undefined : undefined,
     tituloImagenAltura: tituloModo === "imagen" && tituloImagenAltura !== 32 ? tituloImagenAltura : undefined,
+    ordenIdentidad,
+    bioTamano: bioTamano !== 15 ? bioTamano : undefined,
+    bioAltoLinea: bioAltoLinea !== 1.625 ? bioAltoLinea : undefined,
+    colorBio: colorBio || undefined,
     badgeIconoActivo,
     badgeIconoId: badgeIconoActivo ? badgeIconoId : undefined,
     tituloActivo,
@@ -3174,6 +3200,100 @@ export function TarjetaForm({
         <span className="text-xs text-muted-foreground">Mostrar bio en la tarjeta</span>
         <Switch checked={bioActiva} onCheckedChange={setBioActiva} />
       </label>
+
+      {/* Tamaño/alto de línea/color de la bio — mismo patrón que el bloque de
+          tamaño/peso/color del título más abajo, pedido explícito del
+          cliente. */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/40 p-3">
+        <span className={labelClase}>Estilo de la bio</span>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">Tamaño de la bio ({bioTamano}px)</span>
+            <input
+              type="range"
+              min={13}
+              max={22}
+              value={bioTamano}
+              onChange={(e) => setBioTamano(Number(e.target.value))}
+              onFocus={() => scrollPreviewTo("bio")}
+              className="w-full cursor-pointer accent-foreground"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">Alto de línea ({bioAltoLinea.toFixed(2)})</span>
+            <input
+              type="range"
+              min={1.2}
+              max={2.2}
+              step={0.05}
+              value={bioAltoLinea}
+              onChange={(e) => setBioAltoLinea(Number(e.target.value))}
+              onFocus={() => scrollPreviewTo("bio")}
+              className="w-full cursor-pointer accent-foreground"
+            />
+          </label>
+        </div>
+        <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+          <span className="text-xs text-muted-foreground">Color de la bio</span>
+          <div className="flex items-center gap-2">
+            {colorBio && (
+              <button
+                type="button"
+                onClick={() => setColorBio("")}
+                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                Automático
+              </button>
+            )}
+            <ColorPicker
+              value={colorBio || "#3f3f46"}
+              onChange={setColorBio}
+              onFocus={() => scrollPreviewTo("bio")}
+              recientes={coloresPersonalizados}
+            />
+          </div>
+        </label>
+      </div>
+
+      {/* Orden entre el badge "@usuario" y el título/logo — el avatar queda
+          afuera, siempre va primero (estructural). Mismo patrón que el orden
+          de contacto más abajo. */}
+      <div className="flex flex-col gap-2 border-t border-border/60 pt-4">
+        <p className="text-xs text-muted-foreground">
+          Orden del usuario (@enlace) y el título/logo debajo del avatar.
+        </p>
+        {ordenIdentidad.map((id, index) => {
+          const meta = IDENTIDAD_ORDENABLES.find((i) => i.id === id)
+          return (
+            <div
+              key={id}
+              className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/50 px-3 py-2"
+            >
+              <span className="text-sm font-medium text-foreground">{meta?.etiqueta ?? id}</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => moverIdentidad(index, -1)}
+                  disabled={index === 0}
+                  aria-label={`Subir ${meta?.etiqueta ?? id}`}
+                  className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+                >
+                  <ChevronUp className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moverIdentidad(index, 1)}
+                  disabled={index === ordenIdentidad.length - 1}
+                  aria-label={`Bajar ${meta?.etiqueta ?? id}`}
+                  className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+                >
+                  <ChevronDown className="size-4" />
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
 
       {/* Tipografía + color/tamaño/peso del título — antes vivía en "Colores
           y tipografía", reubicada acá (pedido explícito, ver CLAUDE.md): es

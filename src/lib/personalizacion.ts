@@ -350,6 +350,7 @@ const CAMPOS_COLOR_BASICOS = [
   "colorTextoSecundario",
   "colorFondoContacto",
   "colorFondoRedes",
+  "colorBio",
 ] as const
 
 export function calcularBloqueos(
@@ -392,6 +393,16 @@ export function calcularBloqueos(
   if (draft.tituloPeso !== undefined) {
     const b = estaBloqueada("basica", draft.tituloPeso, base.tituloPeso, features)
     if (b) bloqueos.push({ ...b, campo: "Peso del título", valorEtiqueta: String(draft.tituloPeso) })
+  }
+
+  if (draft.bioTamano !== undefined) {
+    const b = estaBloqueada("basica", draft.bioTamano, base.bioTamano, features)
+    if (b) bloqueos.push({ ...b, campo: "Tamaño de la bio", valorEtiqueta: `${draft.bioTamano}px` })
+  }
+
+  if (draft.bioAltoLinea !== undefined) {
+    const b = estaBloqueada("basica", draft.bioAltoLinea, base.bioAltoLinea, features)
+    if (b) bloqueos.push({ ...b, campo: "Alto de línea de la bio", valorEtiqueta: String(draft.bioAltoLinea) })
   }
 
   if (draft.bannerAltura !== undefined) {
