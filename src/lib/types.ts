@@ -547,6 +547,22 @@ export interface IdentidadVisual {
    *  `colorTextoSecundario`. */
   colorFondoContacto?: string
   colorFondoRedes?: string
+  /** Color de borde de esos mismos pills (2026-09-05, pedido explícito:
+   *  "que se pueda agregar borde como en los botones") — mismo criterio que
+   *  `Boton.colorBorde`: sin valor = borde neutro fijo de siempre (rgba
+   *  chico, sin tinte). Sin efecto en "Redes sociales" cuando
+   *  `redesSoloIcono` está activo (ahí no hay pill, solo el ícono suelto).
+   *  Gating: personalizacion_libre, sumado a `CAMPOS_COLOR_BASICOS`. */
+  colorBordeContacto?: string
+  colorBordeRedes?: string
+  /** Tipografía de esos mismos pills (pedido explícito: "que se pueda
+   *  elegir la tipografía") — sin valor/"moderna" = sin fontFamily propio
+   *  (heredan el default de siempre, cero regresión: "moderna" es el único
+   *  id de ESTILOS_TIPOGRAFIA sin `fuente` asociada). Independiente de
+   *  `estiloTipografia` a propósito — no hereda la tipografía general de la
+   *  tarjeta como sí hace `Boton.fuenteBoton`. Gating: personalizacion_libre. */
+  fuenteContacto?: EstiloTipografia
+  fuenteRedes?: EstiloTipografia
   /** true = centra el bloque de dirección/horario (ícono+texto de cada
    *  línea) — por default queda alineado a la izquierda (comportamiento de
    *  siempre). Sin gating de plan: es organización visual, mismo criterio

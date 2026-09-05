@@ -1039,6 +1039,25 @@ export function TarjetaForm({
   const [colorFondoRedes, setColorFondoRedes] = React.useState(
     visualInicial?.colorFondoRedes ?? ""
   )
+  // Borde + tipografía de esos mismos pills (2026-09-05, pedido explícito:
+  // "que se pueda agregar borde como en los botones y que se pueda elegir
+  // la tipografía"). Borde: vacío = borde neutro fijo de siempre, mismo
+  // criterio que colorFondoContacto/colorFondoRedes. Tipografía: default
+  // "moderna" (sin fontFamily real, ver lib/types.ts) en vez de string
+  // vacío — mismo patrón de estado que estiloTipografia/estiloTipografiaCuerpo,
+  // reutiliza SelectorTipografia tal cual sin manejar undefined.
+  const [colorBordeContacto, setColorBordeContacto] = React.useState(
+    visualInicial?.colorBordeContacto ?? ""
+  )
+  const [colorBordeRedes, setColorBordeRedes] = React.useState(
+    visualInicial?.colorBordeRedes ?? ""
+  )
+  const [fuenteContacto, setFuenteContacto] = React.useState<EstiloTipografia>(
+    visualInicial?.fuenteContacto ?? "moderna"
+  )
+  const [fuenteRedes, setFuenteRedes] = React.useState<EstiloTipografia>(
+    visualInicial?.fuenteRedes ?? "moderna"
+  )
 
   // Imagen OG (miniatura al compartir el link) — independiente de lo que
   // se ve en la tarjeta real. Pedido explícito del cliente: un caso real
@@ -2574,6 +2593,10 @@ export function TarjetaForm({
       colorTextoSecundario: colorTextoSecundario || undefined,
       colorFondoContacto: colorFondoContacto || undefined,
       colorFondoRedes: colorFondoRedes || undefined,
+      colorBordeContacto: colorBordeContacto || undefined,
+      colorBordeRedes: colorBordeRedes || undefined,
+      fuenteContacto: fuenteContacto !== "moderna" ? fuenteContacto : undefined,
+      fuenteRedes: fuenteRedes !== "moderna" ? fuenteRedes : undefined,
       ubicacionCentrada: ubicacionCentrada || undefined,
       ordenContacto,
       tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
@@ -2852,6 +2875,10 @@ export function TarjetaForm({
     colorTextoSecundario: colorTextoSecundario || undefined,
     colorFondoContacto: colorFondoContacto || undefined,
     colorFondoRedes: colorFondoRedes || undefined,
+    colorBordeContacto: colorBordeContacto || undefined,
+    colorBordeRedes: colorBordeRedes || undefined,
+    fuenteContacto: fuenteContacto !== "moderna" ? fuenteContacto : undefined,
+    fuenteRedes: fuenteRedes !== "moderna" ? fuenteRedes : undefined,
     ubicacionCentrada: ubicacionCentrada || undefined,
     ordenContacto,
     tituloModo: tituloModo !== "texto" ? tituloModo : undefined,
@@ -4213,6 +4240,36 @@ export function TarjetaForm({
         </div>
       </label>
 
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+        <span className="text-xs text-muted-foreground">Color de borde de esos mismos botones</span>
+        <div className="flex items-center gap-2">
+          {colorBordeContacto && (
+            <button
+              type="button"
+              onClick={() => setColorBordeContacto("")}
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Automático
+            </button>
+          )}
+          <ColorPicker
+            value={colorBordeContacto || "#ffffff"}
+            onChange={setColorBordeContacto}
+            onFocus={() => scrollPreviewTo("contacto")}
+            recientes={coloresPersonalizados}
+          />
+        </div>
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs text-muted-foreground">Tipografía de esos mismos botones</span>
+        <SelectorTipografia
+          value={fuenteContacto}
+          onChange={setFuenteContacto}
+          valorGuardado={visualInicial?.fuenteContacto ?? "moderna"}
+          features={featuresPersonalizacion}
+        />
+      </label>
+
       {/* Orden de los enlaces de contacto+redes en la tarjeta — todos viven en
           UNA sola fila ("uno junto al otro", nunca separados en bloques); acá
           solo se decide qué pill de contacto va primero dentro de esa fila
@@ -4284,6 +4341,35 @@ export function TarjetaForm({
             recientes={coloresPersonalizados}
           />
         </div>
+      </label>
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+        <span className="text-xs text-muted-foreground">Color de borde de esos mismos botones</span>
+        <div className="flex items-center gap-2">
+          {colorBordeRedes && (
+            <button
+              type="button"
+              onClick={() => setColorBordeRedes("")}
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Automático
+            </button>
+          )}
+          <ColorPicker
+            value={colorBordeRedes || "#ffffff"}
+            onChange={setColorBordeRedes}
+            onFocus={() => scrollPreviewTo("redes")}
+            recientes={coloresPersonalizados}
+          />
+        </div>
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs text-muted-foreground">Tipografía de esos mismos botones</span>
+        <SelectorTipografia
+          value={fuenteRedes}
+          onChange={setFuenteRedes}
+          valorGuardado={visualInicial?.fuenteRedes ?? "moderna"}
+          features={featuresPersonalizacion}
+        />
       </label>
 
       {redes.map((red, index) => {

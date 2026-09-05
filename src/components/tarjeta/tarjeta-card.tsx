@@ -276,6 +276,10 @@ export function TarjetaCard({
     colorTextoSecundario,
     colorFondoContacto,
     colorFondoRedes,
+    colorBordeContacto,
+    colorBordeRedes,
+    fuenteContacto,
+    fuenteRedes,
     ubicacionCentrada,
     multimediaAlFinal,
     ordenContacto,
@@ -521,25 +525,32 @@ export function TarjetaCard({
     : undefined
   const estiloTextoGeneral = modoColorAvanzado && colorTextoGeneral ? { color: colorTextoGeneral } : undefined
 
-  // Fondo de los pills de "Canales de contacto" y "Redes sociales" —
-  // independientes entre sí, mismo patrón que estiloCta/estiloBadge (texto
-  // auto-contrastado, sin campo de texto propio). Sin valor = undefined =
-  // conserva el look neutro fijo de `accionClase` (blanco/vidrio
-  // translúcido), cero regresión para tarjetas que nunca los toquen.
-  const estiloContacto = colorFondoContacto
-    ? {
-        backgroundColor: `${colorFondoContacto}${alfaVidrio}`,
-        color: obtenerColorContraste(colorFondoContacto),
-        ...estiloVidrio,
-      }
-    : undefined
-  const estiloRedes = colorFondoRedes
-    ? {
-        backgroundColor: `${colorFondoRedes}${alfaVidrio}`,
-        color: obtenerColorContraste(colorFondoRedes),
-        ...estiloVidrio,
-      }
-    : undefined
+  // Fondo/borde/tipografía de los pills de "Canales de contacto" y "Redes
+  // sociales" — independientes entre sí, mismo patrón que estiloCta/
+  // estiloBadge (texto auto-contrastado, sin campo de texto propio). Sin
+  // valor = undefined = conserva el look neutro fijo de `accionClase`
+  // (blanco/vidrio translúcido, sin fuente propia), cero regresión para
+  // tarjetas que nunca los toquen. Borde y tipografía sumados 2026-09-05
+  // (pedido explícito: "que se pueda agregar borde como en los botones y
+  // que se pueda elegir la tipografía") — mismos campos que `Boton.
+  // colorBorde`/`fuenteBoton`, pero cada fila (contacto/redes) con los
+  // suyos propios en vez de compartir los de "Botones".
+  const estiloContacto = {
+    ...(colorFondoContacto
+      ? { backgroundColor: `${colorFondoContacto}${alfaVidrio}`, color: obtenerColorContraste(colorFondoContacto) }
+      : undefined),
+    ...(colorFondoContacto ? estiloVidrio : undefined),
+    borderColor: colorBordeContacto,
+    fontFamily: fuentePorEstilo(fuenteContacto),
+  }
+  const estiloRedes = {
+    ...(colorFondoRedes
+      ? { backgroundColor: `${colorFondoRedes}${alfaVidrio}`, color: obtenerColorContraste(colorFondoRedes) }
+      : undefined),
+    ...(colorFondoRedes ? estiloVidrio : undefined),
+    borderColor: colorBordeRedes,
+    fontFamily: fuentePorEstilo(fuenteRedes),
+  }
 
   const divisorMeta = DIVISORES_BANNER.find((d) => d.id === divisorBanner)
   // Sin banner no hay nada que "revelar" detrás de la muesca — el
@@ -547,13 +558,22 @@ export function TarjetaCard({
   const estiloDivisor =
     bannerEncendido && divisorMeta?.clipPath ? { clipPath: divisorMeta.clipPath } : undefined
 
-  // Colores en HEX/RGBA (no oklch/color-mix) para que html2canvas pueda exportar el PDF
-  const accionClase = cn(
-    "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0",
-    glassmorfismo
-      ? "border-[rgba(255,255,255,0.3)] bg-[rgba(255,255,255,0.3)] text-[#3f3f46] backdrop-blur-lg dark:border-[rgba(255,255,255,0.15)] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#f4f4f5]"
-      : "border-[rgba(0,0,0,0.05)] bg-[rgba(255,255,255,0.8)] text-[#3f3f46] backdrop-blur dark:border-[rgba(255,255,255,0.1)] dark:bg-[rgba(255,255,255,0.1)] dark:text-[#f4f4f5]"
-  )
+  // Colores en HEX/RGBA (no oklch/color-mix) para que html2canvas pueda
+  // exportar el PDF. `colorBorde` recibido: cuando hay uno, se omite la
+  // clase de color de borde fija (el inline style de arriba manda), mismo
+  // criterio que `!boton.colorBorde && "border-[...]"` en los botones CTA.
+  function accionClase(colorBorde?: string) {
+    return cn(
+      "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0",
+      glassmorfismo
+        ? "bg-[rgba(255,255,255,0.3)] text-[#3f3f46] backdrop-blur-lg dark:bg-[rgba(255,255,255,0.1)] dark:text-[#f4f4f5]"
+        : "bg-[rgba(255,255,255,0.8)] text-[#3f3f46] backdrop-blur dark:bg-[rgba(255,255,255,0.1)] dark:text-[#f4f4f5]",
+      !colorBorde &&
+        (glassmorfismo
+          ? "border-[rgba(255,255,255,0.3)] dark:border-[rgba(255,255,255,0.15)]"
+          : "border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.1)]")
+    )
+  }
 
   // En pantallaCompleta (mobile), el panel de contenido nunca queda más
   // bajo que la pantalla menos el banner — así una tarjeta con poco
@@ -592,7 +612,7 @@ export function TarjetaCard({
           data-campo="contacto"
           href={`tel:${telefonoPrincipal}`}
           onClick={() => track("click_enlace", { tipo_enlace: "tel" })}
-          className={accionClase}
+          className={accionClase(colorBordeContacto)}
           style={estiloContacto}
         >
           <Phone className="size-3.5" /> Llamar
@@ -607,7 +627,7 @@ export function TarjetaCard({
           target="_blank"
           rel="noopener noreferrer"
           onClick={() => track("click_enlace", { tipo_enlace: "whatsapp" })}
-          className={accionClase}
+          className={accionClase(colorBordeContacto)}
           style={estiloContacto}
         >
           <SOCIAL_ICONS.whatsapp className="size-3.5" /> WhatsApp
@@ -620,7 +640,7 @@ export function TarjetaCard({
           data-campo="contacto"
           href={`mailto:${email}`}
           onClick={() => track("click_enlace", { tipo_enlace: "email" })}
-          className={accionClase}
+          className={accionClase(colorBordeContacto)}
           style={estiloContacto}
         >
           <Mail className="size-3.5" /> Email
@@ -635,7 +655,7 @@ export function TarjetaCard({
           target="_blank"
           rel="noopener noreferrer"
           onClick={() => track("click_enlace", { tipo_enlace: "ubicacion" })}
-          className={accionClase}
+          className={accionClase(colorBordeContacto)}
           style={estiloContacto}
         >
           <MapPin className="size-3.5" /> Cómo llegar
@@ -672,7 +692,7 @@ export function TarjetaCard({
           className={
             redesSoloIcono
               ? "inline-flex size-10 items-center justify-center rounded-full text-[#3f3f46] transition-transform duration-200 ease-out hover:scale-110 active:scale-95 dark:text-[#e4e4e7]"
-              : accionClase
+              : accionClase(colorBordeRedes)
           }
           style={redesSoloIcono ? (colorFondoRedes ? { color: colorFondoRedes } : undefined) : estiloRedes}
         >
@@ -1553,7 +1573,13 @@ export function TarjetaCard({
             // tamaño/peso/contraste — ya no compite en el mismo nivel que
             // el dato de ubicación (que además ahora vive en su propia
             // card, ver más abajo).
-            <div className="mt-3 flex flex-col items-center gap-1.5">
+            // mt-5 (no mt-3, pedido explícito: "la bio está muy pegada al
+            // título/username, agrega espacio") — mismo espaciado que usan
+            // el resto de los bloques de contenido (contacto/redes,
+            // multimedia, imagen, botones), en vez del mt-3 más chico que
+            // dejaba muy poco aire cuando el divisor de arriba está
+            // apagado (ver bioDivisorActivo).
+            <div className="mt-5 flex flex-col items-center gap-1.5">
               {bioDivisorEncendido &&
                 (bioDivisorForma === "punteada" ? (
                   // Punteada: ancho de línea 0 + borde superior a rayas, en

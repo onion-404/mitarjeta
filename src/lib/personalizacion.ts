@@ -369,6 +369,8 @@ const CAMPOS_COLOR_BASICOS = [
   "colorTextoSecundario",
   "colorFondoContacto",
   "colorFondoRedes",
+  "colorBordeContacto",
+  "colorBordeRedes",
   "colorBio",
   "bioDivisorColor",
 ] as const
@@ -402,6 +404,22 @@ export function calcularBloqueos(
     if (meta) {
       const b = estaBloqueada(meta.tier, draft.estiloTipografia, base.estiloTipografia ?? "moderna", features)
       if (b) bloqueos.push({ ...b, campo: "Estilo tipográfico", valorEtiqueta: meta.etiqueta })
+    }
+  }
+
+  if (draft.fuenteContacto) {
+    const meta = ESTILOS_TIPOGRAFIA.find((e) => e.id === draft.fuenteContacto)
+    if (meta) {
+      const b = estaBloqueada(meta.tier, draft.fuenteContacto, base.fuenteContacto ?? "moderna", features)
+      if (b) bloqueos.push({ ...b, campo: "Tipografía de contacto", valorEtiqueta: meta.etiqueta })
+    }
+  }
+
+  if (draft.fuenteRedes) {
+    const meta = ESTILOS_TIPOGRAFIA.find((e) => e.id === draft.fuenteRedes)
+    if (meta) {
+      const b = estaBloqueada(meta.tier, draft.fuenteRedes, base.fuenteRedes ?? "moderna", features)
+      if (b) bloqueos.push({ ...b, campo: "Tipografía de redes sociales", valorEtiqueta: meta.etiqueta })
     }
   }
 

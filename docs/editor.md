@@ -786,6 +786,35 @@
   vivo en el preview manteniéndose centrada, sin controles de alineación) — sin guardar el
   draft de prueba.
 
+## Borde + tipografía en pills de contacto/redes, y más aire antes de la bio (2026-09-05)
+- Pedido explícito: "en los botones tanto de redes como de contacto que se pueda agregar
+  borde como en los botones y que se pueda elegir la tipografía". Campos nuevos en
+  `IdentidadVisual`: `colorBordeContacto`/`colorBordeRedes` (mismo criterio que
+  `Boton.colorBorde`, sumados a `CAMPOS_COLOR_BASICOS`) y `fuenteContacto`/`fuenteRedes`
+  (tipo `EstiloTipografia`, default `"moderna"` — el único id de `ESTILOS_TIPOGRAFIA` sin
+  `fuente` asociada, así que sin tocarlo el look es idéntico a siempre; a diferencia de
+  `Boton.fuenteBoton`, NO heredan `estiloTipografia` de la tarjeta, son independientes).
+  Editor: mismos controles ColorPicker+"Automático" y `SelectorTipografia` que ya usa el
+  resto de la tarjeta, en "Canales de contacto" y "Redes sociales" respectivamente.
+  - Refactor de `accionClase` (antes una clase fija) a función `accionClase(colorBorde?)`:
+    cuando hay un `colorBorde` explícito, omite la clase de color de borde fija para que el
+    `borderColor` inline mande — mismo criterio que `!boton.colorBorde && "border-[...]"` en
+    los botones CTA. Sin efecto en el modo "solo ícono" de redes (ahí no hay pill).
+- **Bio muy pegada al título/username** (pedido explícito, bug real): el wrapper de la bio
+  tenía `mt-3` fijo — con el divisor apagado (ver feature anterior, `bioDivisorActivo`) eso
+  dejaba muy poco aire. Subido a `mt-5`, el mismo espaciado que ya usan el resto de los
+  bloques de contenido (contacto/redes, multimedia, imagen, botones).
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` limpios. 🔴 No verificado en
+  navegador real esta vez — el puerto 3000 (única sesión de Supabase con login ya
+  persistido en este perfil de Chrome) estaba ocupado por otro proyecto del cliente
+  (Kiddi) y el flujo de Google OAuth hacia el puerto libre (3001) redirige a producción en
+  vez de al dev server (whitelist de Supabase Auth), así que no se pudo iniciar sesión ahí
+  sin recurrir a mover el token de sesión entre orígenes — deliberadamente NO se hizo eso
+  (bloqueado por el clasificador de permisos, correctamente: mover un token de auth entre
+  orígenes es exactamente el tipo de acción que debe frenarse). Cambios chicos y de patrón
+  muy calcado a código ya probado (mismo mecanismo que `Boton.colorBorde`/`fuenteBoton`), pero
+  igual pendiente de una pasada visual real por el cliente.
+
 ## Convenciones de UI
 - Todo elemento clickeable (`button`/`[role="button"]`) tiene `cursor: pointer` vía una regla
   global en `globals.css` (`@layer base`) — no se setea por className individual. Excepción a
