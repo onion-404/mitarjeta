@@ -757,6 +757,35 @@
   contra una tarjeta real: apagar el interruptor quita la línea del preview al instante, forma
   "Punteada" se ve punteada de verdad — sin guardar el draft de prueba.
 
+## Módulo "Imagen": bloque de contenido independiente (2026-09-05)
+- Pedido explícito: un módulo nuevo para poner una imagen suelta, con ancho/redondeado
+  configurables, centrada por default. Se suma como 5º bloque reordenable — `ModuloOrdenable`
+  gana `"imagen"`, `MODULOS_ORDENABLES`/`ORDEN_MODULOS_DEFAULT` en `lib/boton-cta.ts` lo ubican
+  entre "Contenido multimedia" y "Botones". Tarjetas viejas con un `ordenModulos` guardado lo
+  reciben al FINAL de su orden custom (tolerancia hacia adelante ya existente en
+  `ordenModulosNormalizado` — mismo criterio que cualquier bloque nuevo).
+- Campos en `IdentidadVisual`: `imagenModuloActivo` (interruptor, mismo patrón `undefined`/
+  `true` = mostrado que el resto de los módulos), `imagenModuloUrl`, `imagenModuloAncho` (%
+  del ancho del panel, default 100) y `imagenModuloRedondeo` (px, default 12). Sin gating de
+  plan: es contenido, mismo criterio que un ítem de multimedia/catálogo, no personalización de
+  estilo.
+- Centrada por default: `mx-auto` fijo en `TarjetaCard` (`renderImagenModulo`), sin control de
+  alineación aparte — no se pidió, y el ancho parcial + centrado ya cubre el caso real.
+- Subida: mismo patrón diferido que el logo del título (File + preview local + URL existente,
+  tarea `"imagenModulo"` en el pipeline de `Promise.all` del guardado, carpeta Cloudinary
+  `mitarjeta/imagenes`). **Bug real evitado antes de deployar**: la carpeta no estaba en el
+  whitelist de `api/cloudinary-sign/route.ts` (`CARPETAS_PERMITIDAS`) — sin ese fix la subida
+  fallaría siempre con "Carpeta no permitida.", detectado en revisión de código antes de
+  probar en vivo.
+- Editor: módulo propio en el constructor visual (`contenidoImagenModulo`), accesible desde
+  "Capas" o el picker "+ Agregar módulo" como cualquier otro — switch, input de archivo con
+  vista previa + botón quitar, y 2 sliders (ancho 20-100%, redondeado 0-48px).
+- Verificado: `tsc --noEmit`, `eslint` y `npm run build` limpios, más verificación en vivo
+  contra una tarjeta real (subida de archivo real vía input, no simulada — confirmado que
+  aparece en el módulo "Imagen" del panel "Capas", que el slider de ancho reduce el tamaño en
+  vivo en el preview manteniéndose centrada, sin controles de alineación) — sin guardar el
+  draft de prueba.
+
 ## Convenciones de UI
 - Todo elemento clickeable (`button`/`[role="button"]`) tiene `cursor: pointer` vía una regla
   global en `globals.css` (`@layer base`) — no se setea por className individual. Excepción a

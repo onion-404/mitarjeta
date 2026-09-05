@@ -480,6 +480,7 @@ const CAMPO_A_SECCION: Record<string, string> = {
   contacto: "contacto-redes",
   redes: "contacto-redes",
   video: "multimedia",
+  "imagen-modulo": "imagen",
   // "botones" (el contenedor, data-campo="botones") queda SIN mapeo a
   // propósito (2026-09-05): ya no existe un módulo "Botones" bundled — un
   // clic en el contenedor que no caiga en ningún botón puntual (data-campo
@@ -1088,6 +1089,9 @@ export function TarjetaForm({
   const [redesActivo, setRedesActivo] = React.useState(visualInicial?.redesActivo ?? true)
   const [ubicacionActiva, setUbicacionActiva] = React.useState(visualInicial?.ubicacionActiva ?? true)
   const [multimediaActivo, setMultimediaActivo] = React.useState(visualInicial?.multimediaActivo ?? true)
+  const [imagenModuloActivo, setImagenModuloActivo] = React.useState(
+    visualInicial?.imagenModuloActivo ?? true
+  )
   const [redesSoloIcono, setRedesSoloIcono] = React.useState(visualInicial?.redesSoloIcono ?? false)
   // Orden de los 4 bloques reordenables por drag-and-drop en el preview
   // (2026-09-03) — el drag vive en TarjetaCard (modoEdicion), que solo
@@ -1290,6 +1294,55 @@ export function TarjetaForm({
     visualInicial?.fondoImagenRepetir ?? false
   )
   const fondoImagenAbortRef = React.useRef<AbortController | null>(null)
+
+  // Módulo "Imagen" (2026-09-05, pedido explícito) — mismo patrón de subida
+  // diferida que el logo del título (File + preview local + URL existente,
+  // sin ancla de reposicionamiento: se muestra completa, sin recortar a
+  // ninguna forma). Ancho en % del panel + redondeado en px, centrada por
+  // default (sin control aparte, ver TarjetaCard).
+  const [imagenModuloFile, setImagenModuloFile] = React.useState<File | null>(null)
+  const [imagenModuloPreview, setImagenModuloPreview] = React.useState("")
+  const [imagenModuloUrlExistente, setImagenModuloUrlExistente] = React.useState(
+    visualInicial?.imagenModuloUrl ?? ""
+  )
+  const [imagenModuloAncho, setImagenModuloAncho] = React.useState(
+    visualInicial?.imagenModuloAncho ?? 100
+  )
+  const [imagenModuloRedondeo, setImagenModuloRedondeo] = React.useState(
+    visualInicial?.imagenModuloRedondeo ?? 12
+  )
+
+  function handleImagenModuloChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const error = validarImagen(file)
+    if (error) {
+      mostrarErrorArchivo(error)
+      event.target.value = ""
+      return
+    }
+    setImagenModuloFile(file)
+    setImagenModuloUrlExistente("")
+    setImagenModuloPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(file)
+    })
+  }
+
+  function quitarImagenModulo() {
+    setImagenModuloFile(null)
+    setImagenModuloPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return ""
+    })
+    setImagenModuloUrlExistente("")
+  }
+
+  React.useEffect(() => {
+    return () => {
+      if (imagenModuloPreview) URL.revokeObjectURL(imagenModuloPreview)
+    }
+  }, [imagenModuloPreview])
 
   const avatarAbortRef = React.useRef<AbortController | null>(null)
   const bannerAbortRef = React.useRef<AbortController | null>(null)
@@ -2181,6 +2234,7 @@ export function TarjetaForm({
     let bannerUrl: string | undefined = bannerUrlExistente || undefined
     let fondoImagenUrlFinal: string | undefined = fondoImagenUrlExistente || undefined
     let tituloImagenUrlFinal: string | undefined = tituloImagenUrlExistente || undefined
+    let imagenModuloUrlFinal: string | undefined = imagenModuloUrlExistente || undefined
     const imagenesBotonPorRuta = new Map<string, string>()
     const archivosBotonPorRuta = new Map<string, string>()
     const imagenesCatalogoItemPorClave = new Map<string, string>()
@@ -2191,6 +2245,7 @@ export function TarjetaForm({
       | { tipo: "banner"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "fondoImagen"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "tituloImagen"; etiqueta: string; promesa: Promise<string | null> }
+      | { tipo: "imagenModulo"; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "botonImagen"; ruta: UbicacionBoton; etiqueta: string; promesa: Promise<string | null> }
       | { tipo: "botonArchivo"; ruta: UbicacionBoton; etiqueta: string; promesa: Promise<string | null> }
       | {
@@ -2254,6 +2309,14 @@ export function TarjetaForm({
         tipo: "tituloImagen",
         etiqueta: "el logo del título",
         promesa: subirImagenCloudinary(tituloImagenFile, "mitarjeta/logos").catch(() => null),
+      })
+    }
+
+    if (imagenModuloFile) {
+      tareas.push({
+        tipo: "imagenModulo",
+        etiqueta: "la imagen",
+        promesa: subirImagenCloudinary(imagenModuloFile, "mitarjeta/imagenes").catch(() => null),
       })
     }
 
@@ -2350,6 +2413,7 @@ export function TarjetaForm({
       else if (tarea.tipo === "banner") bannerUrl = url
       else if (tarea.tipo === "fondoImagen") fondoImagenUrlFinal = url
       else if (tarea.tipo === "tituloImagen") tituloImagenUrlFinal = url
+      else if (tarea.tipo === "imagenModulo") imagenModuloUrlFinal = url
       else if (tarea.tipo === "botonImagen") imagenesBotonPorRuta.set(claveBoton(tarea.ruta), url)
       else if (tarea.tipo === "botonArchivo") archivosBotonPorRuta.set(claveBoton(tarea.ruta), url)
       else if (tarea.tipo === "catalogoItem")
@@ -2538,6 +2602,10 @@ export function TarjetaForm({
       redesActivo,
       ubicacionActiva,
       multimediaActivo,
+      imagenModuloActivo,
+      imagenModuloUrl: imagenModuloUrlFinal,
+      imagenModuloAncho: imagenModuloAncho !== 100 ? imagenModuloAncho : undefined,
+      imagenModuloRedondeo: imagenModuloRedondeo !== 12 ? imagenModuloRedondeo : undefined,
       redesSoloIcono: redesSoloIcono || undefined,
       ordenModulos,
     }
@@ -2710,6 +2778,7 @@ export function TarjetaForm({
   const bannerMostrado = bannerPreview || bannerUrlExistente
   const fondoImagenMostrado = fondoImagenPreview || fondoImagenUrlExistente
   const tituloImagenMostrada = tituloImagenPreview || tituloImagenUrlExistente
+  const imagenModuloMostrada = imagenModuloPreview || imagenModuloUrlExistente
 
   // La vista previa refleja el contenido tal cual el dueño lo está
   // probando, aunque todavía no haya guardado (mismo criterio que el resto
@@ -2807,6 +2876,10 @@ export function TarjetaForm({
     redesActivo,
     ubicacionActiva,
     multimediaActivo,
+    imagenModuloActivo,
+    imagenModuloUrl: imagenModuloMostrada || undefined,
+    imagenModuloAncho: imagenModuloAncho !== 100 ? imagenModuloAncho : undefined,
+    imagenModuloRedondeo: imagenModuloRedondeo !== 12 ? imagenModuloRedondeo : undefined,
     redesSoloIcono: redesSoloIcono || undefined,
     ordenModulos,
   }
@@ -3765,6 +3838,81 @@ export function TarjetaForm({
           })}
         </div>
       </div>
+    </div>
+  )
+
+  // Módulo "Imagen" (2026-09-05, pedido explícito): imagen suelta,
+  // centrada por default — mismo patrón de subida que el logo del título,
+  // sin ancla de reposicionamiento (se muestra completa, sin recortar).
+  const contenidoImagenModulo = (
+    <div className="flex flex-col gap-5 px-5 pb-5 pt-1">
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5">
+        <span className="text-xs text-muted-foreground">Mostrar imagen en la tarjeta</span>
+        <Switch checked={imagenModuloActivo} onCheckedChange={setImagenModuloActivo} />
+      </label>
+      <div className="flex flex-col gap-1.5">
+        <span className={labelClase}>Imagen</span>
+        <div className="flex items-center gap-3">
+          {imagenModuloMostrada && (
+            <div className="relative shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element -- vista previa local o URL de Cloudinary */}
+              <img
+                src={imagenModuloMostrada}
+                alt="Vista previa"
+                style={{ borderRadius: `${imagenModuloRedondeo}px` }}
+                className="size-12 border border-border object-cover"
+              />
+              <button
+                type="button"
+                onClick={quitarImagenModulo}
+                aria-label="Quitar imagen"
+                className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          )}
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleImagenModuloChange}
+            onFocus={() => scrollPreviewTo("imagen-modulo")}
+            className={cn(
+              inputClase,
+              "cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+            )}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground">Ancho ({imagenModuloAncho}%)</span>
+          <input
+            type="range"
+            min={20}
+            max={100}
+            value={imagenModuloAncho}
+            onChange={(e) => setImagenModuloAncho(Number(e.target.value))}
+            onFocus={() => scrollPreviewTo("imagen-modulo")}
+            className="w-full cursor-pointer accent-foreground"
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground">Redondeado ({imagenModuloRedondeo}px)</span>
+          <input
+            type="range"
+            min={0}
+            max={48}
+            value={imagenModuloRedondeo}
+            onChange={(e) => setImagenModuloRedondeo(Number(e.target.value))}
+            onFocus={() => scrollPreviewTo("imagen-modulo")}
+            className="w-full cursor-pointer accent-foreground"
+          />
+        </label>
+      </div>
+      {/* Centrada por default (pedido explícito) — sin control de
+          alineación aparte, ver el `mx-auto` fijo en TarjetaCard. */}
     </div>
   )
 
@@ -5694,6 +5842,14 @@ export function TarjetaForm({
       contenido: contenidoMultimedia,
       activo: multimediaActivo,
       onToggle: setMultimediaActivo,
+    },
+    {
+      id: "imagen",
+      titulo: "Imagen",
+      icono: ImageIcon,
+      contenido: contenidoImagenModulo,
+      activo: imagenModuloActivo,
+      onToggle: setImagenModuloActivo,
     },
     // "Botones" ya NO es una entrada acá (2026-09-05, pedido explícito:
     // "los botones deben ser módulos independientes") — cada botón es su

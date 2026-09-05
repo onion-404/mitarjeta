@@ -15,6 +15,7 @@ const CARPETAS_PERMITIDAS = new Set([
   "mitarjeta/botones",
   "mitarjeta/logos",
   "mitarjeta/multimedia",
+  "mitarjeta/imagenes",
 ])
 
 // Una tarjeta con avatar, banner, brochure y varios productos puede disparar

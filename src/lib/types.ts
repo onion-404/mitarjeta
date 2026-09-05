@@ -637,7 +637,7 @@ export interface IdentidadVisual {
    *  siempre. No afecta a "Canales de contacto" (Llamar/WhatsApp/Email/
    *  Cómo llegar), que sigue mostrando su etiqueta siempre. */
   redesSoloIcono?: boolean
-  /** Orden de los 4 bloques de contenido reordenables por drag-and-drop en
+  /** Orden de los 5 bloques de contenido reordenables por drag-and-drop en
    *  el constructor visual (2026-09-03) — generaliza y REEMPLAZA
    *  `multimediaAlFinal` (@deprecated arriba). Avatar/Banner/Identidad
    *  quedan FUERA a propósito: son estructurales (overlap `-mt-14`
@@ -648,9 +648,25 @@ export interface IdentidadVisual {
    *  bloques separados. Sin valor = orden de siempre (`ORDEN_MODULOS_
    *  DEFAULT`, ver lib/boton-cta.ts), salvo migración de `multimediaAlFinal`. */
   ordenModulos?: ModuloOrdenable[]
+  /** Módulo "Imagen" (2026-09-05, pedido explícito) — bloque de contenido
+   *  independiente con una sola imagen suelta (no recortada a ninguna
+   *  forma, a diferencia del avatar), centrada por default, sin gating de
+   *  plan (mismo criterio que agregar un ítem de multimedia/catálogo: es
+   *  contenido, no personalización de estilo). `imagenModuloActivo`: sin
+   *  valor = mostrado (mismo patrón que el resto de los módulos), aunque en
+   *  la práctica no renderiza nada sin `imagenModuloUrl` de todos modos. */
+  imagenModuloActivo?: boolean
+  imagenModuloUrl?: string
+  /** Ancho en % del ancho disponible del panel de contenido — rango
+   *  sugerido en el editor 20-100, default 100 (ocupa todo el ancho, alto
+   *  proporcional). */
+  imagenModuloAncho?: number
+  /** Redondeado de esquinas en px — rango sugerido en el editor 0-48,
+   *  default 12. */
+  imagenModuloRedondeo?: number
 }
 
-export type ModuloOrdenable = "ubicacion" | "contacto-redes" | "multimedia" | "botones"
+export type ModuloOrdenable = "ubicacion" | "contacto-redes" | "multimedia" | "botones" | "imagen"
 
 export type MetodoPago = "mercado_pago" | "transferencia"
 export type EstadoPago = "pendiente" | "aprobado" | "rechazado"

@@ -295,6 +295,10 @@ export function TarjetaCard({
     multimediaActivo,
     redesSoloIcono,
     ordenModulos,
+    imagenModuloActivo,
+    imagenModuloUrl,
+    imagenModuloAncho,
+    imagenModuloRedondeo,
   } = identidadVisual
   // Módulos opcionales (2026-09-02, título sumado 2026-09-04) — sin valor =
   // `true` (compatibilidad total con tarjetas que nunca tocaron esto). El
@@ -305,11 +309,12 @@ export function TarjetaCard({
   const bannerEncendido = bannerActivo !== false
   const bioEncendida = bioActiva !== false
   const bioDivisorEncendido = bioDivisorActivo !== false
+  const imagenModuloEncendido = imagenModuloActivo !== false
   const contactoEncendido = contactoActivo !== false
   const redesEncendidas = redesActivo !== false
   const ubicacionEncendida = ubicacionActiva !== false
   const multimediaEncendida = multimediaActivo !== false
-  // Orden de los 4 bloques reordenables (2026-09-03) — ver useArrastreLista
+  // Orden de los 5 bloques reordenables (2026-09-03) — ver useArrastreLista
   // y ordenModulosNormalizado (lib/boton-cta.ts). `ordenVivo` es el orden
   // REAL a renderizar: igual a `ordenModulosFinal` fuera de un arrastre en
   // curso, y la reordenación optimista mientras se arrastra.
@@ -1151,6 +1156,35 @@ export function TarjetaCard({
     )
   }
 
+  // Módulo "Imagen" (2026-09-05, pedido explícito): una imagen suelta, sin
+  // recortar a ninguna forma (a diferencia del avatar) — ancho configurable
+  // en % del panel, alto proporcional, y centrada por default (`mx-auto`,
+  // sin control aparte: no se pidió alineación, solo que el default sea
+  // centrado). Sin gating de plan: es contenido, mismo criterio que un
+  // ítem de multimedia/catálogo.
+  function renderImagenModulo(): React.ReactNode {
+    if (!imagenModuloEncendido || !imagenModuloUrl) return null
+    return (
+      <div
+        data-campo="imagen-modulo"
+        data-modulo-arrastrable="imagen"
+        className={cn("mt-5 flex w-full justify-center", moduloArrastrando === "imagen" && "opacity-40")}
+      >
+        {manijaArrastre("imagen")}
+        {/* eslint-disable-next-line @next/next/no-img-element -- ancho/alto elegidos por el dueño, next/image exige dimensiones fijas */}
+        <img
+          src={imagenModuloUrl}
+          alt=""
+          style={{
+            width: `${imagenModuloAncho ?? 100}%`,
+            borderRadius: `${imagenModuloRedondeo ?? 12}px`,
+          }}
+          className="mx-auto h-auto max-w-full object-contain"
+        />
+      </div>
+    )
+  }
+
   function renderBotones(): React.ReactNode {
     if (!botonesNormalizados.length) return null
     return (
@@ -1183,13 +1217,15 @@ export function TarjetaCard({
     )
   }
 
-  // Los 4 bloques reordenables (2026-09-03) — recorridos en `ordenModulosVivo`
-  // más abajo. Cada `render*` ya decide su propio null si no hay contenido
-  // (mismo criterio que siempre), así que iterar acá nunca deja huecos.
+  // Los 5 bloques reordenables (2026-09-03, "Imagen" sumado 2026-09-05) —
+  // recorridos en `ordenModulosVivo` más abajo. Cada `render*` ya decide su
+  // propio null si no hay contenido (mismo criterio que siempre), así que
+  // iterar acá nunca deja huecos.
   const RENDER_MODULO: Record<ModuloOrdenable, () => React.ReactNode> = {
     ubicacion: renderUbicacion,
     "contacto-redes": renderContactoYRedes,
     multimedia: renderMultimedia,
+    imagen: renderImagenModulo,
     botones: renderBotones,
   }
 

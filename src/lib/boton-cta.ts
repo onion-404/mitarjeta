@@ -410,16 +410,17 @@ export function ordenIdentidadNormalizado(orden?: IdentidadOrdenable[]): Identid
 }
 
 // ============================================================================
-// Orden de los 4 bloques de contenido reordenables por drag-and-drop en el
-// constructor visual (2026-09-03) — mismo patrón tolerante-hacia-adelante que
-// ordenContactoNormalizado, pero moviendo BLOQUES enteros entre sí (Avatar/
-// Banner/Identidad quedan afuera, son estructurales — ver IdentidadVisual.
-// ordenModulos en lib/types.ts).
+// Orden de los 5 bloques de contenido reordenables por drag-and-drop en el
+// constructor visual (2026-09-03, "Imagen" sumado 2026-09-05) — mismo patrón
+// tolerante-hacia-adelante que ordenContactoNormalizado, pero moviendo
+// BLOQUES enteros entre sí (Avatar/Banner/Identidad quedan afuera, son
+// estructurales — ver IdentidadVisual.ordenModulos en lib/types.ts).
 // ============================================================================
 export const MODULOS_ORDENABLES: { id: ModuloOrdenable; etiqueta: string }[] = [
   { id: "ubicacion", etiqueta: "Ubicación y negocio" },
   { id: "contacto-redes", etiqueta: "Contacto y redes" },
   { id: "multimedia", etiqueta: "Contenido multimedia" },
+  { id: "imagen", etiqueta: "Imagen" },
   { id: "botones", etiqueta: "Botones" },
 ]
 
@@ -427,6 +428,7 @@ export const ORDEN_MODULOS_DEFAULT: ModuloOrdenable[] = [
   "ubicacion",
   "contacto-redes",
   "multimedia",
+  "imagen",
   "botones",
 ]
 
@@ -444,7 +446,7 @@ export function ordenModulosNormalizado(
     return [...conocidos, ...faltantes]
   }
   return multimediaAlFinalLegacy
-    ? ["ubicacion", "contacto-redes", "botones", "multimedia"]
+    ? ["ubicacion", "contacto-redes", "botones", "multimedia", "imagen"]
     : ORDEN_MODULOS_DEFAULT
 }
 
